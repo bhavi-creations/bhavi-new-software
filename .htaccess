@@ -1,0 +1,10 @@
+Options -Indexes
+DirectoryIndex index.php
+<FilesMatch "^(config(\.local(\.example)?)?\.php|README\.md|AGENTS\.md)$">
+    Require all denied
+</FilesMatch>
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule (^|/)\. - [F,L]
+    RewriteRule ^(?:includes|database|tests|storage)/ - [F,L]
+</IfModule>

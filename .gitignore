@@ -1,0 +1,5 @@
+/config.local.php
+/storage/
+/uploads/*
+!/uploads/.htaccess
+/.phpunit.cache/
