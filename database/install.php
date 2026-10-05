@@ -114,6 +114,9 @@ function portal_install(PDO $pdo, string $database): void
         ) ENGINE=InnoDB");
         $pdo->exec('CREATE OR REPLACE VIEW v_daily_work_export AS SELECT ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY e.row_order,e.id) AS s_no,s.work_date,s.employee_id,u.full_name AS employee_name,d.name AS department_name,c.client_name,s.submission_status,s.submitted_at,s.review_status,s.manager_remark,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id LEFT JOIN clients c ON c.id=e.client_id');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (1),(2),(3)');
+        $addColumn('employee_documents','file_path','VARCHAR(255) NULL');
+        $pdo->exec('ALTER TABLE employee_documents MODIFY file_content MEDIUMBLOB NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (4)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

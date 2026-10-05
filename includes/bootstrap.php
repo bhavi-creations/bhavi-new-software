@@ -56,6 +56,12 @@ function csrf_field(): string { return '<input type="hidden" name="csrf" value="
 function check_csrf(): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Use the form to submit this request.'); }
+    if (empty($_POST) && (int)($_SERVER['CONTENT_LENGTH']??0)>0) {
+        $limit=trim(ini_get('post_max_size')); $bytes=(float)$limit;
+        $unit=strtolower(substr($limit,-1));
+        $bytes*= match($unit) { 'g'=>1024**3, 'm'=>1024**2, 'k'=>1024, default=>1 };
+        if ($bytes>0 && (int)$_SERVER['CONTENT_LENGTH']>$bytes) fail(413,'The upload exceeds the server limit of '.$limit.'. Upload fewer documents at a time.');
+    }
     if (!is_string($_POST['csrf'] ?? null) || !hash_equals(csrf_token(), $_POST['csrf'])) { fail(419, 'Your form expired. Refresh the page and try again.'); }
 }
 function flash(string $message, string $type = 'success'): void { $_SESSION['flash'][] = ['message' => $message, 'type' => $type]; }

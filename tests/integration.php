@@ -25,7 +25,7 @@ final class Browser
         if ($status>=500 || str_contains($body,'Fatal error') || str_contains($body,'Warning:')) throw new RuntimeException($path.' returned '.$status.': '.substr(strip_tags($body),0,400));
         return ['status'=>$status,'headers'=>$headers,'body'=>$body];
     }
-    public function post(string $path,array $data): array { return $this->request($path,['csrf'=>$this->csrf,...$data]); }
+    public function post(string $path,array $data): array { return $this->request($path,array_merge(['csrf'=>$this->csrf],$data)); }
     public function login(string $username,string $password,string $dashboard): void {
         $this->request('login.php'); $response=$this->post('authenticate.php',['username'=>$username,'password'=>$password]);
         expect($response['status']===303 && $response['headers']['location']===$dashboard,'Login redirect for '.$username);
@@ -40,7 +40,7 @@ try {
     $address=stream_socket_get_name($socket,false); fclose($socket);
     $log=tempnam(sys_get_temp_dir(),'bhavi_server_'); $temporary[]=$log;
     $environment=getenv(); $environment['BHAVI_DB_NAME']=$database;
-    $process=proc_open([PHP_BINARY,'-S',$address,'-t',dirname(__DIR__)],[0=>['pipe','r'],1=>['file',$log,'a'],2=>['file',$log,'a']],$pipes,dirname(__DIR__),$environment);
+    $process=proc_open([PHP_BINARY,'-d','session.save_path='.sys_get_temp_dir(),'-d','upload_max_filesize=20M','-d','post_max_size=100M','-S',$address,'-t',dirname(__DIR__)],[0=>['pipe','r'],1=>['file',$log,'a'],2=>['file',$log,'a']],$pipes,dirname(__DIR__),$environment);
     if (!is_resource($process)) throw new RuntimeException('Unable to start the test server.');
     fclose($pipes[0]);
     $ready=false; for ($i=0;$i<50;$i++) { $connection=@stream_socket_client('tcp://'.$address,$errno,$error,0.1); if ($connection) { fclose($connection); $ready=true; break; } usleep(100000); }
@@ -82,7 +82,7 @@ try {
     file_put_contents($pdf,$pdfContent);
     $manager->request('payslips.php');
     $payData=['department_id'=>scalar("SELECT id FROM departments WHERE code='website'"),'employee_id'=>$employeeIds['website'],'pay_month'=>date('Y-m'),'payslip'=>new CURLFile($pdf,'application/pdf','salary.pdf')];
-    expect($manager->post('payslips.php',[...$payData,'employee_id'=>$employeeIds['seo']])['status']===200,'Payslip department mismatch rejected');
+    expect($manager->post('payslips.php',array_merge($payData,['employee_id'=>$employeeIds['seo']]))['status']===200,'Payslip department mismatch rejected');
     expect((int)scalar('SELECT COUNT(*) FROM payslips')===0,'Invalid payslip not saved');
     expect($manager->post('payslips.php',$payData)['status']===303,'Manager uploads private payslip');
     $payId=(int)scalar('SELECT id FROM payslips LIMIT 1');
@@ -102,7 +102,7 @@ try {
     expect($manager->request('payslips.php',['csrf'=>'invalid'])['status']===419,'Payslip upload requires CSRF');
     file_put_contents($pdf,'This is not a PDF.');
     $manager->request('payslips.php');
-    expect(str_contains($manager->post('payslips.php',[...$payData,'pay_month'=>'2025-01'])['body'],'Only PDF payslips are accepted'),'Spoofed PDF rejected');
+    expect(str_contains($manager->post('payslips.php',array_merge($payData,['pay_month'=>'2025-01']))['body'],'Only PDF payslips are accepted'),'Spoofed PDF rejected');
     expect((int)scalar('SELECT COUNT(*) FROM payslips')===1,'Invalid PDF not persisted');
     expect(str_contains($manager->request('manager-dashboard.php')['body'],'<strong>5</strong>'),'Manager total uses database employees');
     expect($browsers['seo']->request('website-employee-dashboard.php')['headers']['location']==='seo-employee-dashboard.php','Wrong department route redirects');
@@ -114,7 +114,7 @@ try {
     expect(scalar('SELECT role FROM users WHERE id=?',[$employeeIds['website']])==='employee','Employee form cannot elevate a role');
     expect(password_verify($password,(string)scalar('SELECT password_hash FROM users WHERE id=?',[$employeeIds['website']])),'Blank edit password keeps existing password');
     $manager->request('admin-add-employee.php?id='.$employeeIds['website']);
-    expect($manager->post('admin-add-employee.php?id='.$employeeIds['website'],[...$employeeEdit,'account_status'=>'inactive'])['status']===303,'Employee account can be deactivated');
+    expect($manager->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['account_status'=>'inactive']))['status']===303,'Employee account can be deactivated');
     expect($browsers['website']->request($dashboards['website'])['headers']['location']==='login.php','Inactive account loses access');
     $manager->request('admin-add-employee.php?id='.$employeeIds['website']);
     expect($manager->post('admin-add-employee.php?id='.$employeeIds['website'],$employeeEdit)['status']===303,'Employee account can be reactivated');
@@ -142,12 +142,12 @@ try {
     expect($manager->post('admin-holidays.php?edit='.$holidayId,['action'=>'save_holiday','holiday_name'=>'Updated Holiday','holiday_date'=>$holidayDate,'description'=>'Edited by manager'])['status']===303,'Manager holiday editing');
     $manager->request('manager-assign-work.php'); $websiteDepartment=(int)scalar("SELECT id FROM departments WHERE code='website'");
     $assignmentData=['department_id'=>$websiteDepartment,'employee_id'=>$employeeIds['website'],'client_id'=>$clientId,'work_date'=>date('Y-m-d'),'title'=>'Build home page','description'=>'Responsive page with contact form'];
-    expect($manager->post('manager-assign-work.php',[...$assignmentData,'employee_id'=>$employeeIds['seo']])['status']===200,'Employee department mismatch rejected');
+    expect($manager->post('manager-assign-work.php',array_merge($assignmentData,['employee_id'=>$employeeIds['seo']]))['status']===200,'Employee department mismatch rejected');
     expect((int)scalar('SELECT COUNT(*) FROM work_assignments')===0,'Invalid assignment never saved');
     expect($manager->post('manager-assign-work.php',$assignmentData)['status']===303,'Manager assigns work');
     $assignmentId=(int)scalar('SELECT id FROM work_assignments LIMIT 1');
-    expect(str_contains($browsers['website']->request($dashboards['website'])['body'],'Build home page'),'Assignment visible to its employee');
-    expect(!str_contains($browsers['seo']->request($dashboards['seo'])['body'],'Build home page'),'Assignment hidden from another employee');
+    expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'],'Build home page'),'Assignment visible to its employee');
+    expect(!str_contains($browsers['seo']->request('employee-assigned-work.php')['body'],'Build home page'),'Assignment hidden from another employee');
     expect($browsers['seo']->post($dashboards['seo'],['action'=>'update_assignment','assignment_id'=>$assignmentId,'task_status'=>'completed','remark'=>'Attack'])['status']===403,'Assignment ownership enforced');
     $website=$browsers['website']; $website->request($dashboards['website']);
     $update=['action'=>'update_assignment','assignment_id'=>$assignmentId,'task_status'=>'completed','remark'=>'=SUM(1,2)','website_new_count'=>'2','website_changes_count'=>'1'];
@@ -159,7 +159,7 @@ try {
     foreach ($dashboards as $code=>$dashboard) {
         $browser=$browsers[$code]; $browser->request($dashboard);
         $metrics=match($code) { 'website'=>['website_new_count'=>'1','website_changes_count'=>'0'],'seo'=>['seo_quantity'=>'3.50','seo_quantity_unit'=>'pages'],'design_video'=>['video_count'=>'1','poster_count'=>'2','carousel_count'=>'1','design_changes_count'=>'0'],'telecaller'=>['calls_count'=>'10','connected_count'=>'5','followups_count'=>'3','leads_count'=>'2'],'social_media'=>['social_platform'=>'Instagram','posts_count'=>'2','reels_count'=>'1','replies_count'=>'6'] };
-        $work=['action'=>'save_entry','client_id'=>$clientId,'task_title'=>$code.' daily task','task_status'=>'completed','remark'=>'Daily '.$code,'submit_mode'=>'submitted',...$metrics];
+        $work=array_merge(['action'=>'save_entry','client_id'=>$clientId,'task_title'=>$code.' daily task','task_status'=>'completed','remark'=>'Daily '.$code,'submit_mode'=>'submitted'],$metrics);
         expect($browser->post($dashboard,$work)['status']===303,'Department work submission '.$code);
     }
     $tele=$browsers['telecaller']; $tele->request($dashboards['telecaller']);
@@ -192,7 +192,7 @@ try {
     $sheetId=(int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?',[$employeeIds['website'],date('Y-m-d')]);
     $manager->request('manager-review-work.php?id='.$sheetId);
     expect($manager->post('manager-review-work.php?id='.$sheetId,['action'=>'review_sheet','review_status'=>'changes_requested','manager_remark'=>'Please update the mobile header'])['status']===303,'Manager reviews work');
-    expect(str_contains($website->request($dashboards['website'])['body'],'Please update the mobile header'),'Employee sees manager feedback');
+    expect(str_contains($website->request('employee-work-history.php')['body'],'Please update the mobile header'),'Employee sees manager feedback');
     $entryId=(int)scalar('SELECT id FROM daily_work_entries WHERE assignment_id=?',[$assignmentId]);
     $manager->request('manager-review-work.php?id='.$sheetId);
     expect($manager->post('manager-review-work.php?id='.$sheetId,['action'=>'edit_entry','entry_id'=>$entryId,'task_title'=>'Reviewed home page','task_status'=>'pending','remark'=>'Needs revision','website_new_count'=>'1','website_changes_count'=>'2'])['status']===303,'Manager edits submitted work');
@@ -207,20 +207,20 @@ try {
     expect(str_contains($manager->request('manager-leave-requist.php')['body'],'Family appointment'),'Manager sees leave request');
     expect($manager->post('manager-leave-requist.php',['id'=>$leaveId,'decision'=>'approved','decision_note'=>'Approved by manager'])['status']===303,'Manager approves leave');
     expect(scalar('SELECT status FROM leave_requests WHERE id=?',[$leaveId])==='approved','Approval persists');
-    expect(str_contains($website->request('apply-leaves.php')['body'],'Approved by manager'),'Employee sees leave decision');
+    expect(str_contains($website->request('my-leave-requests.php')['body'],'Approved by manager'),'Employee sees leave decision');
     expect(str_contains($website->request('check-leave.php?month='.substr($leaveDate,0,7))['body'],'Personal · approved'),'Leave calendar uses stored approval');
     $manager->request('manager-leave-requist.php');
     expect($manager->post('manager-leave-requist.php',['id'=>$leaveId,'decision'=>'rejected','decision_note'=>'Second decision'])['status']===200,'Repeat leave decision rejected');
     expect(scalar('SELECT status FROM leave_requests WHERE id=?',[$leaveId])==='approved','Original decision preserved');
     $seo=$browsers['seo']; $seo->request('apply-leaves.php');
-    expect($seo->post('apply-leaves.php',[...$leaveData,'reason'=>'SEO leave'])['status']===303,'Second employee leave');
+    expect($seo->post('apply-leaves.php',array_merge($leaveData,['reason'=>'SEO leave']))['status']===303,'Second employee leave');
     $seoLeave=(int)scalar('SELECT id FROM leave_requests WHERE employee_id=? ORDER BY id DESC LIMIT 1',[$employeeIds['seo']]);
     $manager->request('manager-leave-requist.php');
     expect($manager->post('manager-leave-requist.php',['id'=>$seoLeave,'decision'=>'rejected','decision_note'=>'Discuss new dates'])['status']===303,'Manager rejects leave');
-    expect(str_contains($seo->request('apply-leaves.php')['body'],'Discuss new dates'),'Rejected decision visible');
-    expect(!str_contains($seo->request('apply-leaves.php')['body'],'Family appointment'),'Leave history is private');
+    expect(str_contains($seo->request('my-leave-requests.php')['body'],'Discuss new dates'),'Rejected decision visible');
+    expect(!str_contains($seo->request('my-leave-requests.php')['body'],'Family appointment'),'Leave history is private');
     $seo->request('apply-leaves.php');
-    expect($seo->post('apply-leaves.php',[...$leaveData,'reason'=>'Request to cancel'])['status']===303,'Leave can be reapplied after rejection');
+    expect($seo->post('apply-leaves.php',array_merge($leaveData,['reason'=>'Request to cancel']))['status']===303,'Leave can be reapplied after rejection');
     $cancelId=(int)scalar('SELECT id FROM leave_requests WHERE employee_id=? ORDER BY id DESC LIMIT 1',[$employeeIds['seo']]);
     $website->request('apply-leaves.php');
     expect($website->post('apply-leaves.php',['action'=>'cancel_leave','id'=>$cancelId])['status']===200,'Employee cannot cancel another employee leave');
@@ -229,11 +229,87 @@ try {
     expect(scalar('SELECT status FROM leave_requests WHERE id=?',[$cancelId])==='cancelled','Cancelled leave persists');
     $website->request('employee-brands-assets.php');
     expect(str_contains($website->request('client-reuirement.php')['body'],'Responsive page with contact form'),'Client requirements show assigned brief');
+    expect($admin->request('manager-leave-requist.php')['status']===403,'Admin cannot access leave requests');
+    expect(!str_contains($manager->request('manager-dashboard.php')['body'],'Upcoming holidays'),'Manager dashboard omits holiday card');
+    $admin->request('departments.php');
+    expect($admin->post('departments.php',['name'=>'Quality Assurance'])['status']===303,'Admin adds department');
+    $newDepartment=(int)scalar("SELECT id FROM departments WHERE name='Quality Assurance'");
+    expect(str_contains($admin->request('admin-add-employee.php')['body'],'Quality Assurance'),'New department appears in employee form');
+    $admin->request('departments.php?edit='.$newDepartment);
+    expect($admin->post('departments.php?edit='.$newDepartment,['name'=>'Quality Engineering'])['status']===303,'Admin edits department');
+    expect(str_contains($admin->request('admin-add-employee.php')['body'],'Quality Engineering'),'Renamed department appears in employee form');
+    expect($manager->request('departments.php')['status']===403,'Department management is admin only');
+    $admin->request('departments.php');
+    expect(str_contains($admin->post('departments.php',['action'=>'delete_department','id'=>$websiteDepartment])['body'],'Move the employees'),'Populated department deletion prevented');
+    expect($admin->post('departments.php',['action'=>'delete_department','id'=>$newDepartment])['status']===303,'Unused department deleted');
+    expect((int)scalar('SELECT is_active FROM departments WHERE id=?',[$newDepartment])===0,'Department deletion persists');
+    expect(!str_contains($admin->request('admin-add-employee.php')['body'],'Quality Engineering'),'Deleted department removed from employee choices');
+    $manager->request('manager-leave-requist.php');
+    expect($manager->post('manager-leave-requist.php',['action'=>'save_note','id'=>$leaveId,'decision_note'=>'Please complete the handover <today>'])['status']===303,'Manager sends a follow-up leave note');
+    expect(scalar('SELECT status FROM leave_requests WHERE id=?',[$leaveId])==='approved','Follow-up note preserves decision');
+    expect(str_contains($website->request('my-leave-requests.php')['body'],'Please complete the handover &lt;today&gt;'),'Employee sees escaped manager message in request history');
+    expect(str_contains($website->request('manager-notification.php')['body'],'Please complete the handover &lt;today&gt;'),'Employee receives leave note notification');
+    expect(!str_contains($seo->request('manager-notification.php')['body'],'Please complete the handover'),'Leave message private to recipient');
+    $manager->request('manager-notification.php');
+    expect($manager->post('manager-notification.php',['action'=>'send_notification','department_id'=>$websiteDepartment,'employee_id'=>$employeeIds['website'],'title'=>'Project update','message'=>'Please review the brief'])['status']===303,'Manager sends employee notification');
+    expect(str_contains($website->request('manager-notification.php')['body'],'Please review the brief'),'Employee sees sent notification');
+    $website->request('employee-daily-work.php');
+    expect($website->post('employee-daily-work.php',['action'=>'save_entry','client_id'=>'','task_title'=>'Internal planning without client','task_status'=>'completed','remark'=>'Team planning','website_new_count'=>'','website_changes_count'=>'','submit_mode'=>'submitted'])['status']===303,'Daily work saves with blank optional client and metrics');
+    expect(str_contains($website->request('employee-work-history.php')['body'],'Internal planning without client'),'Employee sees submitted internal work');
+    expect(str_contains($manager->request('manager-dailywork.php')['body'],'Internal planning without client'),'Manager sees internal work without client');
+    expect(str_contains($admin->request('manager-dailywork.php')['body'],'Internal planning without client'),'Admin sees same internal work report');
+    expect(!str_contains($website->request('employee-daily-work.php')['body'],'id="assigned-work"'),'Daily work screen excludes assignments');
+    expect(!str_contains($website->request('employee-assigned-work.php')['body'],'name="website_new_count"'),'Assignment form only requests status and remark');
+    expect(str_contains($manager->request('manager-assigned-status.php')['body'],'Employees completed all work'),'Assignment progress summary available');
+    $largePdf=tempnam(sys_get_temp_dir(),'bhavi_document_'); $temporary[]=$largePdf;
+    $admin->request('admin-add-employee.php?id='.$employeeIds['website']);
+    $missingDepartment=$admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['department_id'=>'','documents[0]'=>new CURLFile($image,'image/png','photo.png')]));
+    expect(str_contains($missingDepartment['body'],'Please select a department for this employee.'),'Image upload with missing department shows the specific field error');
+    expect(!str_contains($missingDepartment['body'],'Please select a valid record.'),'Employee form avoids generic record error');
+    expect(str_contains($missingDepartment['body'],'Please select your documents again'),'Validation failure explains file reselection');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_documents WHERE employee_id=?',[$employeeIds['website']])===0,'Invalid form does not save partial documents');
+    file_put_contents($largePdf,"%PDF-1.4\n".str_repeat(' ',3*1024*1024)."\n%%EOF");
+    $admin->request('admin-add-employee.php?id='.$employeeIds['website']);
+    $docResponse=$admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['role_title'=>'Web developer','documents[0]'=>new CURLFile($largePdf,'application/pdf','employment.pdf'),'documents[1]'=>new CURLFile($image,'image/png','employee-photo.png')]));
+    $documentId=(int)scalar("SELECT id FROM employee_documents WHERE employee_id=? AND original_name='employment.pdf'",[$employeeIds['website']]);
+    $documentPaths=$pdo->prepare('SELECT file_path FROM employee_documents WHERE employee_id=?'); $documentPaths->execute([$employeeIds['website']]);
+    foreach ($documentPaths->fetchAll(PDO::FETCH_COLUMN) as $documentPath) $temporary[]=dirname(__DIR__).'/'.$documentPath;
+    expect($docResponse['status']===303 && $documentId>0,'Employee PDF larger than old 2 MB limit uploads');
+    expect(scalar('SELECT role_title FROM employee_profiles WHERE user_id=?',[$employeeIds['website']])==='Web developer','Custom job title saved');
+    expect($manager->request('download-employee-document.php?id='.$documentId)['body']===file_get_contents($largePdf),'Manager downloads original private document');
+    expect($website->request('download-employee-document.php?id='.$documentId)['status']===403,'Employees cannot download HR documents');
+    expect(str_contains($admin->request('admin-add-employee.php?id='.$employeeIds['website'])['body'],'employment.pdf'),'Uploaded document remains visible on employee edit');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_documents WHERE employee_id=?',[$employeeIds['website']])===2,'Multiple PDF and image documents uploaded together');
+    expect(str_contains($docResponse['headers']['location'],'#saved-documents'),'Successful upload opens the saved documents list');
+    file_put_contents($largePdf,"%PDF-1.4\n".str_repeat(' ',21*1024*1024)."\n%%EOF");
+    expect(str_contains($admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['documents[0]'=>new CURLFile($largePdf,'application/pdf','too-large.pdf')]))['body'],'20 MB'),'Document above 20 MB rejected clearly');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_documents WHERE employee_id=?',[$employeeIds['website']])===2,'Rejected upload does not create document row');
+    $gif=tempnam(sys_get_temp_dir(),'bhavi_gif_'); $temporary[]=$gif;
+    file_put_contents($gif,base64_decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'));
+    $svg=tempnam(sys_get_temp_dir(),'bhavi_svg_'); $temporary[]=$svg;
+    file_put_contents($svg,'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="blue"/></svg>');
+    $admin->request('admin-add-employee.php');
+    $newEmployee=$admin->post('admin-add-employee.php',array_merge($employeeEdit,['employee_name'=>'Upload Test','username'=>'upload.test','email'=>'upload@example.test','temporary_password'=>$password,'documents[0]'=>new CURLFile($gif,'image/gif','photo.gif'),'documents[1]'=>new CURLFile($svg,'image/svg+xml','photo.svg')]));
+    $uploadEmployee=(int)scalar("SELECT id FROM users WHERE username='upload.test'");
+    $uploadedDocuments=$pdo->prepare('SELECT id,file_path,mime_type FROM employee_documents WHERE employee_id=?'); $uploadedDocuments->execute([$uploadEmployee]);
+    $uploadedDocuments=$uploadedDocuments->fetchAll();
+    foreach ($uploadedDocuments as $document) $temporary[]=dirname(__DIR__).'/'.$document['file_path'];
+    expect($newEmployee['status']===303 && count($uploadedDocuments)===2,'New employee creation uploads GIF and SVG images');
+    foreach ($uploadedDocuments as $document) {
+        $download=$admin->request('download-employee-document.php?id='.$document['id']);
+        expect($download['body']===file_get_contents($document['mime_type']==='image/svg+xml'?$svg:$gif),'Image document download preserves original bytes');
+        if ($document['mime_type']==='image/svg+xml') expect(str_contains($download['headers']['content-disposition'],'attachment') && $download['headers']['content-type']==='application/octet-stream','SVG downloaded as a private attachment');
+    }
+    $admin->request('admin-employees.php');
+    expect($admin->post('admin-employees.php',['action'=>'delete_employee','id'=>$uploadEmployee])['status']===303,'Upload test employee removed from active directory');
     if ($browserPath=getenv('BHAVI_BROWSER')) {
-        $browserProcess=proc_open(['node',__DIR__.'/browser-smoke.cjs',$browserPath,$base,$password],[0=>['pipe','r'],1=>STDOUT,2=>STDERR],$browserPipes,dirname(__DIR__));
+        $browserLog=tempnam(sys_get_temp_dir(),'bhavi_browser_'); $temporary[]=$browserLog;
+        $browserProcess=proc_open([getenv('BHAVI_NODE')?:'node',__DIR__.'/browser-smoke.cjs',$browserPath,$base,$password],[0=>['pipe','r'],1=>['file',$browserLog,'a'],2=>['file',$browserLog,'a']],$browserPipes,dirname(__DIR__));
         if (!is_resource($browserProcess)) throw new RuntimeException('Unable to start browser checks.');
         fclose($browserPipes[0]);
-        expect(proc_close($browserProcess)===0,'Interactive browser checks');
+        $browserExit=proc_close($browserProcess); $browserOutput=file_get_contents($browserLog);
+        expect($browserExit===0 && str_contains($browserOutput,'PASS: Browser'),'Interactive browser checks: '.$browserOutput);
+        echo $browserOutput;
     }
     foreach ($routes as $route) if (!in_array($route,['manager-review-work.php','download-asset.php'],true) && !str_contains($route,'employee-dashboard') && !in_array($route,['apply-leaves.php','check-leave.php','admin-dashboard.php'],true)) expect($manager->request($route)['status']===200,'Manager page '.$route);
     $manager->request('manager-dailywork.php');
@@ -259,7 +335,7 @@ try {
     expect($website->post('logout.php',[])['headers']['location']==='login.php','Logout works');
     expect($website->request($dashboards['website'])['headers']['location']==='login.php','Protected route after logout');
     $website->login('website.test',$newPassword,$dashboards['website']);
-    echo "PASS: $checks integration checks (authentication, roles, departments, CRUD, assignments, submissions, reports, CSV, reviews, leaves and logout).\n";
+    echo "PASS: $checks integration checks (authentication, roles, departments, CRUD, assignments, submissions, reports, Excel, documents, department changes, notifications, reviews, leaves and logout).\n";
 } catch (Throwable $e) {
     fwrite(STDERR,'FAIL: '.$e->getMessage()."\n");
     if (isset($log) && is_file($log)) fwrite(STDERR,substr(file_get_contents($log),-3500));

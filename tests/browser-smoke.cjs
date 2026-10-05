@@ -15,7 +15,8 @@ const pending = new Map();
 async function command(method, params = {}) {
   const id = ++messageId;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('Browser command timed out: ' + method)); }, 15000);
+    pending.set(id, { resolve: value => { clearTimeout(timer); resolve(value); }, reject: error => { clearTimeout(timer); reject(error); } });
     socket.send(JSON.stringify({ id, method, params }));
   });
 }
@@ -63,6 +64,10 @@ async function screenshot(filename, width, height) {
       const request = pending.get(message.id); pending.delete(message.id);
       message.error ? request.reject(new Error(message.error.message)) : request.resolve(message.result);
     });
+    socket.addEventListener('close', () => {
+      for (const request of pending.values()) request.reject(new Error('Browser disconnected before checks completed.'));
+      pending.clear();
+    });
     await command('Page.enable');
     await login('manager.test', 'manager-dashboard.php');
     await screenshot('manager-dashboard.png', 1440, 1000);
@@ -84,7 +89,15 @@ async function screenshot(filename, width, height) {
     await login('website.test', 'website-employee-dashboard.php');
     await screenshot('employee-dashboard.png', 1440, 1100);
     assert.equal(await evaluate("document.querySelector('.role-badge').textContent"), 'Employee');
+    await navigate('employee-assigned-work.php');
     assert.equal(await evaluate("document.querySelectorAll('#assigned-work input[type=radio]').length >= 2"), true);
+    await navigate('employee-daily-work.php');
+    assert.equal(await evaluate("document.querySelector('#client_id').required"), false);
+    assert.equal(await evaluate("document.querySelector('[name=website_new_count]').required"), false);
+    assert.equal(await evaluate("Boolean(document.querySelector('#assigned-work'))"), false);
+    await screenshot('employee-daily-work.png', 1440, 1000);
+    await navigate('my-leave-requests.php');
+    assert.equal(await evaluate("document.body.textContent.includes('Please complete the handover <today>')"), true);
     await screenshot('employee-mobile.png', 390, 844);
     await evaluate("document.querySelector('.menu-toggle').click(); true");
     assert.equal(await evaluate("document.querySelector('.portal-sidebar').classList.contains('open')"), true);
