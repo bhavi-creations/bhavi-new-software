@@ -67,11 +67,6 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (client_id) REFERENCES clients(id),
             FOREIGN KEY (assigned_by) REFERENCES users(id)
         ) ENGINE=InnoDB");
-        $addColumn('notifications', 'assignment_id', 'BIGINT UNSIGNED NULL');
-        $assignmentNotificationKey = $pdo->query("SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='notifications' AND COLUMN_NAME='assignment_id' AND REFERENCED_TABLE_NAME='work_assignments'")->fetchColumn();
-        if (!$assignmentNotificationKey) {
-            $pdo->exec('ALTER TABLE notifications ADD CONSTRAINT fk_notification_assignment FOREIGN KEY (assignment_id) REFERENCES work_assignments(id)');
-        }
         $pdo->exec("CREATE TABLE IF NOT EXISTS login_attempts (
             id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             attempt_key CHAR(64) NOT NULL,

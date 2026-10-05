@@ -285,7 +285,6 @@ CREATE TABLE notifications (
   notification_type ENUM('work_submitted','leave_applied','leave_decision','holiday','requirement','general') NOT NULL,
   title VARCHAR(200) NOT NULL,
   message TEXT NOT NULL,
-  assignment_id BIGINT UNSIGNED NULL,
   submission_id BIGINT UNSIGNED NULL,
   leave_request_id BIGINT UNSIGNED NULL,
   holiday_id BIGINT UNSIGNED NULL,

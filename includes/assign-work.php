@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             query('INSERT INTO work_assignments (employee_id,department_id,client_id,title,description,work_date,assigned_by) VALUES (?,?,?,?,?,?,?)',[$employee,$department,$client,$title,$description,$date,$user['id']]);
             $assignmentId=(int)db()->lastInsertId();
         }
-        query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,assignment_id) VALUES (?,?,'general',?,?,?)",[$employee,$user['id'],'Work assigned: '.$title,$date.' · '.$description,$assignmentId]);
+        query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",[$employee,$user['id'],'Work assigned: '.$title,$date.' · '.$description]);
         db()->commit(); flash('Work assigned. It is visible in the employee dashboard.'); redirect('manager-assign-work.php');
     } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error=mutation_error($e); }
 }

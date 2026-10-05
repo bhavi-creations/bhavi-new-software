@@ -147,11 +147,9 @@ try {
     expect((int)scalar('SELECT COUNT(*) FROM work_assignments')===0,'Invalid assignment never saved');
     expect($manager->post('manager-assign-work.php',$assignmentData)['status']===303,'Manager assigns work');
     $assignmentId=(int)scalar('SELECT id FROM work_assignments LIMIT 1');
-    expect((int)scalar('SELECT assignment_id FROM notifications WHERE recipient_id=? ORDER BY id DESC LIMIT 1',[$employeeIds['website']])===$assignmentId,'Assignment notification links to its assignment');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'],'Build home page'),'Assignment visible to its employee');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'],'assignment_date='.$assignmentDate),'Future assignment appears in the date list');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'Responsive page with contact form'),'Selecting an assignment date shows its full work brief');
-    expect(str_contains($browsers['website']->request('manager-notification.php')['body'],'employee-assigned-work.php?assignment_date='.$assignmentDate),'Assignment notification opens the assigned work date');
     expect(!str_contains($browsers['seo']->request('employee-assigned-work.php')['body'],'Build home page'),'Assignment hidden from another employee');
     expect($browsers['seo']->post($dashboards['seo'],['action'=>'update_assignment','assignment_id'=>$assignmentId,'task_status'=>'completed','remark'=>'Attack'])['status']===403,'Assignment ownership enforced');
     $website=$browsers['website']; $website->request('employee-assigned-work.php?assignment_date='.$assignmentDate);
@@ -259,7 +257,9 @@ try {
     expect(!str_contains($seo->request('manager-notification.php')['body'],'Please complete the handover'),'Leave message private to recipient');
     $manager->request('manager-notification.php');
     expect($manager->post('manager-notification.php',['action'=>'send_notification','department_id'=>$websiteDepartment,'employee_id'=>$employeeIds['website'],'title'=>'Project update','message'=>'Please review the brief'])['status']===303,'Manager sends employee notification');
-    expect(str_contains($website->request('manager-notification.php')['body'],'Please review the brief'),'Employee sees sent notification');
+    $notificationPage=$website->request('manager-notification.php')['body'];
+    expect(str_contains($notificationPage,'Please review the brief') && !str_contains($notificationPage,'notification-link'),'Notifications remain in the regular, non-clickable list');
+    expect(str_contains($notificationPage,'href="manager-notification.php"'),'Notifications menu opens the notification page');
     $website->request('employee-daily-work.php');
     expect($website->post('employee-daily-work.php',['action'=>'save_entry','client_id'=>'','task_title'=>'Internal planning without client','task_status'=>'completed','remark'=>'Team planning','website_new_count'=>'','website_changes_count'=>'','submit_mode'=>'submitted'])['status']===303,'Daily work saves with blank optional client and metrics');
     expect(str_contains($website->request('employee-work-history.php')['body'],'Internal planning without client'),'Employee sees submitted internal work');
