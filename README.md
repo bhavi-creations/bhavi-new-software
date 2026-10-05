@@ -21,6 +21,9 @@ The installer preserves existing records, applies the additional account, assign
 
 ## Workflows
 
+- Managers and administrators use **Employee payslips** to select a department and employee and upload a PDF (up to 2 MB) for a salary month. Employees open **My payslips** from their dashboard or sidebar. Each employee can list/download only their own slips, including when coworkers share the same department. Management can access all slips. PDFs are stored privately in the database with one slip per employee/month; run `php database/install.php` when upgrading to create this table.
+- Employees can open **Update daily work** directly from their dashboard or sidebar, choose a work date and client, describe their work, and save and submit to their manager. The leave calendar shows monthly request totals, pending/approved/rejected counts, application dates and leave dates; cancelled requests are excluded from these counts.
+
 - Login opens the administrator, manager or employee's department dashboard. Direct page access checks the current role and account status. Names and roles appear in the top-right bar; Sign out closes the session.
 - Employee, client and holiday records are shared across roles. Administrators create employee and manager accounts. Administrators and managers can edit/delete employee records, clients and holidays. Employees have read-only shared directories. Eye buttons open details dialogs. Passwords and hashes never appear in those dialogs.
 - Managers assign a client task by department, employee and date. Employees see their assigned tasks, choose Pending or Completed, enter remarks and department work quantities, and submit the update. Pending older tasks remain available. Employees can also add daily work rows or save a draft before submitting the day.

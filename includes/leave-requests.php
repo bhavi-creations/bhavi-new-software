@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/layout.php';
-$user=require_roles(['admin','manager']); $error=null;
+$user=require_roles(['manager']); $error=null;
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     check_csrf();
     try {

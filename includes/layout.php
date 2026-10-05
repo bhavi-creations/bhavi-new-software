@@ -16,14 +16,23 @@ function page_start(string $title, string $active = ''): void
     $user = require_roles();
     $dashboard = dashboard_path($user);
     $nav = [$dashboard => 'Dashboard', 'admin-employees.php' => 'Employees', 'add-client.php' => 'Clients'];
-    if ($user['role'] === 'admin') { $nav['admin-add-employee.php'] = 'Add employee / manager'; }
+    if ($user['role'] === 'admin') { $nav['admin-add-employee.php'] = 'Add employee'; }
     if (is_staff()) {
-        $nav += ['manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-leave-requist.php' => 'Leave requests'];
+        $nav += ['manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-assigned-status.php' => 'Assigned work status'];
     } else {
-        $nav += ['employee-brands-assets.php' => 'Brand assets', 'client-reuirement.php' => 'Client requirements', 'apply-leaves.php' => 'Apply leave', 'check-leave.php' => 'My leave calendar'];
+        $nav += ['employee-brands-assets.php' => 'Brand assets', 'client-reuirement.php' => 'Client requirements', 'apply-leaves.php' => 'Apply leave', 'my-leave-requests.php' => 'My leave requests', 'check-leave.php' => 'My leave calendar'];
     }
+    if (!is_staff()) {
+        $nav['employee-daily-work.php'] = 'Update daily work';
+        $nav['employee-assigned-work.php'] = 'My assigned work';
+    }
+    if ($user['role']==='admin') $nav['departments.php']='Departments';
+    if ($user['role']==='manager') $nav['manager-leave-requist.php']='Leave requests';
+    if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
+    $nav['payslips.php'] = is_staff() ? 'Employee payslips' : 'My payslips';
     $nav['admin-holidays.php'] = 'Holidays';
-    $nav['manager-notification.php'] = 'Notifications';
+    $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL',[$user['id']]);
+    $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
     $nav['change-password.php'] = 'Change password';
     ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= h($title) ?> | Bhavi</title><link rel="stylesheet" href="assets/css/portal.css"></head>

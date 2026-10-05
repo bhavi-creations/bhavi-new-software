@@ -91,7 +91,7 @@ function dashboard_path(array $user): string
 function departments(): array { return rows('SELECT * FROM departments WHERE is_active=1 ORDER BY name'); }
 function employees(): array
 {
-    return rows("SELECT u.id,u.full_name,u.email,u.username,u.account_status,ep.designation,ep.joining_date,ep.department_id,d.name AS department_name,d.code AS department_code FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.deleted_at IS NULL ORDER BY u.full_name");
+    return rows("SELECT u.id,u.full_name,u.email,u.username,u.account_status,u.created_at,ep.role_title,ep.designation,ep.joining_date,ep.department_id,d.name AS department_name,d.code AS department_code FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.deleted_at IS NULL ORDER BY u.full_name");
 }
 function clients(): array { return rows('SELECT * FROM clients WHERE deleted_at IS NULL AND is_active=1 ORDER BY client_name'); }
 function text_input(string $name, int $max = 255, bool $required = true): string
@@ -130,7 +130,7 @@ function options(array $records, string $label, $selected = null, string $key = 
 }
 function notify_staff(string $type, string $title, string $message, ?int $submission = null, ?int $leave = null): void
 {
-    foreach (rows("SELECT id FROM users WHERE role IN ('manager','admin') AND account_status='active' AND deleted_at IS NULL") as $recipient) {
+    foreach (rows("SELECT id FROM users WHERE role IN ('manager','admin') AND (? <> 'leave_applied' OR role='manager') AND account_status='active' AND deleted_at IS NULL",[$type]) as $recipient) {
         query('INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,submission_id,leave_request_id) VALUES (?,?,?,?,?,?,?)', [$recipient['id'], current_user()['id'], $type, $title, $message, $submission, $leave]);
     }
 }

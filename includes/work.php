@@ -16,6 +16,7 @@ function work_metrics(string $department): array
     $metrics=[];
     foreach (metric_definitions($department) as $name=>[$label,$type]) {
         $value=$_POST[$name]??($type==='text'?'':'0');
+        if ($value==='' && $type!=='text') $value='0';
         if (!is_string($value)) throw new InvalidArgumentException('Enter a valid '.$label.'.');
         if ($type==='text') {
             if (mb_strlen($value)>($name==='social_platform'?100:50)) throw new InvalidArgumentException($label.' is too long.');
@@ -30,7 +31,7 @@ function work_metrics(string $department): array
 }
 function render_metrics(string $department, array $values=[], string $suffix=''): void
 {
-    ?><div class="metric-fields"><?php foreach (metric_definitions($department) as $name=>[$label,$type]): ?><div class="field"><label for="<?= h($name.$suffix) ?>"><?= h($label) ?></label><input id="<?= h($name.$suffix) ?>" name="<?= h($name) ?>" type="<?= $type==='text'?'text':'number' ?>" value="<?= h($values[$name]??($type==='text'?'':'0')) ?>" <?= $type==='text'?'maxlength="'.($name==='social_platform'?100:50).'"':'min="0" max="999999" step="'.($type==='decimal'?'0.01':'1').'" required' ?>></div><?php endforeach; ?></div><?php
+    ?><div class="metric-fields"><?php foreach (metric_definitions($department) as $name=>[$label,$type]): ?><div class="field"><label for="<?= h($name.$suffix) ?>"><?= h($label) ?></label><input id="<?= h($name.$suffix) ?>" name="<?= h($name) ?>" type="<?= $type==='text'?'text':'number' ?>" value="<?= h($values[$name]??($type==='text'?'':'0')) ?>" <?= $type==='text'?'maxlength="'.($name==='social_platform'?100:50).'"':'min="0" max="999999" step="'.($type==='decimal'?'0.01':'1').'"' ?>></div><?php endforeach; ?></div><?php
 }
 function work_sheet(array $employee,string $date): array
 {

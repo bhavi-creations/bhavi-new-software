@@ -87,7 +87,33 @@ function portal_install(PDO $pdo, string $database): void
         $pdo->exec("CREATE TABLE IF NOT EXISTS portal_schema_versions (
             version INT PRIMARY KEY, installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB");
-        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (1)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS payslips (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            employee_id BIGINT UNSIGNED NOT NULL,
+            pay_month DATE NOT NULL,
+            file_content MEDIUMBLOB NOT NULL,
+            uploaded_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_payslip_employee_month (employee_id,pay_month),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id),
+            FOREIGN KEY (uploaded_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $addColumn('employee_profiles', 'role_title', "VARCHAR(150) NOT NULL DEFAULT 'Employee'");
+        $pdo->exec('ALTER TABLE daily_work_entries MODIFY client_id BIGINT UNSIGNED NULL');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS employee_documents (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            employee_id BIGINT UNSIGNED NOT NULL,
+            original_name VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            file_content MEDIUMBLOB NOT NULL,
+            uploaded_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_employee_documents (employee_id),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id),
+            FOREIGN KEY (uploaded_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec('CREATE OR REPLACE VIEW v_daily_work_export AS SELECT ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY e.row_order,e.id) AS s_no,s.work_date,s.employee_id,u.full_name AS employee_name,d.name AS department_name,c.client_name,s.submission_status,s.submitted_at,s.review_status,s.manager_remark,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id LEFT JOIN clients c ON c.id=e.client_id');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (1),(2),(3)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);
