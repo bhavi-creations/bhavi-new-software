@@ -36,7 +36,7 @@ function page_start(string $title, string $active = ''): void
     $nav['change-password.php'] = 'Change password';
     ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= h($title) ?> | Bhavi</title><link rel="stylesheet" href="assets/css/portal.css"></head>
-<body><div class="portal-layout">
+<body data-role="<?= h($user['role']) ?>"><div class="portal-layout">
 <aside class="portal-sidebar" id="portalSidebar"><a class="portal-brand" href="<?= h($dashboard) ?>"><span class="brand-icon">B</span><span><strong>bhavi</strong><small>TEAM WORKSPACE</small></span></a>
 <nav aria-label="Main navigation"><?php foreach ($nav as $href => $label): ?><a href="<?= h($href) ?>" class="<?= $active === $href ? 'active' : '' ?>" <?= $active === $href ? 'aria-current="page"' : '' ?>><?= h($label) ?></a><?php endforeach; ?></nav>
 <form class="signout" method="post" action="logout.php"><?= csrf_field() ?><button type="submit">Sign out</button></form></aside>
@@ -58,7 +58,8 @@ function detail_dialog(string $id, string $title, array $fields): void
 }
 function delete_button(int $id, string $action, string $message): void
 {
-    ?><form method="post" class="inline-form" data-confirm="<?= h($message) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="<?= h($action) ?>"><input type="hidden" name="id" value="<?= $id ?>"><button type="submit" class="icon-button danger" title="Delete" aria-label="Delete"><?= icon('delete') ?></button></form><?php
+    $class=$action==='delete_assignment'?'inline-form assignment-delete':'inline-form';
+    ?><form method="post" class="<?= h($class) ?>" data-confirm="<?= h($message) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="<?= h($action) ?>"><input type="hidden" name="id" value="<?= $id ?>"><button type="submit" class="icon-button danger" title="Delete" aria-label="Delete"><?= icon('delete') ?></button></form><?php
 }
 function mutation_error(Throwable $e): string
 {

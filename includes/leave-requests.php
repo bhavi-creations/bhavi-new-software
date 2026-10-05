@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 }
 $status=is_string($_GET['status']??null)?$_GET['status']:'';
 $department=(int)($_GET['department']??0);
-$sql='SELECT l.*,u.full_name,d.name AS department_name,t.name AS leave_type,decider.full_name AS decided_by_name FROM leave_requests l JOIN users u ON u.id=l.employee_id JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id JOIN leave_types t ON t.id=l.leave_type_id LEFT JOIN users decider ON decider.id=l.decided_by WHERE 1=1'; $params=[];
+$sql='SELECT l.*,u.full_name,d.name AS department_name,t.name AS leave_type,decider.full_name AS decided_by_name FROM leave_requests l JOIN users u ON u.id=l.employee_id JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id JOIN leave_types t ON t.id=l.leave_type_id LEFT JOIN users decider ON decider.id=l.decided_by WHERE l.status<>\'cancelled\''; $params=[];
 if ($status!=='') { $sql.=' AND l.status=?'; $params[]=$status; }
 if ($department) { $sql.=' AND ep.department_id=?'; $params[]=$department; }
 $requests=rows($sql.' ORDER BY (l.status=\'pending\') DESC,l.applied_at DESC',$params);

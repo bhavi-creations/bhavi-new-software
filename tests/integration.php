@@ -137,24 +137,30 @@ try {
     $admin->request('admin-holidays.php'); $holidayDate=date('Y-m-d',strtotime('+20 days'));
     expect($admin->post('admin-holidays.php',['action'=>'save_holiday','holiday_name'=>'Team Holiday <b>','holiday_date'=>$holidayDate,'description'=>'Company holiday'])['status']===303,'Holiday creation');
     $holidayId=(int)scalar('SELECT id FROM holidays WHERE holiday_date=?',[$holidayDate]);
-    foreach ([$manager,...array_values($browsers)] as $browser) { $body=$browser->request('admin-holidays.php')['body']; expect(str_contains($body,'Team Holiday &lt;b&gt;') && !str_contains($body,'Team Holiday <b>'),'Shared holiday and output escaping'); }
+    foreach ([$manager,...array_values($browsers)] as $browser) { $body=$browser->request('admin-holidays.php')['body']; expect(str_contains($body,'Team Holiday &lt;b&gt;') && !str_contains($body,'Team Holiday <b>'),'Shared holiday and output escaping'); expect(str_contains($body,'Company holiday'),'Holiday description visible to every role'); }
     $manager->request('admin-holidays.php?edit='.$holidayId);
     expect($manager->post('admin-holidays.php?edit='.$holidayId,['action'=>'save_holiday','holiday_name'=>'Updated Holiday','holiday_date'=>$holidayDate,'description'=>'Edited by manager'])['status']===303,'Manager holiday editing');
     $manager->request('manager-assign-work.php'); $websiteDepartment=(int)scalar("SELECT id FROM departments WHERE code='website'");
-    $assignmentData=['department_id'=>$websiteDepartment,'employee_id'=>$employeeIds['website'],'client_id'=>$clientId,'work_date'=>date('Y-m-d'),'title'=>'Build home page','description'=>'Responsive page with contact form'];
+    $assignmentDate=date('Y-m-d',strtotime('+1 day'));
+    $assignmentData=['department_id'=>$websiteDepartment,'employee_id'=>$employeeIds['website'],'client_id'=>$clientId,'work_date'=>$assignmentDate,'title'=>'Build home page','description'=>'Responsive page with contact form'];
     expect($manager->post('manager-assign-work.php',array_merge($assignmentData,['employee_id'=>$employeeIds['seo']]))['status']===200,'Employee department mismatch rejected');
     expect((int)scalar('SELECT COUNT(*) FROM work_assignments')===0,'Invalid assignment never saved');
     expect($manager->post('manager-assign-work.php',$assignmentData)['status']===303,'Manager assigns work');
     $assignmentId=(int)scalar('SELECT id FROM work_assignments LIMIT 1');
+    expect((int)scalar('SELECT assignment_id FROM notifications WHERE recipient_id=? ORDER BY id DESC LIMIT 1',[$employeeIds['website']])===$assignmentId,'Assignment notification links to its assignment');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'],'Build home page'),'Assignment visible to its employee');
+    expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'],'assignment_date='.$assignmentDate),'Future assignment appears in the date list');
+    expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'Responsive page with contact form'),'Selecting an assignment date shows its full work brief');
+    expect(str_contains($browsers['website']->request('manager-notification.php')['body'],'employee-assigned-work.php?assignment_date='.$assignmentDate),'Assignment notification opens the assigned work date');
     expect(!str_contains($browsers['seo']->request('employee-assigned-work.php')['body'],'Build home page'),'Assignment hidden from another employee');
     expect($browsers['seo']->post($dashboards['seo'],['action'=>'update_assignment','assignment_id'=>$assignmentId,'task_status'=>'completed','remark'=>'Attack'])['status']===403,'Assignment ownership enforced');
-    $website=$browsers['website']; $website->request($dashboards['website']);
+    $website=$browsers['website']; $website->request('employee-assigned-work.php?assignment_date='.$assignmentDate);
     $update=['action'=>'update_assignment','assignment_id'=>$assignmentId,'task_status'=>'completed','remark'=>'=SUM(1,2)','website_new_count'=>'2','website_changes_count'=>'1'];
-    expect($website->post($dashboards['website'],$update)['status']===303,'Employee task update');
-    $website->request($dashboards['website']);
-    expect($website->post($dashboards['website'],$update)['status']===303,'Repeated update');
+    expect($website->post('employee-assigned-work.php?assignment_date='.$assignmentDate,$update)['status']===303,'Employee updates future assignment in today report');
+    $website->request('employee-assigned-work.php?assignment_date='.$assignmentDate);
+    expect($website->post('employee-assigned-work.php?assignment_date='.$assignmentDate,$update)['status']===303,'Repeated update');
     expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries WHERE assignment_id=?',[$assignmentId])===1,'Repeated task update does not duplicate report rows');
+    expect(scalar('SELECT work_date FROM daily_work_submissions WHERE id=(SELECT submission_id FROM daily_work_entries WHERE assignment_id=? LIMIT 1)',[$assignmentId])===date('Y-m-d'),'Future assignment completion saves under today date');
     expect(scalar('SELECT status FROM work_assignments WHERE id=?',[$assignmentId])==='completed','Task status persists');
     foreach ($dashboards as $code=>$dashboard) {
         $browser=$browsers[$code]; $browser->request($dashboard);
@@ -227,6 +233,7 @@ try {
     $seo->request('apply-leaves.php');
     expect($seo->post('apply-leaves.php',['action'=>'cancel_leave','id'=>$cancelId])['status']===303,'Employee can cancel own pending request');
     expect(scalar('SELECT status FROM leave_requests WHERE id=?',[$cancelId])==='cancelled','Cancelled leave persists');
+    expect(!str_contains($manager->request('manager-leave-requist.php')['body'],'Request to cancel'),'Cancelled employee leave is hidden from manager');
     $website->request('employee-brands-assets.php');
     expect(str_contains($website->request('client-reuirement.php')['body'],'Responsive page with contact form'),'Client requirements show assigned brief');
     expect($admin->request('manager-leave-requist.php')['status']===403,'Admin cannot access leave requests');
@@ -316,8 +323,12 @@ try {
     $historicSheet=(int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?',[$employeeIds['website'],$yesterday]);
     expect($manager->post('manager-dailywork.php',['action'=>'delete_submission','id'=>$historicSheet])['status']===303,'Manager deletes work report');
     expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries WHERE submission_id=?',[$historicSheet])===0,'Deleted report rows removed');
+    expect($manager->request('manager-assign-work.php?edit='.$assignmentId)['status']===403,'Manager cannot edit assignments');
     $manager->request('manager-assign-work.php');
-    expect($manager->post('manager-assign-work.php',['action'=>'delete_assignment','id'=>$assignmentId])['status']===303,'Assignment deletion');
+    expect($manager->post('manager-assign-work.php',['action'=>'delete_assignment','id'=>$assignmentId])['status']===403,'Manager cannot delete assignments');
+    expect((int)scalar('SELECT COUNT(*) FROM work_assignments WHERE id=? AND deleted_at IS NULL',[$assignmentId])===1,'Unauthorized assignment deletion is blocked');
+    $admin->request('manager-assign-work.php');
+    expect($admin->post('manager-assign-work.php',['action'=>'delete_assignment','id'=>$assignmentId])['status']===303,'Admin can delete assignments');
     expect(!str_contains($website->request($dashboards['website'])['body'],'Responsive page with contact form'),'Deleted task is no longer assigned');
     $admin->request('admin-holidays.php'); expect($admin->post('admin-holidays.php',['action'=>'delete_holiday','id'=>$holidayId])['status']===303,'Holiday delete');
     expect((int)scalar('SELECT is_published FROM holidays WHERE id=?',[$holidayId])===0,'Deleted holiday hidden');

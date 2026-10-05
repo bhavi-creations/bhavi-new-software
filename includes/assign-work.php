@@ -5,10 +5,12 @@ $assignmentView=$assignmentView??'new';
 $editId=(int)($_GET['edit']??0);
 $record=$editId?one('SELECT * FROM work_assignments WHERE id=? AND deleted_at IS NULL',[$editId]):null;
 if ($editId && !$record) fail(404,'Assignment not found.');
+if ($editId && $user['role']!=='admin') fail(403,'Only administrators can edit assignments.');
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     check_csrf();
     try {
         if (($_POST['action']??'')==='delete_assignment') {
+            if ($user['role']!=='admin') fail(403,'Only administrators can delete assignments.');
             query('UPDATE work_assignments SET deleted_at=NOW() WHERE id=?',[positive_id($_POST['id']??null)]);
             flash('Assignment deleted. Existing work reports are retained.'); redirect('manager-assigned-status.php');
         }
@@ -17,14 +19,16 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         if (!one("SELECT u.id FROM users u JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND ep.department_id=? AND u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL",[$employee,$department])) throw new InvalidArgumentException('Choose an active employee from the selected department.');
         if (!one('SELECT id FROM clients WHERE id=? AND deleted_at IS NULL AND is_active=1',[$client])) throw new InvalidArgumentException('Choose an active client.');
         db()->beginTransaction();
+        $assignmentId=$record?(int)$record['id']:null;
         if ($record) {
             query('SELECT id FROM work_assignments WHERE id=? FOR UPDATE',[$editId]);
             if (count_value('SELECT COUNT(*) FROM daily_work_entries WHERE assignment_id=?',[$editId]) && ($employee!==(int)$record['employee_id'] || $client!==(int)$record['client_id'] || $date!==$record['work_date'] || $department!==(int)$record['department_id'])) throw new InvalidArgumentException('This assignment has work reports. You can edit its title and brief; create a new assignment to change its employee, client or date.');
             query('UPDATE work_assignments SET employee_id=?,department_id=?,client_id=?,title=?,description=?,work_date=? WHERE id=?',[$employee,$department,$client,$title,$description,$date,$editId]);
         } else {
             query('INSERT INTO work_assignments (employee_id,department_id,client_id,title,description,work_date,assigned_by) VALUES (?,?,?,?,?,?,?)',[$employee,$department,$client,$title,$description,$date,$user['id']]);
+            $assignmentId=(int)db()->lastInsertId();
         }
-        query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",[$employee,$user['id'],'Work assigned: '.$title,$date.' · '.$description]);
+        query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,assignment_id) VALUES (?,?,'general',?,?,?)",[$employee,$user['id'],'Work assigned: '.$title,$date.' · '.$description,$assignmentId]);
         db()->commit(); flash('Work assigned. It is visible in the employee dashboard.'); redirect('manager-assign-work.php');
     } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error=mutation_error($e); }
 }

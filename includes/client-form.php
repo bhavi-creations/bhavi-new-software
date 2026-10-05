@@ -19,10 +19,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $extension=['image/png'=>'png','image/jpeg'=>'jpg','image/webp'=>'webp'][$mime] ?? null;
             if (!$extension || !getimagesize($file['tmp_name'])) { throw new InvalidArgumentException('Choose a valid PNG, JPG or WebP image.'); }
             $directory=dirname(__DIR__).'/uploads/logos';
-            if (!is_dir($directory) && !mkdir($directory,0755,true)) { throw new RuntimeException('Unable to create logo folder.'); }
+            if (!is_dir($directory) && !mkdir($directory,0755,true) && !is_dir($directory)) { throw new InvalidArgumentException('Unable to create uploads/logos. Check the folder permissions.'); }
+            if (!is_writable($directory)) { throw new InvalidArgumentException('uploads/logos is not writable by PHP. Check the folder permissions.'); }
             $logo='uploads/logos/'.bin2hex(random_bytes(16)).'.'.$extension;
             $savedFile=dirname(__DIR__).'/'.$logo;
-            if (!move_uploaded_file($file['tmp_name'],$savedFile)) { throw new RuntimeException('Unable to save logo.'); }
+            if (!move_uploaded_file($file['tmp_name'],$savedFile)) { throw new InvalidArgumentException('The logo could not be stored. Check uploads/logos permissions and try a PNG, JPG or WebP under 5 MB.'); }
         }
         if ($id) query('UPDATE clients SET client_name=?,website_url=?,logo_path=? WHERE id=?',[$name,$website,$logo,$id]);
         else query('INSERT INTO clients (client_name,website_url,logo_path,created_by) VALUES (?,?,?,?)',[$name,$website,$logo,$user['id']]);

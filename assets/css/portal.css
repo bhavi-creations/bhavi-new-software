@@ -413,6 +413,25 @@ td.wrap {
     margin: 0
 }
 
+.notification-link {
+    display: block;
+    color: inherit
+}
+
+.notification-link:hover h2 {
+    color: var(--blue)
+}
+
+body[data-role="manager"] a[href^="manager-assign-work.php?edit="],
+body[data-role="manager"] .assignment-delete {
+    display: none
+}
+
+body[data-role="manager"] a[href^="manager-assign-work.php?edit="],
+body[data-role="manager"] .assignment-delete {
+    display: none
+}
+
 .icon-button {
     display: inline-flex;
     align-items: center;
