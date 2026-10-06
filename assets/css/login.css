@@ -1,0 +1,58 @@
+/* Only the centered sign-in page uses this stylesheet. */
+.login-page {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at 15% 15%, #dfe6ff 0, transparent 48%),
+                radial-gradient(ellipse at 90% 85%, #d9eee9 0, transparent 45%), #f4f6fc;
+}
+.login-page .login-shell {
+    min-height: 100vh;
+    min-height: 100svh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    place-items: center;
+    padding: 32px 20px;
+}
+.login-page .login-form-panel {
+    display: block;
+    width: 100%;
+    max-width: 440px;
+    padding: 0;
+    background: transparent;
+}
+.login-page .login-card {
+    max-width: none;
+    padding: 38px 36px 30px;
+    border: 1px solid #e0e5f2;
+    border-top: 4px solid #5365cc;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 22px 65px #233a7014, 0 4px 14px #233a7008;
+}
+.login-page .login-identity {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 22px;
+}
+.login-page .brand-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: linear-gradient(140deg, #6676df, #4353b8);
+    box-shadow: 0 6px 16px #4555c724;
+}
+.login-page .login-card h1 { text-align: center; font-size: 28px; }
+.login-page .login-card > .muted { text-align: center; font-size: 13px; margin-bottom: 28px; }
+.login-page .field input { min-height: 46px; }
+.login-page .password-wrapper button { top: 13px; }
+.login-page .login-card .primary { min-height: 46px; margin-top: 4px; }
+.login-page .login-card > .help {
+    text-align: center;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid #edf0f6;
+    font-size: 12px;
+}
+@media (max-width: 500px) {
+    .login-page .login-shell { padding: 24px 16px; }
+    .login-page .login-card { padding: 30px 24px 24px; border-radius: 18px; }
+}
