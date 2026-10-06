@@ -854,3 +854,6 @@ body[data-role="manager"] .assignment-delete {
         grid-template-columns: 1fr 1fr
     }
 }
+.notification-day > summary { cursor: pointer; padding: 8px 0; }
+.notification-day > summary .badge { margin-left: 12px; }
+.notification-day-messages { margin-top: 16px; }

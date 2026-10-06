@@ -77,6 +77,9 @@ async function screenshot(filename, width, height) {
     assert.equal(await evaluate("document.querySelector('dialog[open]').textContent.includes('Username')"), true);
     await evaluate("document.querySelector('dialog[open] [data-close-dialog]').click(); true");
     assert.equal(await evaluate("Boolean(document.querySelector('dialog[open]'))"), false);
+    assert.equal(await evaluate('document.querySelectorAll("img[src^=\'employee-photo.php\']").length > 0'), true);
+    await navigate('manager-leave-requist.php');
+    assert.equal(await evaluate('Boolean(document.querySelector("input[value=\'delete_leave\']"))'), true);
     await navigate('manager-dailywork.php');
     await evaluate("document.querySelector('[data-range-preset]').value='week'; document.querySelector('[data-range-preset]').dispatchEvent(new Event('change')); true");
     const dates = await evaluate("[document.querySelector('[name=from_date]').value,document.querySelector('[name=to_date]').value]");
@@ -96,6 +99,12 @@ async function screenshot(filename, width, height) {
     assert.equal(await evaluate("document.querySelector('[name=website_new_count]').required"), false);
     assert.equal(await evaluate("Boolean(document.querySelector('#assigned-work'))"), false);
     await screenshot('employee-daily-work.png', 1440, 1000);
+    await navigate('manager-notification.php');
+    assert.equal(await evaluate("document.querySelectorAll('.notification-day').length >= 2"), true);
+    assert.equal(await evaluate("document.querySelector('.notification-day').open"), false);
+    await evaluate("document.querySelector('.notification-day summary').click(); true");
+    assert.equal(await evaluate("document.querySelector('.notification-day').open"), true);
+    await screenshot('notifications-by-day.png', 1440, 1000);
     await navigate('my-leave-requests.php');
     assert.equal(await evaluate("document.body.textContent.includes('Please complete the handover <today>')"), true);
     await screenshot('employee-mobile.png', 390, 844);

@@ -8,7 +8,8 @@ header('Content-Type: '.($document['mime_type']==='image/svg+xml'?'application/o
 header("Content-Security-Policy: sandbox; default-src 'none'");
 header('Content-Disposition: attachment; filename="'.$filename.'"');
 if ($document['file_path']) {
-    $root=realpath(__DIR__.'/storage/employee-documents');
+    $folder=str_starts_with($document['file_path'],'uploads/photos/')?'uploads/photos':(str_starts_with($document['file_path'],'uploads/pdf/')?'uploads/pdf':'storage/employee-documents');
+    $root=realpath(__DIR__.'/'.$folder);
     $path=realpath(__DIR__.'/'.$document['file_path']);
     if (!$root || !$path || !str_starts_with(strtolower($path),strtolower($root.DIRECTORY_SEPARATOR)) || !is_file($path)) fail(404,'Document file not available.');
     header('Content-Length: '.filesize($path)); readfile($path);

@@ -4,7 +4,7 @@ require_once __DIR__.'/employee-documents.php';
 $user = require_roles(['admin','manager']);
 $id = (int) ($_GET['id'] ?? 0);
 if (!$id && $user['role'] !== 'admin') { fail(403,'Only an administrator can create accounts.'); }
-$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
+$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
 if ($id && (!$record || !in_array($record['role'],['employee'],true))) { fail(403,'You cannot edit this account.'); }
 $error = null;
 $storedDocuments=[];
@@ -19,6 +19,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $role = 'employee';
         $roleTitle=isset($_POST['role_title'])?text_input('role_title',150,false):'Employee';
         $documents=employee_document_uploads();
+        $photo=null;
+        $file=$_FILES['employee_photo']??null;
+        if ($file && $file['error']!==UPLOAD_ERR_NO_FILE) {
+            if ($file['error']!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name']) || filesize($file['tmp_name'])>50*1024*1024) throw new InvalidArgumentException('Choose an employee photo up to 50 MB.');
+            $mime=(new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+            if (!in_array($mime,['image/jpeg','image/png','image/webp','image/gif'],true) || !@getimagesize($file['tmp_name'])) throw new InvalidArgumentException('Choose a valid JPG, PNG, WebP or GIF employee photo.');
+            $photo=['mime'=>$mime,'tmp_path'=>$file['tmp_name']];
+        }
         $status = $_POST['account_status'] ?? '';
         if (!in_array($status,['active','inactive'],true)) { throw new InvalidArgumentException('Choose a valid account status.'); }
         $password = $_POST['temporary_password'] ?? '';
@@ -45,6 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             query('INSERT INTO employee_profiles (user_id,department_id,designation,joining_date,manager_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE department_id=VALUES(department_id),designation=VALUES(designation),joining_date=VALUES(joining_date),manager_id=VALUES(manager_id)',[$id,$department,$designation,$joiningDate,$manager]);
         }
         query('UPDATE employee_profiles SET role_title=? WHERE user_id=?',[$roleTitle?:'Employee',$id]);
+        if ($photo) {
+            $path=store_employee_document($photo); $storedDocuments[]=$path;
+            query('UPDATE users SET avatar_path=? WHERE id=?',[$path,$id]);
+        }
         foreach ($documents as $document) {
             $path=store_employee_document($document); $storedDocuments[]=$path;
             query('INSERT INTO employee_documents (employee_id,original_name,mime_type,file_path,uploaded_by) VALUES (?,?,?,?,?)',[$id,$document['name'],$document['mime'],$path,$user['id']]);
@@ -56,12 +68,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$record) $id=0;
         $error=mutation_error($e);
         if (!empty($_FILES['documents']['name'][0])) $error.=' Please select your documents again before saving.';
+        if (!empty($_FILES['employee_photo']['name'])) $error.=' Please select the employee photo again before saving.';
     }
 }
 $value = static fn(string $key,$fallback='') => $_POST[$key] ?? $record[$key] ?? $fallback;
 page_start($record ? 'Edit '.$record['role'] : 'Add employee','admin-add-employee.php'); error_message($error);
 ?><section class="panel"><form method="post" enctype="multipart/form-data"><?= csrf_field() ?><div class="fields">
 <div class="field"><label for="employee_name">Full name</label><input id="employee_name" name="employee_name" value="<?= h($_POST['employee_name'] ?? $record['full_name'] ?? '') ?>" maxlength="150" required></div>
+<div class="field"><label for="employee_photo">Employee photo</label><input id="employee_photo" name="employee_photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif"><p class="help">JPG, PNG, WebP or GIF, up to 50 MB. Leave blank to keep the saved photo.</p><?php if (!empty($record['avatar_path'])): ?><img class="client-logo" src="employee-photo.php?id=<?= $record['id'] ?>" alt="Employee photo"><?php endif; ?></div>
 <div class="field"><label for="email">Email address</label><input id="email" name="email" type="email" value="<?= h($value('email')) ?>" maxlength="254"></div>
 <div class="field"><label for="role_title">Role / job title</label><input id="role_title" name="role_title" value="<?= h($value('role_title','Employee')) ?>" maxlength="150"><p class="help">Employee account. You can enter a custom job title here.</p></div>
 <div class="field"><label for="department_id">Department</label><select id="department_id" name="department_id" required><option value="">Select department</option><?= options(departments(),'name',$value('department_id')) ?></select></div>
@@ -69,6 +83,6 @@ page_start($record ? 'Edit '.$record['role'] : 'Add employee','admin-add-employe
 <div class="field"><label for="joining_date">Joining date</label><input type="date" id="joining_date" name="joining_date" required value="<?= h($value('joining_date',today())) ?>"></div>
 <div class="field"><label for="username">Username</label><input id="username" name="username" value="<?= h($value('username')) ?>" maxlength="100" pattern="[A-Za-z0-9._\-]{3,100}" autocomplete="off" required></div>
 <div class="field"><label for="temporary_password"><?= $record ? 'New password (leave blank to keep current)' : 'Password' ?></label><input type="password" id="temporary_password" name="temporary_password" minlength="8" maxlength="72" autocomplete="new-password" <?= !$record?'required':'' ?>></div>
-<div class="field full"><label for="documents">Employee documents</label><input id="documents" name="documents[]" type="file" accept="image/*,application/pdf,.jpg,.jpeg,.jfif,.png,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif,.svg,.ico,.pdf" multiple><p class="help">JPG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF, AVIF, SVG and PDF. Up to 20 files per upload. Maximum 20 MB each, 100 MB total including the form. Existing documents stay saved.</p></div>
+<div class="field full"><label for="documents">Employee documents</label><input id="documents" name="documents[]" type="file" accept="image/*,application/pdf,.jpg,.jpeg,.jfif,.png,.gif,.webp,.bmp,.tif,.tiff,.heic,.heif,.avif,.svg,.ico,.pdf" multiple><p class="help">JPG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF, AVIF, SVG and PDF. Up to 20 files per upload. Maximum 50 MB each, 100 MB total including the form. Existing documents stay saved.</p></div>
 <div class="field"><label for="account_status">Account status</label><select id="account_status" name="account_status"><?= options([['id'=>'active','name'=>'Active'],['id'=>'inactive','name'=>'Inactive']],'name',$value('account_status','active')) ?></select></div>
 </div><div class="form-actions"><button class="primary" type="submit"><?= $record?'Save changes':'Create account' ?></button><a class="button secondary" href="admin-employees.php">Cancel</a></div></form></section><?php if ($record): $documents=rows('SELECT id,original_name,created_at FROM employee_documents WHERE employee_id=? ORDER BY id DESC',[$record['id']]); ?><section class="panel" id="saved-documents"><h2>Saved documents (<?= count($documents) ?>)</h2><?php if (!$documents): ?><p class="muted">No documents uploaded.</p><?php endif; foreach ($documents as $document): ?><p><a href="download-employee-document.php?id=<?= $document['id'] ?>"><?= h($document['original_name']) ?></a> <small><?= h($document['created_at']) ?></small></p><?php endforeach; ?></section><?php endif; page_end(); ?>

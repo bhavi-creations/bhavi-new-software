@@ -34,7 +34,7 @@ function employee_document_uploads(): array
     foreach ($files['error'] as $index=>$error) {
         if ($error===UPLOAD_ERR_NO_FILE) continue;
         $path=$files['tmp_name'][$index]??'';
-        if ($error===UPLOAD_ERR_INI_SIZE || $error===UPLOAD_ERR_FORM_SIZE) throw new InvalidArgumentException('This file exceeds the server upload limit. Maximum document size is 20 MB.');
+        if ($error===UPLOAD_ERR_INI_SIZE || $error===UPLOAD_ERR_FORM_SIZE) throw new InvalidArgumentException('This file exceeds the server upload limit. Maximum document size is 50 MB.');
         if ($error!==UPLOAD_ERR_OK || !is_uploaded_file($path)) {
             $message=match($error) {
                 UPLOAD_ERR_PARTIAL=>'The file was only partially uploaded. Choose it again and retry.',
@@ -44,7 +44,7 @@ function employee_document_uploads(): array
             throw new InvalidArgumentException($message);
         }
         $size=filesize($path); $total+=$size;
-        if ($size>20*1024*1024 || $total>100*1024*1024) throw new InvalidArgumentException('Each document must be at most 20 MB and the upload total under 100 MB.');
+        if ($size>50*1024*1024 || $total>100*1024*1024) throw new InvalidArgumentException('Each document must be at most 50 MB and the upload total under 100 MB.');
         $mime=employee_document_mime($path);
         if (!$mime) throw new InvalidArgumentException('Unsupported document: '.basename((string)$files['name'][$index]).'. Choose an image (JPG, PNG, GIF, WebP, BMP, TIFF, HEIC, HEIF, AVIF, SVG) or PDF. Renaming another file to an image does not convert it.');
         $name=basename(str_replace('\\','/',(string)$files['name'][$index]));
@@ -55,10 +55,12 @@ function employee_document_uploads(): array
 }
 function store_employee_document(array $document): string
 {
-    $root=dirname(__DIR__).'/storage/employee-documents';
+    $folder=str_starts_with($document['mime'],'image/')?'uploads/photos':'uploads/pdf';
+    $root=dirname(__DIR__).'/'.$folder;
     if (!is_dir($root) && !mkdir($root,0700,true) && !is_dir($root)) throw new InvalidArgumentException('The server cannot create the document storage folder. Please check storage permissions.');
     if (!is_writable($root)) throw new InvalidArgumentException('The document storage folder is not writable. Please check storage permissions.');
-    $relative='storage/employee-documents/'.bin2hex(random_bytes(24)).'.bin';
+    $extension=['application/pdf'=>'pdf','image/jpeg'=>'jpg','image/png'=>'png','image/gif'=>'gif','image/webp'=>'webp','image/bmp'=>'bmp','image/tiff'=>'tiff','image/heic'=>'heic','image/heif'=>'heif','image/avif'=>'avif','image/svg+xml'=>'svg'][$document['mime']]??'bin';
+    $relative=$folder.'/'.bin2hex(random_bytes(24)).'.'.$extension;
     if (!move_uploaded_file($document['tmp_path'],dirname(__DIR__).'/'.$relative)) throw new InvalidArgumentException('The document could not be saved to storage. Please retry the upload.');
     return $relative;
 }

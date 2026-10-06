@@ -4,10 +4,14 @@ declare(strict_types=1);
 $config = [
     'db_host' => '127.0.0.1',
     'db_port' => '3306',
-    // 'db_name' => 'bhavi_team_portal',
-    'db_name' => 'bhavi_new_software',
-    'db_user' => 'bhavicreations',
-    'db_password' => 'd8Az75YlgmyBnVM',
+    'db_name' => 'bhavi_team_portal',
+
+'db_user' => 'root',
+    'db_password' => '',
+
+    // 'db_name' => 'bhavi_new_software',
+    // 'db_user' => 'bhavicreations',
+    // 'db_password' => 'd8Az75YlgmyBnVM',
 ];
 if (is_file(__DIR__ . '/config.local.php')) {
     $config = array_replace($config, require __DIR__ . '/config.local.php');

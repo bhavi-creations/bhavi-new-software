@@ -22,7 +22,9 @@ The installer preserves existing records, applies the additional account, assign
 ## Workflows
 
 - Administrators can add, edit and delete departments. Deletion hides a department from employee choices while preserving history; move existing employees first. Custom role/job-title text does not change employee permissions.
-- Employee documents support multiple images and PDFs (20 MB per file, up to 20 files, below 100 MB per request including the form). Files are stored in private `storage/employee-documents/` with metadata in the database; older database-stored documents remain downloadable. Only administrators and managers can download them. Back up both the database and private storage. Apache PHP limits are set in `.htaccess`, and FastCGI limits in `.user.ini`.
+- Employee documents support multiple images and PDFs (50 MB per file, up to 20 files, below 100 MB per request including the form). Photos are stored in protected uploads/photos/ and PDFs in protected uploads/pdf/, with metadata and paths in the database; older database-stored documents remain downloadable. Only administrators and managers can download them. Back up both the database and private storage. Apache PHP limits are set in `.htaccess`, and FastCGI limits in `.user.ini`.
+- Employee profile photos are saved under uploads/photos/ with their paths in users.avatar_path. Admins and managers can upload/view photos from the employee form and directory.
+- Notifications are grouped by date with a count; expand a day to read its messages. Managers can permanently delete leave requests from Actions, including their history/calendar entries; existing notification text is preserved.
 - Managers can include a message when approving/rejecting leave, or use **Save & send note** afterwards. Employees see the message in **My leave requests** and **Notifications**. Managers and administrators can also send individual employee notifications.
 
 - Managers and administrators use **Employee payslips** to select a department and employee and upload a PDF (up to 2 MB) for a salary month. Employees open **My payslips** from their dashboard or sidebar. Each employee can list/download only their own slips, including when coworkers share the same department. Management can access all slips. PDFs are stored privately in the database with one slip per employee/month; run `php database/install.php` when upgrading to create this table.
@@ -34,7 +36,7 @@ The installer preserves existing records, applies the additional account, assign
 - Daily work reports include all submitted employee sheets. Filter by department, employee and inclusive date range. Today, last seven days, this month and custom ranges are available. Download creates a native Excel (.xlsx) workbook including all department fields. Managers can view details, edit entries, review sheets, give feedback or delete a report.
 - Employees apply for leave and see their own request history/calendar. Managers approve/reject pending requests; administrators do not access leave requests. Decisions appear in the employee's history and notifications. Working days exclude Sundays and published holidays unless a department schedule specifies otherwise. Overlapping pending/approved leave is rejected.
 - Account and client deletion hides them from current directories and prevents deleted accounts signing in. Historical work and leave records remain available. Holiday and assignment deletion also preserve existing history.
-- Client logos accept PNG, JPG and WebP up to 5 MB. Uploaded files live under `uploads/`; database rows store their paths. Brand assets show uploaded client logos and any existing saved brand files.
+- Client logos accept PNG, JPG and WebP up to 50 MB. Uploaded files live under `uploads/`; database rows store their paths. Brand assets show uploaded client logos and any existing saved brand files.
 
 ## Verification
 

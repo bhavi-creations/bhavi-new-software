@@ -17,7 +17,7 @@ final class Browser
     public function __construct(private string $base) { global $temporary; $this->cookie=tempnam(sys_get_temp_dir(),'bhavi_cookie_'); $temporary[]=$this->cookie; }
     public function request(string $path,?array $data=null): array {
         $handle=curl_init($this->base.'/'.$path); $headers=[];
-        curl_setopt_array($handle,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_COOKIEFILE=>$this->cookie,CURLOPT_COOKIEJAR=>$this->cookie,CURLOPT_CONNECTTIMEOUT=>2,CURLOPT_TIMEOUT=>20,CURLOPT_HEADERFUNCTION=>static function($handle,$line)use(&$headers){ $parts=explode(':',$line,2); if (count($parts)===2) $headers[strtolower(trim($parts[0]))]=trim($parts[1]); return strlen($line); }]);
+        curl_setopt_array($handle,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_COOKIEFILE=>$this->cookie,CURLOPT_COOKIEJAR=>$this->cookie,CURLOPT_CONNECTTIMEOUT=>2,CURLOPT_TIMEOUT=>120,CURLOPT_HEADERFUNCTION=>static function($handle,$line)use(&$headers){ $parts=explode(':',$line,2); if (count($parts)===2) $headers[strtolower(trim($parts[0]))]=trim($parts[1]); return strlen($line); }]);
         if ($data!==null) { curl_setopt($handle,CURLOPT_POST,true); curl_setopt($handle,CURLOPT_POSTFIELDS,array_filter($data,static fn($v)=>$v instanceof CURLFile)?$data:http_build_query($data)); }
         $body=curl_exec($handle); if ($body===false) throw new RuntimeException(curl_error($handle));
         $status=curl_getinfo($handle,CURLINFO_RESPONSE_CODE); unset($handle);
@@ -40,7 +40,7 @@ try {
     $address=stream_socket_get_name($socket,false); fclose($socket);
     $log=tempnam(sys_get_temp_dir(),'bhavi_server_'); $temporary[]=$log;
     $environment=getenv(); $environment['BHAVI_DB_NAME']=$database;
-    $process=proc_open([PHP_BINARY,'-d','session.save_path='.sys_get_temp_dir(),'-d','upload_max_filesize=20M','-d','post_max_size=100M','-S',$address,'-t',dirname(__DIR__)],[0=>['pipe','r'],1=>['file',$log,'a'],2=>['file',$log,'a']],$pipes,dirname(__DIR__),$environment);
+    $process=proc_open([PHP_BINARY,'-d','session.save_path='.sys_get_temp_dir(),'-d','upload_max_filesize=50M','-d','post_max_size=100M','-d','max_file_uploads=21','-S',$address,'-t',dirname(__DIR__)],[0=>['pipe','r'],1=>['file',$log,'a'],2=>['file',$log,'a']],$pipes,dirname(__DIR__),$environment);
     if (!is_resource($process)) throw new RuntimeException('Unable to start the test server.');
     fclose($pipes[0]);
     $ready=false; for ($i=0;$i<50;$i++) { $connection=@stream_socket_client('tcp://'.$address,$errno,$error,0.1); if ($connection) { fclose($connection); $ready=true; break; } usleep(100000); }
@@ -126,6 +126,7 @@ try {
     expect($admin->post('admin-add-client.php',['client_name'=>'Unsafe','website_url'=>'javascript:alert(1)'])['status']===200,'Unsafe client URL rejected');
     $image=tempnam(sys_get_temp_dir(),'bhavi_logo_'); $temporary[]=$image;
     file_put_contents($image,base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='));
+    file_put_contents($image,str_repeat("\0",6*1024*1024),FILE_APPEND);
     expect($admin->post('admin-add-client.php',['client_name'=>'Shared Client','website_url'=>'https://example.com','client_logo'=>new CURLFile($image,'image/png','logo.png')])['status']===303,'Client and logo upload');
     $clientId=(int)scalar("SELECT id FROM clients WHERE client_name='Shared Client'");
     $uploadedLogo=(string)scalar('SELECT logo_path FROM clients WHERE id=?',[$clientId]);
@@ -255,10 +256,21 @@ try {
     expect(str_contains($website->request('my-leave-requests.php')['body'],'Please complete the handover &lt;today&gt;'),'Employee sees escaped manager message in request history');
     expect(str_contains($website->request('manager-notification.php')['body'],'Please complete the handover &lt;today&gt;'),'Employee receives leave note notification');
     expect(!str_contains($seo->request('manager-notification.php')['body'],'Please complete the handover'),'Leave message private to recipient');
+    expect($website->post('manager-leave-requist.php',['action'=>'delete_leave','id'=>$seoLeave])['status']===403,'Employee cannot delete leave requests');
+    expect($manager->request('manager-leave-requist.php',['csrf'=>'invalid','action'=>'delete_leave','id'=>$seoLeave])['status']===419,'Leave deletion requires CSRF');
+    $manager->request('manager-leave-requist.php');
+    expect($manager->post('manager-leave-requist.php',['action'=>'delete_leave','id'=>$seoLeave])['status']===303,'Manager deletes decided leave request');
+    expect((int)scalar('SELECT COUNT(*) FROM leave_requests WHERE id=?',[$seoLeave])===0,'Deleted leave removed from database');
+    expect((int)scalar('SELECT COUNT(*) FROM notifications WHERE leave_request_id=?',[$seoLeave])===0,'Leave notification links detached on deletion');
     $manager->request('manager-notification.php');
     expect($manager->post('manager-notification.php',['action'=>'send_notification','department_id'=>$websiteDepartment,'employee_id'=>$employeeIds['website'],'title'=>'Project update','message'=>'Please review the brief'])['status']===303,'Manager sends employee notification');
     $notificationPage=$website->request('manager-notification.php')['body'];
-    expect(str_contains($notificationPage,'Please review the brief') && !str_contains($notificationPage,'notification-link'),'Notifications remain in the regular, non-clickable list');
+    expect(str_contains($notificationPage,'Please review the brief') && !str_contains($notificationPage,'notification-link'),'Notification messages remain present inside date groups');
+    expect(str_contains($notificationPage,'<details class="panel notification-day">') && str_contains($notificationPage,'notifications</span></summary>'),'Notification dates have expandable counts');
+    $pdo->prepare("INSERT INTO notifications (recipient_id,notification_type,title,message,created_at) VALUES (?,'general','Yesterday test','Older daily notification',DATE_SUB(NOW(),INTERVAL 1 DAY))")->execute([$employeeIds['website']]);
+    $dailyPage=$website->request('manager-notification.php')['body'];
+    expect(str_contains($dailyPage,date('l, d M Y',strtotime('-1 day'))) && str_contains($dailyPage,'Older daily notification'),'Previous day appears as its own notification group');
+    expect(!str_contains($manager->request('manager-notification.php')['body'],'Older daily notification'),'Daily notifications remain private to recipient');
     expect(str_contains($notificationPage,'href="manager-notification.php"'),'Notifications menu opens the notification page');
     $website->request('employee-daily-work.php');
     expect($website->post('employee-daily-work.php',['action'=>'save_entry','client_id'=>'','task_title'=>'Internal planning without client','task_status'=>'completed','remark'=>'Team planning','website_new_count'=>'','website_changes_count'=>'','submit_mode'=>'submitted'])['status']===303,'Daily work saves with blank optional client and metrics');
@@ -277,10 +289,17 @@ try {
     expect((int)scalar('SELECT COUNT(*) FROM employee_documents WHERE employee_id=?',[$employeeIds['website']])===0,'Invalid form does not save partial documents');
     file_put_contents($largePdf,"%PDF-1.4\n".str_repeat(' ',3*1024*1024)."\n%%EOF");
     $admin->request('admin-add-employee.php?id='.$employeeIds['website']);
-    $docResponse=$admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['role_title'=>'Web developer','documents[0]'=>new CURLFile($largePdf,'application/pdf','employment.pdf'),'documents[1]'=>new CURLFile($image,'image/png','employee-photo.png')]));
+    $docResponse=$admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['role_title'=>'Web developer','employee_photo'=>new CURLFile($image,'image/png','avatar.png'),'documents[0]'=>new CURLFile($largePdf,'application/pdf','employment.pdf'),'documents[1]'=>new CURLFile($image,'image/png','employee-photo.png')]));
     $documentId=(int)scalar("SELECT id FROM employee_documents WHERE employee_id=? AND original_name='employment.pdf'",[$employeeIds['website']]);
     $documentPaths=$pdo->prepare('SELECT file_path FROM employee_documents WHERE employee_id=?'); $documentPaths->execute([$employeeIds['website']]);
     foreach ($documentPaths->fetchAll(PDO::FETCH_COLUMN) as $documentPath) $temporary[]=dirname(__DIR__).'/'.$documentPath;
+    $avatar=(string)scalar('SELECT avatar_path FROM users WHERE id=?',[$employeeIds['website']]);
+    if ($avatar) $temporary[]=dirname(__DIR__).'/'.$avatar;
+    expect(str_starts_with($avatar,'uploads/photos/') && is_file(dirname(__DIR__).'/'.$avatar),'Employee avatar path and file saved');
+    expect($manager->request('employee-photo.php?id='.$employeeIds['website'])['body']===file_get_contents($image),'Manager can view employee photo');
+    expect(str_contains($manager->request('admin-employees.php')['body'],'employee-photo.php?id='.$employeeIds['website']),'Manager directory shows employee photo');
+    expect($website->request('employee-photo.php?id='.$employeeIds['website'])['status']===403,'Employee photo remains staff-only');
+    expect(str_starts_with((string)scalar('SELECT file_path FROM employee_documents WHERE id=?',[$documentId]),'uploads/pdf/'),'PDF path saved under uploads/pdf');
     expect($docResponse['status']===303 && $documentId>0,'Employee PDF larger than old 2 MB limit uploads');
     expect(scalar('SELECT role_title FROM employee_profiles WHERE user_id=?',[$employeeIds['website']])==='Web developer','Custom job title saved');
     expect($manager->request('download-employee-document.php?id='.$documentId)['body']===file_get_contents($largePdf),'Manager downloads original private document');
@@ -288,9 +307,12 @@ try {
     expect(str_contains($admin->request('admin-add-employee.php?id='.$employeeIds['website'])['body'],'employment.pdf'),'Uploaded document remains visible on employee edit');
     expect((int)scalar('SELECT COUNT(*) FROM employee_documents WHERE employee_id=?',[$employeeIds['website']])===2,'Multiple PDF and image documents uploaded together');
     expect(str_contains($docResponse['headers']['location'],'#saved-documents'),'Successful upload opens the saved documents list');
-    file_put_contents($largePdf,"%PDF-1.4\n".str_repeat(' ',21*1024*1024)."\n%%EOF");
-    expect(str_contains($admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['documents[0]'=>new CURLFile($largePdf,'application/pdf','too-large.pdf')]))['body'],'20 MB'),'Document above 20 MB rejected clearly');
+    file_put_contents($largePdf,"%PDF-1.4\n".str_repeat(' ',51*1024*1024)."\n%%EOF");
+    expect(str_contains($admin->post('admin-add-employee.php?id='.$employeeIds['website'],array_merge($employeeEdit,['documents[0]'=>new CURLFile($largePdf,'application/pdf','too-large.pdf')]))['body'],'50 MB'),'Document above 50 MB rejected clearly');
     expect((int)scalar('SELECT COUNT(*) FROM employee_documents WHERE employee_id=?',[$employeeIds['website']])===2,'Rejected upload does not create document row');
+    $admin->request('admin-add-employee.php?id='.$employeeIds['website']);
+    expect($admin->post('admin-add-employee.php?id='.$employeeIds['website'],$employeeEdit)['status']===303,'Employee edit without photo succeeds');
+    expect(scalar('SELECT avatar_path FROM users WHERE id=?',[$employeeIds['website']])===$avatar,'Blank photo preserves existing avatar');
     $gif=tempnam(sys_get_temp_dir(),'bhavi_gif_'); $temporary[]=$gif;
     file_put_contents($gif,base64_decode('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'));
     $svg=tempnam(sys_get_temp_dir(),'bhavi_svg_'); $temporary[]=$svg;
@@ -301,6 +323,7 @@ try {
     $uploadedDocuments=$pdo->prepare('SELECT id,file_path,mime_type FROM employee_documents WHERE employee_id=?'); $uploadedDocuments->execute([$uploadEmployee]);
     $uploadedDocuments=$uploadedDocuments->fetchAll();
     foreach ($uploadedDocuments as $document) $temporary[]=dirname(__DIR__).'/'.$document['file_path'];
+    foreach ($uploadedDocuments as $document) expect(str_starts_with($document['file_path'],'uploads/photos/') && is_file(dirname(__DIR__).'/'.$document['file_path']),'Image database record points to a saved uploads/photos file');
     expect($newEmployee['status']===303 && count($uploadedDocuments)===2,'New employee creation uploads GIF and SVG images');
     foreach ($uploadedDocuments as $document) {
         $download=$admin->request('download-employee-document.php?id='.$document['id']);

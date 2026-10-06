@@ -4,3 +4,11 @@
 /uploads/*
 !/uploads/.htaccess
 /.phpunit.cache/
+
+!/uploads/photos/
+/uploads/photos/*
+!/uploads/photos/.htaccess
+
+!/uploads/pdf/
+/uploads/pdf/*
+!/uploads/pdf/.htaccess
