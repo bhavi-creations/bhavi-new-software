@@ -46,7 +46,7 @@ if ($installed && $_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log($e->getMessage());
     }
 }
-?><!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Set up Bhavi</title><link rel="stylesheet" href="assets/css/portal.css"></head><body><main class="panel setup-card"><h1>Set up your team workspace</h1><p class="muted">Create your administrator and manager logins. You only need to do this once.</p>
+?><!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Set up Bhavi</title><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/assets/css/portal.css') ?>"></head><body><main class="panel setup-card"><h1>Set up your team workspace</h1><p class="muted">Create your administrator and manager logins. You only need to do this once.</p>
 <?php if ($error): ?><div class="alert error" role="alert"><?= h($error) ?></div><?php endif; ?>
 <?php if ($installed): ?><form method="post"><?= csrf_field() ?><h2>Administrator</h2><div class="fields">
 <div class="field"><label for="admin_name">Name</label><input id="admin_name" name="admin_name" value="<?= h($_POST['admin_name'] ?? '') ?>" maxlength="150" required></div><div class="field"><label for="admin_username">Username</label><input id="admin_username" name="admin_username" value="<?= h($_POST['admin_username'] ?? '') ?>" maxlength="100" autocomplete="username" required></div><div class="field full"><label for="admin_password">Password</label><input type="password" id="admin_password" name="admin_password" minlength="8" maxlength="72" autocomplete="new-password" required></div></div>
