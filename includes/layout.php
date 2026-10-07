@@ -37,6 +37,7 @@ function page_start(string $title, string $active = ''): void
     if ($user['role']==='admin') $nav['departments.php']='Departments';
     if ($user['role']==='manager') $nav['manager-leave-requist.php']='Leave requests';
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
+    if (!is_staff()) $nav['employee-profile.php']='My profile & salary';
     $nav['payslips.php'] = is_staff() ? 'Employee payslips' : 'My payslips';
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL',[$user['id']]);

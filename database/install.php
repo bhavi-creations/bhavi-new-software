@@ -117,6 +117,32 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('employee_documents','file_path','VARCHAR(255) NULL');
         $pdo->exec('ALTER TABLE employee_documents MODIFY file_content MEDIUMBLOB NULL');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (4)');
+
+        // Employee records and dated compensation snapshots.
+        foreach (['employee_code'=>'VARCHAR(50) NULL','phone'=>'VARCHAR(30) NULL','guardian_phone'=>'VARCHAR(30) NULL','relieving_date'=>'DATE NULL','benefit_pf'=>'BOOLEAN NOT NULL DEFAULT 0','benefit_esi'=>'BOOLEAN NOT NULL DEFAULT 0','benefit_other'=>'BOOLEAN NOT NULL DEFAULT 0','other_benefits'=>"VARCHAR(255) NOT NULL DEFAULT ''",'esi_basis'=>"ENUM('gross','half') NOT NULL DEFAULT 'half'"] as $column=>$definition) $addColumn('employee_profiles',$column,$definition);
+        if (!$pdo->query("SHOW INDEX FROM employee_profiles WHERE Key_name='uq_employee_code'")->fetch()) $pdo->exec('ALTER TABLE employee_profiles ADD UNIQUE KEY uq_employee_code (employee_code)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS employee_salary_history (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, employee_id BIGINT UNSIGNED NOT NULL,
+            amount DECIMAL(12,2) NOT NULL, effective_from DATE NOT NULL, effective_to DATE NULL,
+            benefit_pf BOOLEAN NOT NULL, benefit_esi BOOLEAN NOT NULL, benefit_other BOOLEAN NOT NULL,
+            other_benefits VARCHAR(255) NOT NULL DEFAULT '', esi_basis ENUM('gross','half') NOT NULL DEFAULT 'half',
+            pf_base DECIMAL(12,2) NOT NULL, esi_base DECIMAL(12,2) NOT NULL,
+            employee_pf DECIMAL(12,2) NOT NULL, company_pf DECIMAL(12,2) NOT NULL,
+            employee_esi DECIMAL(12,2) NOT NULL, company_esi DECIMAL(12,2) NOT NULL,
+            net_salary DECIMAL(12,2) NOT NULL, created_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_salary_start (employee_id,effective_from),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id), FOREIGN KEY (created_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        foreach (['phone'=>'VARCHAR(30) NULL','starting_date'=>'DATE NULL','ending_date'=>'DATE NULL','package'=>"VARCHAR(255) NOT NULL DEFAULT ''",'social_media_url'=>"VARCHAR(2048) NOT NULL DEFAULT ''",'gmb_url'=>"VARCHAR(2048) NOT NULL DEFAULT ''",'monthly_reels'=>'INT UNSIGNED NOT NULL DEFAULT 0','monthly_posters'=>'INT UNSIGNED NOT NULL DEFAULT 0','monthly_carousels'=>'INT UNSIGNED NOT NULL DEFAULT 0','payment_total'=>'DECIMAL(12,2) NOT NULL DEFAULT 0','paid_amount'=>'DECIMAL(12,2) NOT NULL DEFAULT 0','remaining_amount'=>'DECIMAL(12,2) GENERATED ALWAYS AS (payment_total-paid_amount) STORED'] as $column=>$definition) $addColumn('clients',$column,$definition);
+        $pdo->exec("CREATE TABLE IF NOT EXISTS client_payments (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, client_id BIGINT UNSIGNED NOT NULL,
+            payment_date DATE NOT NULL, amount DECIMAL(12,2) NOT NULL,
+            request_key VARCHAR(80) NOT NULL UNIQUE, created_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX idx_client_payment (client_id,payment_date),
+            FOREIGN KEY (client_id) REFERENCES clients(id), FOREIGN KEY (created_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (5)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

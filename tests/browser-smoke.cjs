@@ -8,7 +8,7 @@ const [browserPath, baseUrl, password] = process.argv.slice(2);
 const storage = path.resolve(__dirname, '../storage');
 fs.mkdirSync(storage, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'bhavi-browser-'));
-const browser = spawn(browserPath, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
+const browser = spawn(browserPath, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore', env: { ...process.env, SystemDrive: process.env.SystemDrive || path.parse(os.homedir()).root.slice(0, 2), ProgramData: process.env.ProgramData || path.join(path.parse(os.homedir()).root, 'ProgramData'), LOCALAPPDATA: process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), APPDATA: process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming') } });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let socket, messageId = 0;
 const pending = new Map();
@@ -78,6 +78,25 @@ async function screenshot(filename, width, height) {
     await evaluate("document.querySelector('dialog[open] [data-close-dialog]').click(); true");
     assert.equal(await evaluate("Boolean(document.querySelector('dialog[open]'))"), false);
     assert.equal(await evaluate('document.querySelectorAll("img[src^=\'employee-photo.php\']").length > 0'), true);
+    await navigate('admin-add-client.php');
+    await evaluate("document.querySelector('#payment_total').value='10000'; document.querySelector('#payment-rows input[type=number]').value='2000'; document.querySelector('#payment_total').dispatchEvent(new Event('input', {bubbles:true})); true");
+    assert.equal(await evaluate("document.querySelector('#remaining-preview').textContent"), 'INR 8,000.00');
+    await evaluate("document.querySelector('[data-add-row=payment]').click(); true");
+    assert.equal(await evaluate("document.querySelectorAll('#payment-rows .repeat-row').length"), 2);
+    await evaluate("document.querySelector('#payment-rows .repeat-row:last-child [data-remove-row]').click(); true");
+    assert.equal(await evaluate("document.querySelectorAll('#payment-rows .repeat-row').length"), 1);
+    await screenshot('client-payment-form.png', 1440, 1100);
+    await navigate('admin-employees.php');
+    const employeeEditUrl = await evaluate("document.querySelector('a[href^=\"admin-add-employee.php?id=\"]').getAttribute('href')");
+    await navigate(employeeEditUrl);
+    await evaluate("document.querySelector('#salary-rows input[type=number]').value='14000'; document.querySelector('[name=benefit_pf]').checked=true; document.querySelector('[name=benefit_esi]').checked=true; document.querySelector('#salary-rows input[type=number]').dispatchEvent(new Event('input', {bubbles:true})); true");
+    assert.equal(await evaluate("document.querySelector('#salary-preview').textContent.includes('13,107.50')"), true);
+    await evaluate("document.querySelector('[data-add-row=salary]').click(); true");
+    assert.equal(await evaluate("document.querySelectorAll('#salary-rows .repeat-row').length"), 2);
+    await screenshot('employee-salary-form.png', 1440, 1100);
+    await screenshot('employee-salary-form-mobile.png', 390, 844);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await navigate('manager-leave-requist.php');
     assert.equal(await evaluate('Boolean(document.querySelector("input[value=\'delete_leave\']"))'), true);
     await navigate('manager-dailywork.php');
@@ -92,6 +111,12 @@ async function screenshot(filename, width, height) {
     await login('website.test', 'website-employee-dashboard.php');
     await screenshot('employee-dashboard.png', 1440, 1100);
     assert.equal(await evaluate("document.querySelector('.role-badge').textContent"), 'Employee');
+    await navigate('employee-profile.php');
+    assert.equal(await evaluate("document.body.textContent.includes('13,107.50')"), true);
+    await screenshot('employee-own-salary.png', 1440, 1100);
+    await screenshot('employee-own-salary-mobile.png', 390, 844);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await navigate('employee-assigned-work.php');
     assert.equal(await evaluate("document.querySelectorAll('#assigned-work input[type=radio]').length >= 2"), true);
     await navigate('employee-daily-work.php');
@@ -118,6 +143,6 @@ async function screenshot(filename, width, height) {
     await new Promise(resolve => { if (browser.exitCode !== null) resolve(); else { browser.once('exit', resolve); setTimeout(resolve, 5000); } });
     const resolvedProfile = path.resolve(profile);
     const resolvedTemp = path.resolve(os.tmpdir());
-    if (resolvedProfile.startsWith(resolvedTemp + path.sep) && path.basename(resolvedProfile).startsWith('bhavi-browser-')) fs.rmSync(resolvedProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
+    if (resolvedProfile.startsWith(resolvedTemp + path.sep) && path.basename(resolvedProfile).startsWith('bhavi-browser-')) { try { fs.rmSync(resolvedProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 }); } catch (error) { console.warn('Temporary browser profile cleanup:', error.code); } }
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

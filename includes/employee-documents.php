@@ -34,7 +34,7 @@ function employee_document_uploads(): array
     foreach ($files['error'] as $index=>$error) {
         if ($error===UPLOAD_ERR_NO_FILE) continue;
         $path=$files['tmp_name'][$index]??'';
-        if ($error===UPLOAD_ERR_INI_SIZE || $error===UPLOAD_ERR_FORM_SIZE) throw new InvalidArgumentException('This file exceeds the server upload limit. Maximum document size is 50 MB.');
+        if ($error===UPLOAD_ERR_INI_SIZE || $error===UPLOAD_ERR_FORM_SIZE) throw new InvalidArgumentException('This file exceeds the server upload limit. Maximum document size is 100 MB.');
         if ($error!==UPLOAD_ERR_OK || !is_uploaded_file($path)) {
             $message=match($error) {
                 UPLOAD_ERR_PARTIAL=>'The file was only partially uploaded. Choose it again and retry.',
@@ -44,7 +44,7 @@ function employee_document_uploads(): array
             throw new InvalidArgumentException($message);
         }
         $size=filesize($path); $total+=$size;
-        if ($size>50*1024*1024 || $total>100*1024*1024) throw new InvalidArgumentException('Each document must be at most 50 MB and the upload total under 100 MB.');
+        if ($size>100*1024*1024 || $total>2000*1024*1024) throw new InvalidArgumentException('Each document must be at most 100 MB and the upload total at most 2,000 MB.');
         $mime=employee_document_mime($path);
         if (!$mime) throw new InvalidArgumentException('Unsupported document: '.basename((string)$files['name'][$index]).'. Choose an image (JPG, PNG, GIF, WebP, BMP, TIFF, HEIC, HEIF, AVIF, SVG) or PDF. Renaming another file to an image does not convert it.');
         $name=basename(str_replace('\\','/',(string)$files['name'][$index]));

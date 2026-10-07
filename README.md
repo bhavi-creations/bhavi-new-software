@@ -22,8 +22,8 @@ The installer preserves existing records, applies the additional account, assign
 ## Workflows
 
 - Administrators can add, edit and delete departments. Deletion hides a department from employee choices while preserving history; move existing employees first. Custom role/job-title text does not change employee permissions.
-- Employee documents support multiple images and PDFs (50 MB per file, up to 20 files, below 100 MB per request including the form). Photos are stored in protected uploads/photos/ and PDFs in protected uploads/pdf/, with metadata and paths in the database; older database-stored documents remain downloadable. Only administrators and managers can download them. Back up both the database and private storage. Apache PHP limits are set in `.htaccess`, and FastCGI limits in `.user.ini`.
-- Employee profile photos are saved under uploads/photos/ with their paths in users.avatar_path. Admins and managers can upload/view photos from the employee form and directory.
+- Employee documents support multiple images and PDFs (100 MB per file, up to 20 files (2,000 MB of documents per request; PHP request limit 2,100 MB)). Photos are stored in protected uploads/photos/ and PDFs in protected uploads/pdf/, with metadata and paths in the database; older database-stored documents remain downloadable. Only administrators and managers can download them. Back up both the database and private storage. Apache PHP limits are set in `.htaccess`, and FastCGI limits in `.user.ini`.
+- Employee profile photos are saved under uploads/photos/ with their paths in users.avatar_path. Admins and managers can upload/view photos from the employee form and directory. Employees can view their own photo and profile; other employees cannot retrieve their photo.
 - Notifications are grouped by date with a count; expand a day to read its messages. Managers can permanently delete leave requests from Actions, including their history/calendar entries; existing notification text is preserved.
 - Managers can include a message when approving/rejecting leave, or use **Save & send note** afterwards. Employees see the message in **My leave requests** and **Notifications**. Managers and administrators can also send individual employee notifications.
 
@@ -38,11 +38,24 @@ The installer preserves existing records, applies the additional account, assign
 - Account and client deletion hides them from current directories and prevents deleted accounts signing in. Historical work and leave records remain available. Holiday and assignment deletion also preserve existing history.
 - Client logos accept PNG, JPG and WebP up to 50 MB. Uploaded files live under `uploads/`; database rows store their paths. Brand assets show uploaded client logos and any existing saved brand files.
 
+## Employee salary and client payments
+
+Run the database installer when upgrading to schema version 5. Existing accounts, clients and documents are preserved.
+
+- Employee forms include employee ID (unique when provided), phone, guardian phone, relieving date, active/inactive status, PF/ESI/Other benefits and dated salary periods. Use **+ Add salary period** for increments. An ongoing previous period closes the day before the next period. Saved periods cannot overlap and retain their original benefit selections and amounts; add a dated period when benefits change. Relieving dates close an ongoing salary period.
+- As requested for this portal, both PF and ESI use **50% of monthly salary**. Employee PF is 12% of that base; company PF is another 12%. Employee ESI is 0.75%; company ESI is 3.25%. Unchecked benefits contribute zero. Each component is rounded to paise; take-home subtracts employee contributions only. For INR 14,000 with both benefits: employee PF 840, company PF 840, employee ESI 52.50, company ESI 227.50, take-home 13,107.50. These are the configured business calculations, not an attendance-based payroll engine.
+- Employees use **My profile & salary** to see only their own salary history and contribution breakdown. Management opens **Profile & salary** from the employee directory. Guardian details and salary are excluded from the shared directory.
+- Clients include phone, contract dates, package, website/social/GMB URLs, and monthly reels/posters/carousels. Add dated receipts under **Payment**. The database stores the payment ledger and paid total, with a generated remaining balance. Repeated submissions of the same payment form are deduplicated; overpayments and negative amounts are rejected transactionally.
+- Management sees package, total, receipts and remaining. Employees see remaining and work details; package and the payment ledger are excluded from their client view.
+- Document files are private on disk; their metadata and paths are persisted in MySQL. Back up uploads together with the database. Apache reads the new upload limit from .htaccess; FastCGI reads .user.ini (which may be cached for several minutes).
+
 ## Verification
 
 ```powershell
 php tests/integration.php
 ```
+
+The suite includes an actual 100 MB upload and an over-limit rejection check, which can take several minutes on Windows. Set `BHAVI_SKIP_LARGE_UPLOAD_TEST=1` for a faster run that skips those four boundary assertions.
 
 The suite creates a uniquely named test database, starts a local PHP server, exercises actual HTTP requests and database persistence, and removes its test database and uploaded logo afterward. It covers all five employee departments, role/ownership checks, CSRF, CRUD, work assignment/submission, date/category Excel filters, reviews, leave decisions and logout. PHP must be able to write to its configured session directory.
 

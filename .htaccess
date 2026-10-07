@@ -1,8 +1,8 @@
 Options -Indexes
 DirectoryIndex index.php
 <IfModule php_module>
-    php_value upload_max_filesize 50M
-    php_value post_max_size 100M
+    php_value upload_max_filesize 100M
+    php_value post_max_size 2100M
     php_value max_file_uploads 21
 </IfModule>
 <FilesMatch "^(config(\.local(\.example)?)?\.php|README\.md|AGENTS\.md)$">
