@@ -1,4 +1,5 @@
 /config.local.php
+/config.live.php
 /storage/*
 !/storage/.htaccess
 /uploads/*

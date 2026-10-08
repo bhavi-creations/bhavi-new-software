@@ -44,6 +44,9 @@ final class Browser
             if (count($parts) === 2) $headers[strtolower(trim($parts[0]))] = trim($parts[1]);
             return strlen($line);
         }]);
+        if ($host = getenv('BHAVI_TEST_HOST')) {
+            curl_setopt($handle, CURLOPT_HTTPHEADER, ['Host: ' . $host]);
+        }
         if ($data !== null) {
             curl_setopt($handle, CURLOPT_POST, true);
             curl_setopt($handle, CURLOPT_POSTFIELDS, array_filter($data, static fn($v) => $v instanceof CURLFile) ? $data : http_build_query($data));
@@ -68,6 +71,24 @@ final class Browser
         expect($this->request($dashboard)['status'] === 200, 'Dashboard renders for ' . $username);
     }
 }
+function report_content(array $response): string
+{
+    global $temporary;
+    if (str_contains($response['headers']['content-type'], 'text/csv')) {
+        expect(str_contains($response['headers']['content-disposition'], '.csv') && str_starts_with($response['body'], "\xEF\xBB\xBF"), 'CSV download headers and encoding when ZIP is unavailable');
+        return $response['body'];
+    }
+    expect(str_contains($response['headers']['content-type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') && str_contains($response['headers']['content-disposition'], '.xlsx'), 'Excel download headers');
+    expect(str_starts_with($response['body'], 'PK'), 'Excel download is a ZIP workbook');
+    $path = tempnam(sys_get_temp_dir(), 'bhavi_report_');
+    $temporary[] = $path;
+    file_put_contents($path, $response['body']);
+    $workbook = new ZipArchive();
+    expect($workbook->open($path) === true, 'Excel workbook opens');
+    $sheet = $workbook->getFromName('xl/worksheets/sheet1.xml');
+    $workbook->close();
+    return $sheet;
+}
 try {
     portal_install($pdo, $database);
     portal_install($pdo, $database);
@@ -79,8 +100,14 @@ try {
     $log = tempnam(sys_get_temp_dir(), 'bhavi_server_');
     $temporary[] = $log;
     $environment = getenv();
+    foreach ($config as $key => $value) $environment['BHAVI_' . strtoupper($key)] = (string) $value;
+    // Windows omits empty environment values when creating a child process.
+    // Keep the local profile as the fallback for a test user's empty password.
+    $environment['BHAVI_APP_ENV'] = 'local';
     $environment['BHAVI_DB_NAME'] = $database;
-    $process = proc_open([PHP_BINARY, '-d', 'session.save_path=' . sys_get_temp_dir(), '-d', 'upload_max_filesize=100M', '-d', 'post_max_size=2100M', '-d', 'max_file_uploads=21', '-S', $address, '-t', dirname(__DIR__)], [0 => ['pipe', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a']], $pipes, dirname(__DIR__), $environment);
+    $subdirectory = getenv('BHAVI_TEST_SUBDIRECTORY') === '1';
+    $documentRoot = $subdirectory ? dirname(__DIR__, 2) : dirname(__DIR__);
+    $process = proc_open([PHP_BINARY, '-d', 'session.save_path=' . sys_get_temp_dir(), '-d', 'upload_max_filesize=100M', '-d', 'post_max_size=2100M', '-d', 'max_file_uploads=21', '-S', $address, '-t', $documentRoot], [0 => ['pipe', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a']], $pipes, dirname(__DIR__), $environment);
     if (!is_resource($process)) throw new RuntimeException('Unable to start the test server.');
     fclose($pipes[0]);
     $ready = false;
@@ -94,7 +121,7 @@ try {
         usleep(100000);
     }
     if (!$ready) throw new RuntimeException('Test server did not start: ' . file_get_contents($log));
-    $base = 'http://' . $address;
+    $base = 'http://' . $address . ($subdirectory ? '/' . rawurlencode(basename(dirname(__DIR__))) : '');
     $guest = new Browser($base);
     expect($guest->request('index.php')['headers']['location'] === 'setup.php', 'Fresh installation opens setup');
     $guest->request('setup.php');
@@ -102,6 +129,11 @@ try {
     expect($guest->post('setup.php', ['admin_name' => 'Test Administrator', 'admin_username' => 'admin.test', 'admin_password' => $password, 'manager_name' => 'Test Manager', 'manager_username' => 'manager.test', 'manager_password' => $password])['status'] === 303, 'Initial account creation');
     expect((int)scalar('SELECT COUNT(*) FROM users') === 2, 'Setup creates exactly two accounts');
     expect($guest->request('setup.php')['headers']['location'] === 'login.php', 'Setup closes after accounts exist');
+    $pdo->exec('DROP TABLE employee_attendance_days');
+    $pdo->exec('DELETE FROM portal_schema_versions WHERE version >= 8');
+    expect($guest->request('login.php')['status'] === 200, 'First page request upgrades an older hosted database automatically');
+    expect((int)scalar('SELECT MAX(version) FROM portal_schema_versions') === PORTAL_SCHEMA_VERSION && (int)scalar('SELECT COUNT(*) FROM users') === 2, 'Automatic update preserves accounts and completes the schema');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_attendance_days') === 0, 'Automatic update adds missing attendance table');
     $routes = ['admin-dashboard.php', 'manager-dashboard.php', 'admin-employees.php', 'add-client.php', 'admin-holidays.php', 'manager-holidays.php', 'apply-leaves.php', 'check-leave.php', 'manager-dailywork.php', 'manager-leave-requist.php', 'manager-notification.php', 'employee-brands-assets.php', 'client-reuirement.php', 'website-employee-dashboard.php', 'seo-employee-dashboard.php', 'design-employee-dashboard.php', 'socialmedia-employee-dashboard.php', 'telecaller-employee-dashboard.php', 'manager-assign-work.php', 'manager-review-work.php', 'download-work.php', 'download-asset.php'];
     foreach ($routes as $route) expect($guest->request($route)['headers']['location'] === 'login.php', 'Unauthenticated route ' . $route);
     $guest->request('login.php');
@@ -297,36 +329,16 @@ try {
     expect(!str_contains($filtered, '>Employee seo</option>'), 'Category dropdown lists matching employees');
     expect($manager->request('manager-dailywork.php?from_date=invalid')['status'] === 422, 'Invalid report date rejected');
     $excel = $manager->request('download-work.php?from_date=' . $yesterday . '&to_date=' . date('Y-m-d') . '&department=' . $websiteDepartment);
-    expect(str_contains($excel['headers']['content-type'], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') && str_contains($excel['headers']['content-disposition'], '.xlsx'), 'Excel download headers');
-    expect(str_starts_with($excel['body'], 'PK'), 'Excel download is a ZIP workbook');
-    $excelPath = tempnam(sys_get_temp_dir(), 'bhavi_report_');
-    $temporary[] = $excelPath;
-    file_put_contents($excelPath, $excel['body']);
-    $workbook = new ZipArchive();
-    expect($workbook->open($excelPath) === true, 'Excel workbook opens');
-    $sheet = $workbook->getFromName('xl/worksheets/sheet1.xml');
-    $workbook->close();
+    $sheet = report_content($excel);
     expect(str_contains($sheet, 'Yesterday page') && str_contains($sheet, 'website daily task') && !str_contains($sheet, 'seo daily task'), 'Excel range and department filtering');
-    expect(str_contains($sheet, '=SUM(1,2)') && str_contains($sheet, 'inlineStr'), 'Excel formula-looking text stays a literal string');
+    expect(str_contains($sheet, '=SUM(1,2)') && (str_contains($sheet, 'inlineStr') || str_contains($sheet, "'=SUM(1,2)")), 'Excel or CSV formula-looking text stays a literal string');
     $allDatesPage=$manager->request('manager-dailywork.php?all_dates=1&employee='.$employeeIds['website']);
     expect(str_contains($allDatesPage['body'],'name="all_dates" value="1"') && str_contains($allDatesPage['body'],'All dates'),'All-dates report filter is available for an employee');
     $allDatesExcel=$manager->request('download-work.php?all_dates=1&employee='.$employeeIds['website']);
-    $allDatesPath=tempnam(sys_get_temp_dir(),'bhavi_all_dates_');
-    $temporary[]=$allDatesPath;
-    file_put_contents($allDatesPath,$allDatesExcel['body']);
-    $allDatesWorkbook=new ZipArchive();
-    expect($allDatesWorkbook->open($allDatesPath)===true,'Employee all-dates Excel workbook opens');
-    $allDatesSheet=$allDatesWorkbook->getFromName('xl/worksheets/sheet1.xml');
-    $allDatesWorkbook->close();
+    $allDatesSheet=report_content($allDatesExcel);
     expect(str_contains($allDatesSheet,'Yesterday page') && str_contains($allDatesSheet,'website daily task') && str_contains($allDatesSheet,'1 hour 30 min') && !str_contains($allDatesSheet,'seo daily task'),'All-dates Excel includes selected employee history and time without other employees');
     $employeeExcel = $manager->request('download-work.php?employee=' . $employeeIds['seo']);
-    $employeePath = tempnam(sys_get_temp_dir(), 'bhavi_report_');
-    $temporary[] = $employeePath;
-    file_put_contents($employeePath, $employeeExcel['body']);
-    $employeeWorkbook = new ZipArchive();
-    expect($employeeWorkbook->open($employeePath) === true, 'Employee Excel workbook opens');
-    $employeeSheet = $employeeWorkbook->getFromName('xl/worksheets/sheet1.xml');
-    $employeeWorkbook->close();
+    $employeeSheet = report_content($employeeExcel);
     expect(str_contains($employeeSheet, 'seo daily task') && !str_contains($employeeSheet, 'website daily task'), 'Employee Excel filter');
     ob_start();
     download_csv(['Task','Remark'],[['Page update','=SUM(1,2)'],['Follow-up','Issue, needs review']],'bhavi-fallback-test');

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/database.php';
+
 date_default_timezone_set('Asia/Kolkata');
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_name('bhavi_portal');
@@ -23,20 +25,26 @@ function db(): PDO
     if ($pdo instanceof PDO) {
         return $pdo;
     }
-    $config = require dirname(__DIR__) . '/config.php';
     try {
-        $pdo = new PDO("mysql:host={$config['db_host']};port={$config['db_port']};dbname={$config['db_name']};charset=utf8mb4", $config['db_user'], $config['db_password'], [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
-        $pdo->exec("SET time_zone = '+05:30'");
-        return $pdo;
-    } catch (PDOException $e) {
+        $config = require dirname(__DIR__) . '/config.php';
+        $pdo = portal_connect($config);
+    } catch (Throwable $e) {
+        if ($e instanceof PDOException && (int) ($e->errorInfo[1] ?? 0) === 1049) {
+            redirect('setup.php');
+        }
         error_log($e->getMessage());
         http_response_code(503);
-        exit('Database unavailable. Start MySQL in XAMPP, check config.local.php, and run php database/install.php.');
+        exit('Database unavailable. Check config.live.php on your hosting server or config.local.php on localhost, and confirm the database user has access to the database.');
     }
+    try {
+        require_once dirname(__DIR__) . '/database/install.php';
+        portal_ensure_schema($pdo, $config['db_name']);
+    } catch (Throwable $e) {
+        error_log($e->getMessage());
+        http_response_code(503);
+        exit('Database update could not finish. Check the PHP error log and database table permissions, then run database/install.php from the terminal or open setup.php to retry.');
+    }
+    return $pdo;
 }
 function query(string $sql, array $params = []): PDOStatement
 {
@@ -49,8 +57,8 @@ function one(string $sql, array $params = []): ?array { return query($sql, $para
 function count_value(string $sql, array $params = []): int { return (int) query($sql, $params)->fetchColumn(); }
 function h($value): string { return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function today(): string { return date('Y-m-d'); }
-function redirect(string $path): never { header('Location: ' . $path, true, 303); exit; }
-function fail(int $status, string $message): never { http_response_code($status); exit(h($message)); }
+function redirect(string $path): void { header('Location: ' . $path, true, 303); exit; }
+function fail(int $status, string $message): void { http_response_code($status); exit(h($message)); }
 function csrf_token(): string { return $_SESSION['csrf'] ??= bin2hex(random_bytes(32)); }
 function csrf_field(): string { return '<input type="hidden" name="csrf" value="' . h(csrf_token()) . '">'; }
 function check_csrf(): void

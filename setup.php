@@ -5,13 +5,14 @@ $error = null;
 $installed = false;
 try {
     $config = require __DIR__ . '/config.php';
-    $connection = new PDO("mysql:host={$config['db_host']};port={$config['db_port']};charset=utf8mb4", $config['db_user'], $config['db_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $connection = portal_connect($config, false);
     portal_install($connection, $config['db_name']);
     $installed = true;
     if (count_value('SELECT COUNT(*) FROM users')) { redirect('login.php'); }
 } catch (Throwable $e) {
     error_log($e->getMessage());
-    $error = 'Start MySQL in XAMPP and check the database settings in config.local.php, then refresh this page.';
+    http_response_code(503);
+    $error = 'Check config.live.php on your hosting server or config.local.php on localhost. On hosting, create the database in your control panel and assign its database user with table permissions, then refresh this page. Check the PHP error log if setup still fails.';
 }
 if ($installed && $_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
@@ -28,7 +29,7 @@ if ($installed && $_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ([$adminUsername,$managerUsername] as $username) {
             if (!preg_match('/^[A-Za-z0-9._-]{3,100}$/D', $username)) { throw new InvalidArgumentException('Use 3–100 letters, numbers, dots, underscores or hyphens for usernames.'); }
         }
-        $lock = 'bhavi_first_accounts_' . $config['db_name'];
+        $lock = 'bhavi_first_accounts_' . substr(hash('sha256', $config['db_name']), 0, 40);
         if (count_value('SELECT GET_LOCK(?,10)', [$lock]) !== 1) { throw new InvalidArgumentException('Another setup is running. Try again.'); }
         try {
             db()->beginTransaction();

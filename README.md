@@ -1,6 +1,6 @@
 # Bhavi Team Portal
 
-PHP 8.0+ with PDO MySQL, Fileinfo and Zip and MySQL 8.0.16+ or MariaDB 10.4+. XAMPP's bundled PHP 8.2 and MariaDB are supported. No Composer or Node dependencies are required.
+PHP 8.0+ with PDO MySQL, Mbstring, Fileinfo and DOM, and MySQL 8.0.16+ or MariaDB 10.4+. Zip is optional for native Excel downloads. XAMPP's bundled PHP 8.2 and MariaDB are supported. No Composer or Node dependencies are required.
 
 ## Start in XAMPP
 
@@ -9,7 +9,25 @@ PHP 8.0+ with PDO MySQL, Fileinfo and Zip and MySQL 8.0.16+ or MariaDB 10.4+. XA
 3. Choose the administrator and manager names, usernames and passwords. Setup creates the database and accounts, then closes once accounts exist. There are no default passwords.
 4. Sign in as the administrator and use **Add employee** to create accounts. Employee accounts need a department, designation and joining date. Share each employee's assigned username and password with them.
 
-The database is `bhavi_team_portal`, using XAMPP's `root` user with an empty password by default. For different credentials, copy `config.local.example.php` to `config.local.php` and edit it. `BHAVI_DB_HOST`, `BHAVI_DB_PORT`, `BHAVI_DB_NAME`, `BHAVI_DB_USER` and `BHAVI_DB_PASSWORD` environment variables override the file.
+On localhost the database is `bhavi_team_portal`, using XAMPP's `root` user with an empty password by default. For different local credentials, copy `config.local.example.php` to `config.local.php` and edit it. Subdomains use `config.live.php` instead. `BHAVI_DB_HOST`, `BHAVI_DB_PORT`, `BHAVI_DB_NAME`, `BHAVI_DB_USER` and `BHAVI_DB_PASSWORD` environment variables override the selected file.
+
+## Deploy or update a live subdomain
+
+1. Set the subdomain's document root to the directory containing `index.php`. Upload the complete application, including `includes/`, `database/`, `assets/`, the protected upload folders, `.htaccess` and `.user.ini`. Preserve existing uploaded files when updating.
+2. Create or select the database in your hosting panel. Assign its database user with SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX and REFERENCES permissions on that database. Use the full database name and username, including any hosting account prefix.
+3. Copy `config.live.example.php` to `config.live.php` and enter the hosting host/name/user/password. If `config.live.php` is already present, verify its settings instead. This private file is ignored by Git, so include it explicitly in your upload. Localhost continues to use `config.local.php`; copying that file to hosting will not replace the live profile.
+4. Open the subdomain. Every database-backed page checks the schema version and applies missing migrations through version 10 before loading. This adds salary, payment, payslip, attendance, document and work-time tables/columns while preserving existing accounts and records. An existing database is selected directly; database creation is attempted only when the configured database does not exist. Optional reporting views are skipped when the account lacks view permissions.
+5. Existing accounts can sign in normally. Only an empty installation opens `setup.php` to create administrator and manager accounts. To retry a failed update without SSH, open `setup.php`; existing accounts are preserved and the page returns to sign-in after updating.
+
+For a hosting terminal update, select the live profile explicitly:
+
+```sh
+BHAVI_APP_ENV=live php database/install.php
+```
+
+In PowerShell, set `$env:BHAVI_APP_ENV = 'live'` before running the installer. CLI otherwise defaults to local settings. Set `BHAVI_APP_ENV=local` for a development domain that is not localhost, a loopback address or a `.localhost` name.
+
+PHP-FPM/FastCGI reads upload limits from `.user.ini`. Apache mod_php uses the conditional PHP module block in `.htaccess`, preserving XAMPP's upload limits. If your hosting provider prohibits `php_value` overrides, remove only that conditional block and set `upload_max_filesize=100M`, `post_max_size=2100M`, `max_file_uploads=21` in the hosting PHP panel or `php.ini`. Upload folders must be writable by PHP. Page links and asset paths are relative and support both a subdomain root and an application subdirectory.
 
 To install or update the schema from the terminal:
 
@@ -22,7 +40,7 @@ The installer preserves existing records, applies the additional account, assign
 ## Workflows
 
 - Administrators can add, edit and delete departments. Deletion hides a department from employee choices while preserving history; move existing employees first. Custom role/job-title text does not change employee permissions.
-- Employee documents support multiple images and PDFs (100 MB per file, up to 20 files (2,000 MB of documents per request; PHP request limit 2,100 MB)). Photos are stored in protected uploads/photos/ and PDFs in protected uploads/pdf/, with metadata and paths in the database; older database-stored documents remain downloadable. Only administrators and managers can download them. Back up both the database and private storage. Apache PHP limits are set in `.htaccess`, and FastCGI limits in `.user.ini`.
+- Employee documents support multiple images and PDFs (100 MB per file, up to 20 files (2,000 MB of documents per request; PHP request limit 2,100 MB)). Photos are stored in protected uploads/photos/ and PDFs in protected uploads/pdf/, with metadata and paths in the database; older database-stored documents remain downloadable. Only administrators and managers can download them. Back up both the database and private storage. Apache PHP limits are set in the conditional `.htaccess` module block, and FastCGI limits in `.user.ini`.
 - Employee profile photos are saved under uploads/photos/ with their paths in users.avatar_path. Admins and managers can upload photos; signed-in employees and management can view them in the shared employee directory. Employees see the same directory details as management, but only management can edit or delete employee accounts. Salary remains private to the employee and management.
 - Notifications are grouped by date with a count; expand a day to read its messages. Managers can permanently delete leave requests from Actions, including their history/calendar entries; existing notification text is preserved.
 - Managers and administrators can review employee leave requests, include a message when approving/rejecting, or use **Save & send note** afterwards. Employees see the message in **My leave requests** and **Notifications**. Both roles receive a notification when an employee applies; only managers can delete requests. Managers and administrators can also send individual employee notifications.
@@ -43,7 +61,7 @@ The installer preserves existing records, applies the additional account, assign
 
 ## Employee salary and client payments
 
-Run the database installer when upgrading to schema version 8. Existing accounts, clients and documents are preserved.
+The latest schema is version 10. Missing migrations run automatically on the first database-backed request after an update; the terminal installer can also be used. Existing accounts, clients and documents are preserved.
 
 - Employee forms include employee ID (unique when provided), phone, guardian phone, relieving date, active/inactive status, PF/ESI/Other benefits and dated salary periods. Use **+ Add salary period** for increments. An ongoing previous period closes the day before the next period. Saved periods cannot overlap and retain their original benefit selections and amounts; add a dated period when benefits change. Relieving dates close an ongoing salary period.
 - As requested for this portal, both PF and ESI use **50% of monthly salary**. Employee PF is 12% of that base; company PF is another 12%. Employee ESI is 0.75%; company ESI is 3.25%. Unchecked benefits contribute zero. Each component is rounded to paise; take-home subtracts employee contributions only. For INR 14,000 with both benefits: employee PF 840, company PF 840, employee ESI 52.50, company ESI 227.50, take-home 13,107.50. These are the configured business calculations, not an attendance-based payroll engine.
@@ -51,17 +69,20 @@ Run the database installer when upgrading to schema version 8. Existing accounts
 - Clients include phone, contract dates, package, website/social/GMB URLs, and monthly reels/posters/carousels. Add dated receipts under **Payment**. The database stores the payment ledger and paid total, with a generated remaining balance. Repeated submissions of the same payment form are deduplicated; overpayments and negative amounts are rejected transactionally.
 - Add as many named social media links as needed for each client. Managers and administrators can edit a saved payment date or amount from the client's **View saved payments** list; payment edits are rejected if they would exceed the agreed total.
 - Management sees package, total, receipts and remaining. Employees see remaining and work details; package and the payment ledger are excluded from their client view.
-- Document files are private on disk; their metadata and paths are persisted in MySQL. Back up uploads together with the database. Apache reads the new upload limit from .htaccess; FastCGI reads .user.ini (which may be cached for several minutes).
+- Document files are private on disk; their metadata and paths are persisted in MySQL. Back up uploads together with the database. Apache mod_php reads upload limits from the conditional `.htaccess` module block; FastCGI reads `.user.ini` (which may be cached for several minutes).
 
 ## Verification
 
 ```powershell
 php tests/integration.php
+php tests/hosting.php
 ```
 
 The suite includes an actual 100 MB upload and an over-limit rejection check, which can take several minutes on Windows. Set `BHAVI_SKIP_LARGE_UPLOAD_TEST=1` for a faster run that skips those four boundary assertions.
 
 The suite creates a uniquely named test database, starts a local PHP server, exercises actual HTTP requests and database persistence, and removes its test database and uploaded logo afterward. It covers all five employee departments, role/ownership checks, CSRF, CRUD, work assignment/submission, date/category Excel filters, reviews, leave decisions and logout. PHP must be able to write to its configured session directory.
+
+`tests/hosting.php` checks profile selection and upgrades the original SQL in a disposable database using a temporary user with table permissions and no view permissions. It requires a local test database administrator able to create and remove that temporary database/user. To exercise the full HTTP suite with a subdomain hostname and subdirectory paths, set `BHAVI_TEST_HOST=portal.example.test` and `BHAVI_TEST_SUBDIRECTORY=1` when running `tests/integration.php`. All database settings are overridden with the disposable test database; the real live database is never used by the HTTP server.
 
 For interactive checks with an installed Chrome or Edge browser:
 

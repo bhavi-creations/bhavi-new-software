@@ -5,7 +5,7 @@ DirectoryIndex index.php
     php_value post_max_size 2100M
     php_value max_file_uploads 21
 </IfModule>
-<FilesMatch "^(config(\.local(\.example)?)?\.php|README\.md|AGENTS\.md)$">
+<FilesMatch "^(config(\.(local|live)(\.example)?)?\.php|README\.md|AGENTS\.md)$">
     Require all denied
 </FilesMatch>
 <IfModule mod_rewrite.c>

@@ -1,34 +1,77 @@
 <?php
 declare(strict_types=1);
 
+const PORTAL_SCHEMA_VERSION = 10;
+
+function portal_ensure_schema(PDO $pdo, string $database): void
+{
+    try {
+        $version = (int) $pdo->query('SELECT MAX(version) FROM portal_schema_versions')->fetchColumn();
+    } catch (PDOException $e) {
+        if ((int) ($e->errorInfo[1] ?? 0) !== 1146) {
+            throw $e;
+        }
+        $version = 0;
+    }
+    if ($version < PORTAL_SCHEMA_VERSION) {
+        portal_install($pdo, $database);
+    }
+}
+
+function portal_install_view(PDO $pdo, string $sql): void
+{
+    try {
+        $pdo->exec($sql);
+    } catch (PDOException $e) {
+        // Application pages use their own prepared queries. Export/reporting
+        // views are optional when the hosting account cannot create views.
+        if (!in_array((int) ($e->errorInfo[1] ?? 0), [1044, 1142, 1143, 1227], true)) {
+            throw $e;
+        }
+        error_log('Optional database view skipped: ' . $e->getMessage());
+    }
+}
+
 function portal_install(PDO $pdo, string $database): void
 {
-    if (!preg_match('/^[a-zA-Z0-9_]+$/D', $database)) {
+    if (!preg_match('/^[a-zA-Z0-9_-]{1,64}$/D', $database)) {
         throw new RuntimeException('Invalid database name.');
     }
-    $lock = 'bhavi_schema_' . $database;
+    $lock = 'bhavi_schema_' . substr(hash('sha256', $database), 0, 40);
     $stmt = $pdo->prepare('SELECT GET_LOCK(?, 15)');
     $stmt->execute([$lock]);
     if ((int) $stmt->fetchColumn() !== 1) {
         throw new RuntimeException('Database setup is busy. Please try again.');
     }
     try {
-        $pdo->exec("CREATE DATABASE IF NOT EXISTS `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-        $pdo->exec("USE `$database`");
-        $exists = $pdo->query("SHOW TABLES LIKE 'portal_schema_versions'")->fetchColumn();
-        if (!$exists) {
-            $sql = file_get_contents(__DIR__ . '/Bhavi_Team_Portal_Full_Database.sql');
-            $sql = preg_replace('/^--.*$/m', '', $sql);
-            $sql = preg_replace('/CREATE DATABASE IF NOT EXISTS bhavi_team_portal\s+CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci\s*;/i', '', $sql);
-            $sql = preg_replace('/USE bhavi_team_portal\s*;/i', '', $sql);
-            $sql = str_replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ', $sql);
-            $sql = str_replace('CREATE VIEW ', 'CREATE OR REPLACE VIEW ', $sql);
-            $sql = str_replace('INSERT INTO departments', 'INSERT IGNORE INTO departments', $sql);
-            $sql = str_replace('INSERT INTO leave_types', 'INSERT IGNORE INTO leave_types', $sql);
-            foreach (explode(';', $sql) as $statement) {
-                if (trim($statement) !== '') {
-                    $pdo->exec($statement);
-                }
+        try {
+            // Hosting accounts normally use a database created in the panel.
+            $pdo->exec("USE `$database`");
+        } catch (PDOException $e) {
+            if ((int) ($e->errorInfo[1] ?? 0) !== 1049) {
+                throw $e;
+            }
+            $pdo->exec("CREATE DATABASE `$database` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $pdo->exec("USE `$database`");
+        }
+        // Repair an interrupted base import too; existing tables and records
+        // are preserved, regardless of whether the version table exists.
+        $sql = file_get_contents(__DIR__ . '/Bhavi_Team_Portal_Full_Database.sql');
+        if ($sql === false) {
+            throw new RuntimeException('The base database schema file is missing.');
+        }
+        $sql = preg_replace('/^--.*$/m', '', $sql);
+        $sql = preg_replace('/CREATE DATABASE IF NOT EXISTS bhavi_team_portal\s+CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci\s*;/i', '', $sql);
+        $sql = preg_replace('/USE bhavi_team_portal\s*;/i', '', $sql);
+        $sql = str_replace('CREATE TABLE ', 'CREATE TABLE IF NOT EXISTS ', $sql);
+        $sql = str_replace('CREATE VIEW ', 'CREATE OR REPLACE VIEW ', $sql);
+        $sql = str_replace('INSERT INTO departments', 'INSERT IGNORE INTO departments', $sql);
+        $sql = str_replace('INSERT INTO leave_types', 'INSERT IGNORE INTO leave_types', $sql);
+        foreach (explode(';', $sql) as $statement) {
+            $statement = trim($statement);
+            // Create final views after all table migrations are applied.
+            if ($statement !== '' && !preg_match('/^CREATE OR REPLACE VIEW\s/i', $statement)) {
+                $pdo->exec($statement);
             }
         }
         $addColumn = static function (string $table, string $column, string $definition) use ($pdo): void {
@@ -80,10 +123,6 @@ function portal_install(PDO $pdo, string $database): void
         if (!$foreignKey) {
             $pdo->exec('ALTER TABLE daily_work_entries ADD CONSTRAINT fk_entry_assignment FOREIGN KEY (assignment_id) REFERENCES work_assignments(id)');
         }
-        $pdo->exec("CREATE OR REPLACE VIEW v_employee_totals AS SELECT COUNT(*) AS total_employees, COALESCE(SUM(account_status='active'),0) AS active_employees, COALESCE(SUM(account_status='inactive'),0) AS inactive_employees FROM users WHERE role='employee' AND deleted_at IS NULL");
-        $pdo->exec('CREATE OR REPLACE VIEW v_client_totals AS SELECT COUNT(*) AS total_clients,COALESCE(SUM(is_active=1),0) AS active_clients FROM clients WHERE deleted_at IS NULL');
-        $pdo->exec("CREATE OR REPLACE VIEW v_employee_directory AS SELECT u.id,u.full_name,u.email,u.username,u.account_status,u.avatar_path,ep.designation,ep.joining_date,ep.manager_id,d.id AS department_id,d.code AS department_code,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.deleted_at IS NULL");
-        $pdo->exec('CREATE OR REPLACE VIEW v_daily_work_export AS SELECT ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY e.row_order,e.id) AS s_no,s.work_date,s.employee_id,u.full_name AS employee_name,d.name AS department_name,c.client_name,s.submission_status,s.submitted_at,s.review_status,s.manager_remark,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id JOIN clients c ON c.id=e.client_id');
         $pdo->exec("CREATE TABLE IF NOT EXISTS portal_schema_versions (
             version INT PRIMARY KEY, installed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB");
@@ -112,7 +151,6 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id),
             FOREIGN KEY (uploaded_by) REFERENCES users(id)
         ) ENGINE=InnoDB");
-        $pdo->exec('CREATE OR REPLACE VIEW v_daily_work_export AS SELECT ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY e.row_order,e.id) AS s_no,s.work_date,s.employee_id,u.full_name AS employee_name,d.name AS department_name,c.client_name,s.submission_status,s.submitted_at,s.review_status,s.manager_remark,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id LEFT JOIN clients c ON c.id=e.client_id');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (1),(2),(3)');
         $addColumn('employee_documents','file_path','VARCHAR(255) NULL');
         $pdo->exec('ALTER TABLE employee_documents MODIFY file_content MEDIUMBLOB NULL');
@@ -188,6 +226,10 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('daily_work_entries','time_spent_minutes','INT UNSIGNED NULL');
         if (!$hasAssignmentMinutes) $pdo->exec('UPDATE work_assignments SET time_spent_minutes=ROUND(time_spent_hours*60)');
         if (!$hasEntryMinutes) $pdo->exec('UPDATE daily_work_entries SET time_spent_minutes=ROUND(time_spent_hours*60) WHERE time_spent_hours IS NOT NULL');
+        portal_install_view($pdo, "CREATE OR REPLACE VIEW v_employee_totals AS SELECT COUNT(*) AS total_employees, COALESCE(SUM(account_status='active'),0) AS active_employees, COALESCE(SUM(account_status='inactive'),0) AS inactive_employees FROM users WHERE role='employee' AND deleted_at IS NULL");
+        portal_install_view($pdo, 'CREATE OR REPLACE VIEW v_client_totals AS SELECT COUNT(*) AS total_clients,COALESCE(SUM(is_active=1),0) AS active_clients FROM clients WHERE deleted_at IS NULL');
+        portal_install_view($pdo, "CREATE OR REPLACE VIEW v_employee_directory AS SELECT u.id,u.full_name,u.email,u.username,u.account_status,u.avatar_path,ep.designation,ep.joining_date,ep.manager_id,d.id AS department_id,d.code AS department_code,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.deleted_at IS NULL");
+        portal_install_view($pdo, 'CREATE OR REPLACE VIEW v_daily_work_export AS SELECT ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY e.row_order,e.id) AS s_no,s.work_date,s.employee_id,u.full_name AS employee_name,d.name AS department_name,c.client_name,s.submission_status,s.submitted_at,s.review_status,s.manager_remark,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id LEFT JOIN clients c ON c.id=e.client_id');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (10)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
@@ -196,8 +238,9 @@ function portal_install(PDO $pdo, string $database): void
 }
 
 if (PHP_SAPI === 'cli' && realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
+    require_once dirname(__DIR__) . '/includes/database.php';
     $config = require dirname(__DIR__) . '/config.php';
-    $pdo = new PDO("mysql:host={$config['db_host']};port={$config['db_port']};charset=utf8mb4", $config['db_user'], $config['db_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $pdo = portal_connect($config, false);
     portal_install($pdo, $config['db_name']);
-    echo "Database ready. Open setup.php to create your administrator and manager accounts.\n";
+    echo 'Database ready (schema version ' . PORTAL_SCHEMA_VERSION . "). Existing records preserved. Open the portal to sign in, or setup.php for a new installation.\n";
 }
