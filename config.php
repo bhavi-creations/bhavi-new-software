@@ -18,9 +18,9 @@ if (!in_array($environment, ['local', 'live'], true)) {
 $config = [
     'db_host' => $environment === 'local' ? '127.0.0.1' : 'localhost',
     'db_port' => '3306',
-    'db_name' => $environment === 'local' ? 'bhavi_team_portal' : '',
-    'db_user' => $environment === 'local' ? 'root' : '',
-    'db_password' => '',
+    'db_name' => $environment === 'local' ? 'bhavi_team_portal' : 'bhavi_new_software',
+    'db_user' => $environment === 'local' ? 'root' : 'bhavicreations',
+    'db_password' => $environment === 'local' ? '' : 'd8Az75YlgmyBnVM',
 ];
 $profile = __DIR__ . '/config.' . $environment . '.php';
 if (is_file($profile)) {

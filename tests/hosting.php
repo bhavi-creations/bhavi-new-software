@@ -35,7 +35,7 @@ try {
     }
     $_SERVER['HTTP_HOST'] = 'portal.example.test';
     $config = hosting_config($fixture . '/config.php');
-    hosting_expect($config['db_name'] === '' && $config['db_user'] === '', 'A live hostname never falls back to XAMPP root credentials');
+    hosting_expect($config['db_name'] !== '' && $config['db_user'] !== '' && $config['db_user'] !== 'root', 'A live hostname selects hosting defaults without needing a separate profile');
     file_put_contents($fixture . '/config.live.php', "<?php return ['db_name'=>'live_fixture','db_user'=>'live_user','db_password'=>'live_fixture_secret'];");
     file_put_contents($fixture . '/config.local.php', "<?php return ['db_name'=>'local_fixture','db_user'=>'local_user'];");
     foreach (['localhost', 'localhost:8080', 'LOCALHOST.', '127.0.0.1', '127.0.0.2:8080', '[::1]', '[::1]:8080', 'app.localhost'] as $host) {
