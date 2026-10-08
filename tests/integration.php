@@ -4,6 +4,7 @@ declare(strict_types=1);
 // Runs against a uniquely named disposable database, never the application database.
 date_default_timezone_set('Asia/Kolkata');
 require dirname(__DIR__) . '/database/install.php';
+require_once dirname(__DIR__) . '/includes/excel-export.php';
 $config = require dirname(__DIR__) . '/config.php';
 $database = 'bhavi_portal_test_' . bin2hex(random_bytes(6));
 $pdo = new PDO("mysql:host={$config['db_host']};port={$config['db_port']};charset=utf8mb4", $config['db_user'], $config['db_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
@@ -255,16 +256,17 @@ try {
     expect($browsers['seo']->post($dashboards['seo'], ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'remark' => 'Attack'])['status'] === 403, 'Assignment ownership enforced');
     $website = $browsers['website'];
     $website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate);
-    $update = ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'time_spent_hours'=>'2.50', 'remark' => '=SUM(1,2)', 'website_new_count' => '2', 'website_changes_count' => '1'];
+    $update = ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'time_spent_hours'=>'1 hour 30 min', 'remark' => '=SUM(1,2)', 'website_new_count' => '2', 'website_changes_count' => '1'];
     expect($website->post('employee-assigned-work.php?assignment_date=' . $assignmentDate, $update)['status'] === 303, 'Employee updates future assignment in today report');
     $website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate);
     expect($website->post('employee-assigned-work.php?assignment_date=' . $assignmentDate, $update)['status'] === 303, 'Repeated update');
     expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries WHERE assignment_id=?', [$assignmentId]) === 1, 'Repeated task update does not duplicate report rows');
     expect(scalar('SELECT work_date FROM daily_work_submissions WHERE id=(SELECT submission_id FROM daily_work_entries WHERE assignment_id=? LIMIT 1)', [$assignmentId]) === date('Y-m-d'), 'Future assignment completion saves under today date');
     expect(scalar('SELECT status FROM work_assignments WHERE id=?', [$assignmentId]) === 'completed', 'Task status persists');
-    expect(scalar('SELECT time_spent_hours FROM work_assignments WHERE id=?',[$assignmentId])==='2.50' && scalar('SELECT time_spent_hours FROM daily_work_entries WHERE assignment_id=?',[$assignmentId])==='2.50','Employee time spent saves to assignment and work history');
-    expect(str_contains($admin->request('manager-assigned-status.php?employee='.$employeeIds['website'])['body'],'=SUM(1,2)') && str_contains($admin->request('manager-assigned-status.php?employee='.$employeeIds['website'])['body'],'2.50'),'Admin can filter by employee and inspect task progress');
-    expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=(SELECT id FROM users WHERE username='admin.test') AND title LIKE '%assigned task update%' AND message LIKE '%2.50 hours%' AND message LIKE '%=SUM(1,2)%'")>0,'Admin receives submitted task status, hours, and employee remark');
+    expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?',[$assignmentId])===90 && (int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE assignment_id=?',[$assignmentId])===90,'Employee time spent is saved as minutes on assignment and work history');
+    expect(str_contains($admin->request('manager-assigned-status.php?employee='.$employeeIds['website'])['body'],'=SUM(1,2)') && str_contains($admin->request('manager-assigned-status.php?employee='.$employeeIds['website'])['body'],'1 hour 30 min'),'Admin sees readable duration and employee remark');
+    expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=(SELECT id FROM users WHERE username='admin.test') AND title LIKE '%assigned task update%' AND message LIKE '%1 hour 30 min%' AND message LIKE '%=SUM(1,2)%'")>0,'Admin receives submitted task status, readable time, and employee remark');
+    expect(str_contains($website->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'assets/js/assignment-duration.js'),'Employee assigned work loads the readable duration input');
     foreach ($dashboards as $code => $dashboard) {
         $browser = $browsers[$code];
         $browser->request($dashboard);
@@ -306,6 +308,17 @@ try {
     $workbook->close();
     expect(str_contains($sheet, 'Yesterday page') && str_contains($sheet, 'website daily task') && !str_contains($sheet, 'seo daily task'), 'Excel range and department filtering');
     expect(str_contains($sheet, '=SUM(1,2)') && str_contains($sheet, 'inlineStr'), 'Excel formula-looking text stays a literal string');
+    $allDatesPage=$manager->request('manager-dailywork.php?all_dates=1&employee='.$employeeIds['website']);
+    expect(str_contains($allDatesPage['body'],'name="all_dates" value="1"') && str_contains($allDatesPage['body'],'All dates'),'All-dates report filter is available for an employee');
+    $allDatesExcel=$manager->request('download-work.php?all_dates=1&employee='.$employeeIds['website']);
+    $allDatesPath=tempnam(sys_get_temp_dir(),'bhavi_all_dates_');
+    $temporary[]=$allDatesPath;
+    file_put_contents($allDatesPath,$allDatesExcel['body']);
+    $allDatesWorkbook=new ZipArchive();
+    expect($allDatesWorkbook->open($allDatesPath)===true,'Employee all-dates Excel workbook opens');
+    $allDatesSheet=$allDatesWorkbook->getFromName('xl/worksheets/sheet1.xml');
+    $allDatesWorkbook->close();
+    expect(str_contains($allDatesSheet,'Yesterday page') && str_contains($allDatesSheet,'website daily task') && str_contains($allDatesSheet,'1 hour 30 min') && !str_contains($allDatesSheet,'seo daily task'),'All-dates Excel includes selected employee history and time without other employees');
     $employeeExcel = $manager->request('download-work.php?employee=' . $employeeIds['seo']);
     $employeePath = tempnam(sys_get_temp_dir(), 'bhavi_report_');
     $temporary[] = $employeePath;
@@ -315,6 +328,10 @@ try {
     $employeeSheet = $employeeWorkbook->getFromName('xl/worksheets/sheet1.xml');
     $employeeWorkbook->close();
     expect(str_contains($employeeSheet, 'seo daily task') && !str_contains($employeeSheet, 'website daily task'), 'Employee Excel filter');
+    ob_start();
+    download_csv(['Task','Remark'],[['Page update','=SUM(1,2)'],['Follow-up','Issue, needs review']],'bhavi-fallback-test');
+    $csvFallback=ob_get_clean();
+    expect(str_starts_with($csvFallback,"\xEF\xBB\xBFTask,Remark") && str_contains($csvFallback,"'=SUM(1,2)") && str_contains($csvFallback,'"Issue, needs review"'),'CSV fallback is Excel-readable, preserves comma fields, and neutralizes formula input');
     $sheetId = (int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?', [$employeeIds['website'], date('Y-m-d')]);
     $manager->request('manager-review-work.php?id=' . $sheetId);
     expect($manager->post('manager-review-work.php?id=' . $sheetId, ['action' => 'review_sheet', 'review_status' => 'changes_requested', 'manager_remark' => 'Please update the mobile header'])['status'] === 303, 'Manager reviews work');

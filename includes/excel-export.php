@@ -1,7 +1,34 @@
 <?php
+function download_csv(array $headers, iterable $records, string $filename): void
+{
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="'.$filename.'.csv"');
+    $output=fopen('php://output','wb');
+    if ($output===false) throw new RuntimeException('Unable to create report download.');
+    fwrite($output,"\xEF\xBB\xBF");
+    $writeRow=static function(array $row) use ($output): void {
+        $safe=array_map(static function($value): string {
+            $value=(string)($value??'');
+            if (preg_match('/^[\s\x00-\x1F]*[=+\-@]/u',$value)) $value="'".$value;
+            return $value;
+        },$row);
+        if (fputcsv($output,$safe,',','"','')===false) throw new RuntimeException('Unable to write report download.');
+    };
+    try {
+        $writeRow($headers);
+        foreach ($records as $record) $writeRow($record);
+    } finally {
+        fclose($output);
+    }
+}
+
 // Minimal XLSX workbook: inline strings preserve employee-entered text as text.
 function download_excel(array $headers, iterable $records, string $filename): void
 {
+    if (!class_exists('ZipArchive')) {
+        download_csv($headers,$records,$filename);
+        return;
+    }
     $escape=static fn($value)=>htmlspecialchars(preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u','',(string)($value??'')),ENT_XML1|ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $sheet=fopen('php://temp/maxmemory:2097152','w+');
     fwrite($sheet,'<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>');

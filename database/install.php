@@ -182,6 +182,13 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('work_assignments','time_spent_hours','DECIMAL(7,2) NOT NULL DEFAULT 0.00');
         $addColumn('daily_work_entries','time_spent_hours','DECIMAL(7,2) NULL');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (9)');
+        $hasAssignmentMinutes=(bool)$pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='work_assignments' AND COLUMN_NAME='time_spent_minutes'")->fetchColumn();
+        $hasEntryMinutes=(bool)$pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='daily_work_entries' AND COLUMN_NAME='time_spent_minutes'")->fetchColumn();
+        $addColumn('work_assignments','time_spent_minutes','INT UNSIGNED NOT NULL DEFAULT 0');
+        $addColumn('daily_work_entries','time_spent_minutes','INT UNSIGNED NULL');
+        if (!$hasAssignmentMinutes) $pdo->exec('UPDATE work_assignments SET time_spent_minutes=ROUND(time_spent_hours*60)');
+        if (!$hasEntryMinutes) $pdo->exec('UPDATE daily_work_entries SET time_spent_minutes=ROUND(time_spent_hours*60) WHERE time_spent_hours IS NOT NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (10)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

@@ -61,25 +61,48 @@ function save_work_entry(array $sheet, string $department, array $common, array 
 }
 function sync_assignment(int $id): void
 {
-    $latest=one('SELECT e.task_status,e.remark,e.time_spent_hours FROM daily_work_entries e JOIN daily_work_submissions s ON s.id=e.submission_id WHERE e.assignment_id=? ORDER BY s.work_date DESC,e.updated_at DESC,e.id DESC LIMIT 1',[$id]);
-    query('UPDATE work_assignments SET status=?,employee_remark=?,time_spent_hours=? WHERE id=?',[$latest['task_status']??'pending',$latest['remark']??null,$latest['time_spent_hours']??0,$id]);
+    $latest=one('SELECT e.task_status,e.remark,e.time_spent_minutes FROM daily_work_entries e JOIN daily_work_submissions s ON s.id=e.submission_id WHERE e.assignment_id=? ORDER BY s.work_date DESC,e.updated_at DESC,e.id DESC LIMIT 1',[$id]);
+    query('UPDATE work_assignments SET status=?,employee_remark=?,time_spent_minutes=? WHERE id=?',[$latest['task_status']??'pending',$latest['remark']??null,$latest['time_spent_minutes']??0,$id]);
+}
+function parse_work_duration(string $value): int
+{
+    $value=trim($value);
+    if (!preg_match('/^(?:(\d{1,5})\s*(?:hours?|hrs?|h))?\s*(?:(\d{1,6})\s*(?:minutes?|mins?|m))?$/iD',$value,$matches) || ($matches[1]==='' && ($matches[2]??'')==='')) {
+        throw new InvalidArgumentException('Enter time like 1 hour 30 min or 45 min.');
+    }
+    $hours=(int)($matches[1]??0);
+    $minutes=(int)($matches[2]??0);
+    if ($hours>99999 || $minutes>5999999 || ($hours>0 && $minutes>59)) throw new InvalidArgumentException('Enter a valid duration; minutes must be below 60 when hours are included.');
+    return $hours*60+$minutes;
+}
+function format_work_duration($minutes): string
+{
+    $minutes=max(0,(int)$minutes);
+    $hours=intdiv($minutes,60);
+    $remaining=$minutes%60;
+    $parts=[];
+    if ($hours) $parts[]=$hours.' '.($hours===1?'hour':'hours');
+    if ($remaining || !$hours) $parts[]=$remaining.' min';
+    return implode(' ',$parts);
 }
 function work_details(array $entry,string $department): array
 {
     $fields=['Task'=>$entry['task_title']?:($entry['website_page_task']?:($entry['seo_task']?:'Work entry')),'Status'=>$entry['task_status']];
-    if (array_key_exists('time_spent_hours',$entry)) $fields['Time spent (hours)']=$entry['time_spent_hours'];
+    if (array_key_exists('time_spent_minutes',$entry)) $fields['Time spent']=format_work_duration($entry['time_spent_minutes']);
     $fields['Remark']=$entry['remark'];
     foreach (metric_definitions($department) as $name=>[$label]) $fields[$label]=$entry[$name];
     return $fields;
 }
 function report_filter(): array
 {
-    $from=date_input('from_date',['from_date'=>$_GET['from_date']??$_GET['date']??today()]);
-    $to=date_input('to_date',['to_date'=>$_GET['to_date']??$from]);
-    if ($to<$from) throw new InvalidArgumentException('The end date must be on or after the start date.');
+    $allDates=($_GET['all_dates']??'')==='1';
+    $from=$allDates?null:date_input('from_date',['from_date'=>$_GET['from_date']??$_GET['date']??today()]);
+    $to=$allDates?null:date_input('to_date',['to_date'=>$_GET['to_date']??$from]);
+    if (!$allDates && $to<$from) throw new InvalidArgumentException('The end date must be on or after the start date.');
     $department=(int)($_GET['department']??0); $employee=(int)($_GET['employee']??0);
-    $where="s.submission_status='submitted' AND s.work_date BETWEEN ? AND ?"; $params=[$from,$to];
+    $where="s.submission_status='submitted'"; $params=[];
+    if (!$allDates) { $where.=' AND s.work_date BETWEEN ? AND ?'; $params[]=$from; $params[]=$to; }
     if ($department) { $where.=' AND s.department_id=?'; $params[]=$department; }
     if ($employee) { $where.=' AND s.employee_id=?'; $params[]=$employee; }
-    return compact('from','to','department','employee','where','params');
+    return compact('from','to','allDates','department','employee','where','params');
 }

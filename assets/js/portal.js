@@ -36,17 +36,34 @@ document.querySelectorAll('[data-department-select]').forEach(department => {
   department.addEventListener('change', update);
   update();
 });
-document.querySelectorAll('[data-range-preset]').forEach(select => select.addEventListener('change', () => {
+document.querySelectorAll('[data-range-preset]').forEach(select => {
   const from = document.querySelector('[name="from_date"]');
   const to = document.querySelector('[name="to_date"]');
-  if (select.value === 'custom') return;
-  const end = new Date(select.dataset.today + 'T12:00:00');
-  const start = new Date(end);
-  if (select.value === 'week') start.setDate(end.getDate() - 6);
-  if (select.value === 'month') start.setDate(1);
-  const format = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  from.value = format(start); to.value = format(end);
-}));
+  const allDates = select.form.querySelector('[name="all_dates"]');
+  if (select.dataset.allDates === '1') select.value = 'all';
+  if (allDates) {
+    from.disabled = select.value === 'all';
+    from.required = select.value !== 'all';
+    to.disabled = select.value === 'all';
+    to.required = select.value !== 'all';
+  }
+  select.addEventListener('change', () => {
+    const from = document.querySelector('[name="from_date"]');
+    const to = document.querySelector('[name="to_date"]');
+    const allDates = select.form.querySelector('[name="all_dates"]');
+    const isAllDates = select.value === 'all';
+    if (allDates) allDates.value = isAllDates ? '1' : '0';
+    if (from) { from.disabled = isAllDates; from.required = !isAllDates; }
+    if (to) { to.disabled = isAllDates; to.required = !isAllDates; }
+    if (select.value === 'custom' || isAllDates) return;
+    const end = new Date(select.dataset.today + 'T12:00:00');
+    const start = new Date(end);
+    if (select.value === 'week') start.setDate(end.getDate() - 6);
+    if (select.value === 'month') start.setDate(1);
+    const format = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    from.value = format(start); to.value = format(end);
+  });
+});
 document.querySelectorAll('[data-filter-department]').forEach(select => select.addEventListener('change', () => {
   select.form.querySelector('[name="employee"]').value = '';
   select.form.requestSubmit();
