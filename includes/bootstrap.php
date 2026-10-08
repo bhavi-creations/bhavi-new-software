@@ -136,7 +136,7 @@ function options(array $records, string $label, $selected = null, string $key = 
 }
 function notify_staff(string $type, string $title, string $message, ?int $submission = null, ?int $leave = null): void
 {
-    foreach (rows("SELECT id FROM users WHERE role IN ('manager','admin') AND (? <> 'leave_applied' OR role='manager') AND account_status='active' AND deleted_at IS NULL",[$type]) as $recipient) {
+    foreach (rows("SELECT id FROM users WHERE role IN ('manager','admin') AND account_status='active' AND deleted_at IS NULL") as $recipient) {
         query('INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,submission_id,leave_request_id) VALUES (?,?,?,?,?,?,?)', [$recipient['id'], current_user()['id'], $type, $title, $message, $submission, $leave]);
     }
 }

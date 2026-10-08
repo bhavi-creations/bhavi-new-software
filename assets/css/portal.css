@@ -1787,4 +1787,18 @@ img[src^="employee-photo.php"] {
 .contribution-box h3{font-size:14px;margin:0 0 16px}
 .simple-amounts{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;margin:0;font-size:14px}
 .simple-amounts dt{color:#56647b}.simple-amounts dd{margin:0;font-weight:600;text-align:right;overflow-wrap:anywhere}
+.social-link-row{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+.social-link-row>button{grid-column:1/-1}
+.attendance-control{padding:16px 18px;border-top:1px solid #ffffff26;border-bottom:1px solid #ffffff26}
+.attendance-control p{margin:0 0 8px;color:#d4d9eb;font-size:12px}
+.attendance-button{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid #8792d8;border-radius:8px;background:#354477;color:#fff;font-weight:600;cursor:pointer}
+.attendance-button:hover{background:#455895}
+.employee-profile-layout{display:grid;grid-template-columns:minmax(320px,.85fr) minmax(0,1.55fr);align-items:start;gap:22px}
+.employee-profile-card{position:sticky;top:20px}
+.employee-profile-card h2{font-size:24px}
+.employee-profile-photo{display:block;width:180px;height:180px;object-fit:cover;border-radius:14px;margin:16px 0 22px}
+.employee-profile-main{min-width:0}
+.employee-profile-main>.panel{min-width:0}
+@media(max-width:900px){.employee-profile-layout{grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr)}.employee-profile-card{position:static}}
 @media(max-width:700px){.record-form .fields,.record-form .repeat-row,.money-summary,.contribution-grid{grid-template-columns:1fr}.money-card{padding:16px}.money-card>strong{font-size:23px}.money-summary{gap:10px}.record-form .form-actions{flex-wrap:wrap}.record-form .form-actions>*{flex:1;text-align:center}.simple-amounts{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.employee-profile-layout{grid-template-columns:1fr}.employee-profile-photo{width:140px;height:140px}.social-link-row{grid-template-columns:1fr!important}}

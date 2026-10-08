@@ -9,10 +9,49 @@ $error=null;
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     check_csrf(); $savedFile=null;
     try {
+        $action=$_POST['action']??'save_client';
+        if ($action==='update_payment') {
+            if (!$id) throw new InvalidArgumentException('Select a client before editing a payment.');
+            $paymentId=positive_id($_POST['payment_id']??null);
+            $paymentDate=date_input('payment_date');
+            $amount=decimal_money(money_cents($_POST['amount']??''));
+            if (money_cents($amount)===0) throw new InvalidArgumentException('Payment must be greater than zero.');
+            db()->beginTransaction();
+            $lockedClient=one('SELECT payment_total FROM clients WHERE id=? AND deleted_at IS NULL FOR UPDATE',[$id]);
+            $payment=one('SELECT id FROM client_payments WHERE id=? AND client_id=? FOR UPDATE',[$paymentId,$id]);
+            if (!$lockedClient || !$payment) throw new InvalidArgumentException('Client payment is no longer available.');
+            $otherPayments=(string)query('SELECT COALESCE(SUM(amount),0) FROM client_payments WHERE client_id=? AND id<>?',[$id,$paymentId])->fetchColumn();
+            if (money_cents($otherPayments)+money_cents($amount)>money_cents((string)$lockedClient['payment_total'])) {
+                throw new InvalidArgumentException('Payments exceed the total payment amount.');
+            }
+            query('UPDATE client_payments SET payment_date=?,amount=? WHERE id=? AND client_id=?',[$paymentDate,$amount,$paymentId,$id]);
+            $paid=(string)query('SELECT COALESCE(SUM(amount),0) FROM client_payments WHERE client_id=?',[$id])->fetchColumn();
+            query('UPDATE clients SET paid_amount=? WHERE id=?',[$paid,$id]);
+            db()->commit();
+            flash('Saved payment updated.');
+            redirect('admin-add-client.php?id='.$id.'#saved-payments');
+        }
+        if ($action!=='save_client') throw new InvalidArgumentException('Invalid action.');
         $name=text_input('client_name',150);
         $website=text_input('website_url',2048,false);
         if ($website!=='' && (!filter_var($website,FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($website,PHP_URL_SCHEME)??''),['http','https'],true))) { throw new InvalidArgumentException('Enter an http:// or https:// website URL.'); }
-        $extra=['phone'=>optional_text('phone',30),'starting_date'=>optional_date('starting_date'),'ending_date'=>optional_date('ending_date'),'package'=>optional_text('package'),'social_media_url'=>optional_text('social_media_url',2048),'gmb_url'=>optional_text('gmb_url',2048)];
+        $socialLinks=$_POST['social_links']??[];
+        if (!is_array($socialLinks) || count($socialLinks)>50) throw new InvalidArgumentException('Add up to 50 social media links.');
+        $validSocialLinks=[];
+        foreach ($socialLinks as $link) {
+            if (!is_array($link)) throw new InvalidArgumentException('Invalid social media link.');
+            $platformValue=$link['platform']??'';
+            $urlValue=$link['url']??'';
+            if (!is_string($platformValue) || !is_string($urlValue)) throw new InvalidArgumentException('Invalid social media link.');
+            $platform=trim($platformValue);
+            $url=trim($urlValue);
+            if ($platform==='' && $url==='') continue;
+            if ($platform==='' || mb_strlen($platform)>100) throw new InvalidArgumentException('Enter a platform name up to 100 characters for each social media link.');
+            if (!filter_var($url,FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($url,PHP_URL_SCHEME)??''),['http','https'],true) || strlen($url)>2048) throw new InvalidArgumentException('Enter a valid http:// or https:// URL for each social media link.');
+            $validSocialLinks[]=['platform'=>$platform,'url'=>$url];
+        }
+        $legacySocialUrl=$validSocialLinks[0]['url']??'';
+        $extra=['phone'=>optional_text('phone',30),'starting_date'=>optional_date('starting_date'),'ending_date'=>optional_date('ending_date'),'package'=>optional_text('package'),'social_media_url'=>$legacySocialUrl,'gmb_url'=>optional_text('gmb_url',2048)];
         if ($extra['starting_date'] && $extra['ending_date'] && $extra['ending_date']<$extra['starting_date']) throw new InvalidArgumentException('Ending date cannot be before starting date.');
         foreach (['social_media_url','gmb_url'] as $key) if ($extra[$key]!=='' && (!filter_var($extra[$key],FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($extra[$key],PHP_URL_SCHEME)??''),['http','https'],true))) throw new InvalidArgumentException('Enter valid http:// or https:// social media and GMB URLs.');
         foreach (['monthly_reels','monthly_posters','monthly_carousels'] as $key) {
@@ -65,6 +104,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         $extra['paid_amount']=$paid;
         $assignments=implode(',',array_map(static fn($key)=>$key.'=?',array_keys($extra)));
         query('UPDATE clients SET '.$assignments.' WHERE id=?',array_merge(array_values($extra),[$id]));
+        query('DELETE FROM client_social_links WHERE client_id=?',[$id]);
+        foreach ($validSocialLinks as $link) {
+            query('INSERT INTO client_social_links (client_id,platform_name,url) VALUES (?,?,?)',[$id,$link['platform'],$link['url']]);
+        }
         db()->commit();
         flash('Client saved.'); redirect('add-client.php');
     } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); if (!$record) $id=0; if ($savedFile && is_file($savedFile)) unlink($savedFile); $error=mutation_error($e); }
@@ -77,7 +120,14 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
 <div class="field"><label for="client_name">Client name *</label><input id="client_name" name="client_name" value="<?= h($value('client_name')) ?>" maxlength="150" required></div>
 <?php foreach (['phone'=>['Phone number','tel',30],'package'=>['Package name','text',255],'starting_date'=>['Starting date','date',10],'ending_date'=>['Ending date','date',10]] as $key=>$spec): ?><div class="field"><label for="<?= $key ?>"><?= $spec[0] ?></label><input id="<?= $key ?>" name="<?= $key ?>" type="<?= $spec[1] ?>" maxlength="<?= $spec[2] ?>" value="<?= h($value($key)) ?>"></div><?php endforeach; ?>
 </div><details class="simple-details"><summary>Website, social media & logo (optional)</summary><div class="fields">
-<?php foreach (['website_url'=>'Website URL','social_media_url'=>'Social media URL','gmb_url'=>'Google Business Profile URL'] as $key=>$label): ?><div class="field"><label for="<?= $key ?>"><?= $label ?></label><input type="url" id="<?= $key ?>" name="<?= $key ?>" value="<?= h($value($key)) ?>" placeholder="https://" maxlength="2048"></div><?php endforeach; ?>
+<div class="field"><label for="website_url">Website URL</label><input type="url" id="website_url" name="website_url" value="<?= h($value('website_url')) ?>" placeholder="https://" maxlength="2048"></div>
+<div class="field"><label for="gmb_url">Google Business Profile URL</label><input type="url" id="gmb_url" name="gmb_url" value="<?= h($value('gmb_url')) ?>" placeholder="https://" maxlength="2048"></div>
+<div class="field social-links-field"><label>Social media links</label><p class="help">Enter a platform name and its URL. Add as many as needed.</p><div id="social-link-rows"><?php
+$savedSocialLinks=$id?rows('SELECT platform_name AS platform,url FROM client_social_links WHERE client_id=? ORDER BY id',[$id]):[];
+$socialDraft=$_POST['social_links']??$savedSocialLinks;
+if (!is_array($socialDraft)) $socialDraft=[];
+if (!$socialDraft) $socialDraft=[['platform'=>'','url'=>'']];
+foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; ?><div class="fields repeat-row social-link-row"><div class="field"><label>Platform name<input name="social_links[<?= (int)$index ?>][platform]" maxlength="100" placeholder="e.g. Instagram" value="<?= h($link['platform']??'') ?>"></label></div><div class="field"><label>Social media URL<input type="url" name="social_links[<?= (int)$index ?>][url]" maxlength="2048" placeholder="https://" value="<?= h($link['url']??'') ?>"></label></div><button type="button" class="secondary" data-remove-row>Remove</button></div><?php endforeach; ?></div><button type="button" class="secondary" data-add-row="social">+ Add social media link</button></div>
 <div class="field"><label for="client_logo">Client logo</label><input type="file" id="client_logo" name="client_logo" accept="image/png,image/jpeg,image/webp"><p class="help">PNG, JPG or WebP, up to 50 MB. Leave empty to keep the current logo.</p><?php if (!empty($record['logo_path'])): ?><img class="client-logo" src="client-logo.php?id=<?= (int)$record['id'] ?>" alt="Current logo"><?php endif; ?></div></div></details></section>
 <section class="panel form-section"><h2><span class="section-number">2</span> Work to deliver each month</h2><p class="help">Enter how many of each item you need to create. Use 0 if it is not included.</p><div class="fields">
 <?php foreach (['monthly_reels'=>'Reels','monthly_posters'=>'Posters','monthly_carousels'=>'Carousels'] as $key=>$label): ?><div class="field"><label for="<?= $key ?>"><?= $label ?> per month</label><input type="number" min="0" max="1000000" step="1" id="<?= $key ?>" name="<?= $key ?>" value="<?= h($value($key,0)) ?>" required></div><?php endforeach; ?>
@@ -90,5 +140,5 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
 <input type="hidden" name="payment_request_key" value="<?= h($_POST['payment_request_key']??bin2hex(random_bytes(16))) ?>"><div id="payment-rows"><?php $draft=$_POST['payments']??[['amount'=>'','date'=>'']]; if (!is_array($draft)) $draft=[]; foreach ($draft as $index=>$payment): if (!is_array($payment)) continue; ?><div class="fields repeat-row"><div class="field"><label>Date received<input type="date" name="payments[<?= (int)$index ?>][date]" value="<?= h($payment['date']??'') ?>"></label></div><div class="field"><label>Amount received (₹)<input type="number" name="payments[<?= (int)$index ?>][amount]" min="0.01" max="9999999999.99" step="0.01" placeholder="e.g. 2000" value="<?= h($payment['amount']??'') ?>"></label></div><button type="button" class="secondary" data-remove-row>Remove</button></div><?php endforeach; ?></div>
 <button type="button" class="secondary" data-add-row="payment">+ Add another payment</button><p class="help">The totals above include new entries. Click Save client to save them.</p>
 </section><div class="form-actions"><button class="primary" type="submit">Save client</button><a class="button secondary" href="add-client.php">Cancel</a></div></form>
-<?php if ($record): $history=rows('SELECT * FROM client_payments WHERE client_id=? ORDER BY payment_date,id',[$id]); ?><section class="panel"><details class="simple-details"><summary>View saved payments (<?= count($history) ?>)</summary><div class="table-scroll"><table><thead><tr><th>Date received</th><th>Amount received</th></tr></thead><tbody><?php if (!$history) empty_row(2,'No payments received yet.'); foreach ($history as $payment): ?><tr><td><?= h($payment['payment_date']) ?></td><td><?= h(money_label($payment['amount'])) ?></td></tr><?php endforeach; ?></tbody></table></div></details></section><?php endif; ?>
+<?php if ($record): $history=rows('SELECT * FROM client_payments WHERE client_id=? ORDER BY payment_date,id',[$id]); ?><section class="panel" id="saved-payments"><details class="simple-details" open><summary>View saved payments (<?= count($history) ?>)</summary><div class="table-scroll"><table><thead><tr><th>Date received</th><th>Amount received</th><th>Action</th></tr></thead><tbody><?php if (!$history) empty_row(3,'No payments received yet.'); foreach ($history as $payment): $editing=(int)($_GET['edit_payment']??0)===(int)$payment['id']; ?><tr><?php if ($editing): $formId='edit-payment-'.$payment['id']; ?><td><input form="<?= $formId ?>" type="date" name="payment_date" aria-label="Date received" value="<?= h($payment['payment_date']) ?>" required></td><td><input form="<?= $formId ?>" type="number" name="amount" aria-label="Amount received" min="0.01" max="9999999999.99" step="0.01" value="<?= h($payment['amount']) ?>" required></td><td><form id="<?= $formId ?>" method="post" action="admin-add-client.php?id=<?= $id ?>&edit_payment=<?= (int)$payment['id'] ?>#saved-payments"><?= csrf_field() ?><input type="hidden" name="action" value="update_payment"><input type="hidden" name="payment_id" value="<?= (int)$payment['id'] ?>"></form><button form="<?= $formId ?>" class="primary" type="submit">Save</button> <a class="button secondary" href="admin-add-client.php?id=<?= $id ?>#saved-payments">Cancel</a></td><?php else: ?><td><?= h($payment['payment_date']) ?></td><td><?= h(money_label($payment['amount'])) ?></td><td><a class="button secondary" href="admin-add-client.php?id=<?= $id ?>&edit_payment=<?= (int)$payment['id'] ?>#saved-payments">Edit</a></td><?php endif; ?></tr><?php endforeach; ?></tbody></table></div></details></section><?php endif; ?>
 <script src="assets/js/records.js" defer></script><?php page_end(); ?>

@@ -35,7 +35,8 @@ function page_start(string $title, string $active = ''): void
         $nav['employee-assigned-work.php'] = 'My assigned work';
     }
     if ($user['role']==='admin') $nav['departments.php']='Departments';
-    if ($user['role']==='manager') $nav['manager-leave-requist.php']='Leave requests';
+    if ($user['role']==='admin') $nav['employee-attendance.php']='Employee attendance';
+    if (is_staff()) $nav['manager-leave-requist.php']='Leave requests';
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
     if (!is_staff()) $nav['employee-profile.php']='My profile & salary';
     $nav['payslips.php'] = is_staff() ? 'Employee payslips' : 'My payslips';
@@ -43,11 +44,16 @@ function page_start(string $title, string $active = ''): void
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
     $nav['change-password.php'] = 'Change password';
+    $attendance = null;
+    if ($user['role'] === 'employee') {
+        $attendance = one('SELECT id,login_at FROM employee_attendance_sessions WHERE employee_id=? AND logout_at IS NULL ORDER BY login_at DESC LIMIT 1',[$user['id']]);
+    }
     ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= h($title) ?> | Bhavi</title><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/../assets/css/portal.css') ?>"></head>
 <body data-role="<?= h($user['role']) ?>"><div class="portal-layout">
 <aside class="portal-sidebar" id="portalSidebar"><a class="portal-brand" href="<?= h($dashboard) ?>"><span class="brand-icon">B</span><span><strong>bhavi</strong><small>TEAM WORKSPACE</small></span></a>
 <nav aria-label="Main navigation"><?php foreach ($nav as $href => $label): ?><a href="<?= h($href) ?>" class="<?= $active === $href ? 'active' : '' ?>" <?= $active === $href ? 'aria-current="page"' : '' ?>><?= icon(str_contains($href,'dashboard')?'dashboard':(str_contains($href,'employee') && !str_contains($href,'work') && !str_contains($href,'brands')?'people':(str_contains($href,'notification')?'bell':(str_contains($href,'password')?'lock':(str_contains($href,'leave') || str_contains($href,'holiday')?'calendar':(str_contains($href,'client') || str_contains($href,'department')?'briefcase':'document')))))) ?><span><?= h($label) ?></span></a><?php endforeach; ?></nav>
+<?php if ($user['role']==='employee'): ?><form class="attendance-control" method="post" action="attendance.php"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $attendance?'logout':'login' ?>"><?php if ($attendance): ?><p>Login saved at <time><?= h(date('g:i A',strtotime($attendance['login_at']))) ?></time></p><button class="attendance-button" type="submit"><?= icon('logout') ?>Logout</button><?php else: ?><button class="attendance-button" type="submit"><?= icon('document') ?>Login</button><?php endif; ?></form><?php endif; ?>
 <form class="signout" method="post" action="logout.php"><?= csrf_field() ?><button type="submit"><?= icon('logout') ?>Sign out</button></form></aside>
 <div class="portal-main"><header class="portal-topbar"><div class="topbar-left"><button type="button" class="menu-toggle" aria-label="Toggle menu" aria-controls="portalSidebar" aria-expanded="false">☰</button><span>Workspace <span class="muted">/ <?= h($title) ?></span></span></div><div class="topbar-account"><time datetime="<?= today() ?>"><?= date('d M Y') ?></time><div class="account-name"><strong><?= h($user['full_name']) ?></strong><small><?= h($user['department_name'] ?? 'Team workspace') ?></small></div><span class="badge role-badge"><?= h(ucfirst($user['role'])) ?></span></div></header>
 <main class="portal-content"><div class="page-heading"><h1><?= h($title) ?></h1></div>

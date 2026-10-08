@@ -143,6 +143,45 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (client_id) REFERENCES clients(id), FOREIGN KEY (created_by) REFERENCES users(id)
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (5)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS client_social_links (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            client_id BIGINT UNSIGNED NOT NULL,
+            platform_name VARCHAR(100) NOT NULL,
+            url VARCHAR(2048) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_client_social_links (client_id),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+        $pdo->exec("INSERT INTO client_social_links (client_id,platform_name,url)
+            SELECT c.id,'Social media',c.social_media_url FROM clients c
+            WHERE c.social_media_url<>'' AND NOT EXISTS (
+                SELECT 1 FROM client_social_links l WHERE l.client_id=c.id AND l.url=c.social_media_url
+            )");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (6)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS employee_attendance_sessions (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            employee_id BIGINT UNSIGNED NOT NULL,
+            login_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            logout_at DATETIME NULL,
+            active_employee_id BIGINT UNSIGNED GENERATED ALWAYS AS (CASE WHEN logout_at IS NULL THEN employee_id ELSE NULL END) STORED,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_active_employee_session (active_employee_id),
+            INDEX idx_employee_attendance_history (employee_id,login_at),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (7)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS employee_attendance_days (
+            employee_id BIGINT UNSIGNED NOT NULL,
+            attendance_date DATE NOT NULL,
+            status ENUM('pending','present','leave') NOT NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (employee_id,attendance_date),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (8)');
+        $addColumn('work_assignments','time_spent_hours','DECIMAL(7,2) NOT NULL DEFAULT 0.00');
+        $addColumn('daily_work_entries','time_spent_hours','DECIMAL(7,2) NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (9)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

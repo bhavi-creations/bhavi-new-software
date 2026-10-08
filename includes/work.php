@@ -61,12 +61,14 @@ function save_work_entry(array $sheet, string $department, array $common, array 
 }
 function sync_assignment(int $id): void
 {
-    $latest=one('SELECT e.task_status,e.remark FROM daily_work_entries e JOIN daily_work_submissions s ON s.id=e.submission_id WHERE e.assignment_id=? ORDER BY s.work_date DESC,e.updated_at DESC,e.id DESC LIMIT 1',[$id]);
-    query('UPDATE work_assignments SET status=?,employee_remark=? WHERE id=?',[$latest['task_status']??'pending',$latest['remark']??null,$id]);
+    $latest=one('SELECT e.task_status,e.remark,e.time_spent_hours FROM daily_work_entries e JOIN daily_work_submissions s ON s.id=e.submission_id WHERE e.assignment_id=? ORDER BY s.work_date DESC,e.updated_at DESC,e.id DESC LIMIT 1',[$id]);
+    query('UPDATE work_assignments SET status=?,employee_remark=?,time_spent_hours=? WHERE id=?',[$latest['task_status']??'pending',$latest['remark']??null,$latest['time_spent_hours']??0,$id]);
 }
 function work_details(array $entry,string $department): array
 {
-    $fields=['Task'=>$entry['task_title']?:($entry['website_page_task']?:($entry['seo_task']?:'Work entry')),'Status'=>$entry['task_status'],'Remark'=>$entry['remark']];
+    $fields=['Task'=>$entry['task_title']?:($entry['website_page_task']?:($entry['seo_task']?:'Work entry')),'Status'=>$entry['task_status']];
+    if (array_key_exists('time_spent_hours',$entry)) $fields['Time spent (hours)']=$entry['time_spent_hours'];
+    $fields['Remark']=$entry['remark'];
     foreach (metric_definitions($department) as $name=>[$label]) $fields[$label]=$entry[$name];
     return $fields;
 }
