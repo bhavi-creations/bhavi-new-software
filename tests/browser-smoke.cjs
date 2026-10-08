@@ -107,13 +107,29 @@ async function screenshot(filename, width, height) {
     await screenshot('client-payment-form.png', 1440, 1100);
     await navigate('admin-employees.php');
     const employeeEditUrl = await evaluate("document.querySelector('a[href^=\"admin-add-employee.php?id=\"]').getAttribute('href')");
+    const employeeProfileUrl = await evaluate("[...document.querySelectorAll('table tbody tr')].find(row=>row.textContent.includes('website.test')).querySelector('a[href^=\"employee-profile.php?id=\"]').getAttribute('href')");
     await navigate(employeeEditUrl);
     await evaluate("document.querySelector('#salary-rows input[type=number]').value='14000'; document.querySelector('[name=benefit_pf]').checked=true; document.querySelector('[name=benefit_esi]').checked=true; document.querySelector('#salary-rows input[type=number]').dispatchEvent(new Event('input', {bubbles:true})); true");
     assert.equal(await evaluate("document.querySelector('#salary-preview').textContent.includes('13,107.50')"), true);
+    await evaluate("document.querySelector('[name=benefit_other]').checked=true; document.querySelector('#other_benefit_amount').value='500.25'; document.querySelector('#other_benefits').value='Travel allowance'; document.querySelector('#other_benefit_amount').dispatchEvent(new Event('input', {bubbles:true})); true");
+    assert.equal(await evaluate("!document.querySelector('#other-benefits-field').hidden && document.querySelector('#salary-preview').textContent.includes('13,607.75') && document.querySelector('#other_benefits').required"), true);
+    await evaluate("document.querySelector('[name=benefit_other]').checked=false; document.querySelector('[name=benefit_other]').dispatchEvent(new Event('change', {bubbles:true})); true");
+    assert.equal(await evaluate("document.querySelector('#other-benefits-field').hidden && document.querySelector('#other_benefit_amount').disabled && !document.querySelector('#other_benefits').required && document.querySelector('#salary-preview').textContent.includes('13,107.50')"), true);
+    await evaluate("document.querySelector('[name=benefit_other]').checked=true; document.querySelector('[name=benefit_other]').dispatchEvent(new Event('change', {bubbles:true})); true");
     await evaluate("document.querySelector('[data-add-row=salary]').click(); true");
     assert.equal(await evaluate("document.querySelectorAll('#salary-rows .repeat-row').length"), 2);
     await screenshot('employee-salary-form.png', 1440, 1100);
     await screenshot('employee-salary-form-mobile.png', 390, 844);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await navigate(employeeProfileUrl);
+    await evaluate("document.querySelector('#other_benefit_amount').value='500.25'; document.querySelector('#other_benefits').value='Travel allowance'; document.querySelector('#other_benefit_amount').dispatchEvent(new Event('input', {bubbles:true})); true");
+    assert.equal(await evaluate("document.querySelector('#current-benefits-preview').textContent.includes('13,607.75')"), true);
+    await evaluate("document.querySelector('#current-benefits-form').requestSubmit(); true");
+    await waitFor("document.readyState==='complete' && document.body.textContent.includes('Benefits saved.')");
+    assert.equal(await evaluate("document.querySelector('.benefits-note').textContent.includes('500.25') && document.querySelector('.benefits-note').textContent.includes('Travel allowance') && document.querySelector('#other_benefit_amount').value==='500.25'"), true);
+    await screenshot('employee-benefits-management.png', 1440, 1100);
+    await screenshot('employee-benefits-management-mobile.png', 390, 844);
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
     await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await navigate('manager-leave-requist.php');
@@ -131,7 +147,8 @@ async function screenshot(filename, width, height) {
     await screenshot('employee-dashboard.png', 1440, 1100);
     assert.equal(await evaluate("document.querySelector('.role-badge').textContent"), 'Employee');
     await navigate('employee-profile.php');
-    assert.equal(await evaluate("document.body.textContent.includes('13,107.50')"), true);
+    assert.equal(await evaluate("document.body.textContent.includes('13,607.75')"), true);
+    assert.equal(await evaluate("document.querySelector('.benefits-note').textContent.includes('500.25') && document.querySelector('.benefits-note').textContent.includes('Travel allowance') && !document.querySelector('#current-benefits-form')"), true);
     assert.equal(await evaluate("document.body.textContent.includes('website.test') && document.body.textContent.includes('Guardian number') && document.body.textContent.includes('Role / job title')"), true);
     await screenshot('employee-own-salary.png', 1440, 1100);
     await screenshot('employee-own-salary-mobile.png', 390, 844);
@@ -169,7 +186,7 @@ async function screenshot(filename, width, height) {
     await evaluate("document.querySelector('.menu-toggle').click(); true");
     assert.equal(await evaluate("document.querySelector('.portal-sidebar').classList.contains('open')"), true);
     assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
-    console.log('PASS: Browser client profiles, own employee details, 24-hour time persistence, dialogs, filters and mobile layouts.');
+    console.log('PASS: Browser salary benefits, live previews, highlighted employee notes, client profiles, 24-hour time persistence and mobile layouts.');
   } finally {
     if (socket) socket.close();
     browser.kill();

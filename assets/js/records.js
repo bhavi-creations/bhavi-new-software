@@ -13,7 +13,19 @@
       remaining.closest('.money-card').classList.toggle('overpaid', paid > total);
     }
     const other = document.querySelector('[name="benefit_other"]');
-    if (other) document.getElementById('other-benefits-field').hidden = !other.checked;
+    const benefitsForm = document.getElementById('current-benefits-form');
+    const benefitAmount = document.getElementById('other_benefit_amount');
+    const benefitReason = document.getElementById('other_benefits');
+    if (other) {
+      document.getElementById('other-benefits-field').hidden = !other.checked;
+      benefitAmount.disabled = !other.checked;
+      benefitReason.disabled = !other.checked;
+    }
+    const extra = (other?.checked || benefitsForm) ? Math.max(0, cents(benefitAmount.value)) : 0;
+    if (benefitReason) benefitReason.required = extra > 0;
+    if (benefitsForm) {
+      document.getElementById('current-benefits-preview').textContent = format(cents(benefitsForm.dataset.salary) - cents(benefitsForm.dataset.pf) - cents(benefitsForm.dataset.esi) + extra);
+    }
     const preview = document.getElementById('salary-preview');
     if (preview) {
       const pf = document.querySelector('[name="benefit_pf"]').checked;
@@ -28,13 +40,18 @@
         const section = document.createElement('section'); section.className = 'salary-estimate';
         const heading = document.createElement('h3'); heading.textContent = 'Salary ' + (i + 1) + ' · Preview'; section.append(heading);
         const cards = document.createElement('div'); cards.className = 'money-summary';
-        [['Monthly salary',gross],['Deducted from salary',employeePf + employeeEsi],['Employee receives',gross - employeePf - employeeEsi]].forEach(([label,amount],index) => {
+        [['Monthly salary',gross],['Deducted from salary',employeePf + employeeEsi],['Employee receives',gross - employeePf - employeeEsi + extra]].forEach(([label,amount],index) => {
           const card = document.createElement('div'); card.className = 'money-card' + (index === 2 ? ' highlight' : '');
           const title = document.createElement('span'); title.textContent = label;
           const value = document.createElement('strong'); value.textContent = format(amount);
           card.append(title,value); cards.append(card);
         });
         section.append(cards);
+        if (extra > 0) {
+          const note = document.createElement('p'); note.className = 'benefits-note';
+          note.textContent = 'Benefits: ' + format(extra) + ' added to salary. Reason: ' + (benefitReason.value || 'Enter a reason above.');
+          section.append(note);
+        }
         const details = document.createElement('details'); details.className = 'simple-details';
         const summary = document.createElement('summary'); summary.textContent = 'View PF & ESI breakdown'; details.append(summary);
         const description = document.createElement('p'); description.textContent = 'Calculation base: half of salary = ' + format(base) + '.'; details.append(description);

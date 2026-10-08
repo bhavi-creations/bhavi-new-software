@@ -90,6 +90,10 @@ try {
     portal_install($restricted, $database);
     hosting_expect((int) $restricted->query('SELECT COUNT(*) FROM users')->fetchColumn() === 1 && (int) $restricted->query('SELECT COUNT(*) FROM departments')->fetchColumn() === 5, 'Repeat upgrade preserves records and seed departments');
     hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM work_assignments LIKE 'time_spent_minutes'")->fetch(), 'Latest work time column exists');
+    foreach (['employee_profiles','employee_salary_history'] as $table) {
+        $benefitColumn=$restricted->query("SHOW COLUMNS FROM $table LIKE 'other_benefit_amount'")->fetch();
+        hosting_expect($benefitColumn && (float)$benefitColumn['Default']===0.0, 'Hosted benefits amount column starts at zero: '.$table);
+    }
     echo "PASS: $checks hosting checks (local/live profiles, environment overrides, original SQL upgrade, existing accounts and restricted table permissions).\n";
 } catch (Throwable $e) {
     fwrite(STDERR, 'FAIL: ' . $e->getMessage() . "\n");

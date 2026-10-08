@@ -130,10 +130,13 @@ try {
     expect((int)scalar('SELECT COUNT(*) FROM users') === 2, 'Setup creates exactly two accounts');
     expect($guest->request('setup.php')['headers']['location'] === 'login.php', 'Setup closes after accounts exist');
     $pdo->exec('DROP TABLE employee_attendance_days');
+    $pdo->exec('ALTER TABLE employee_profiles DROP COLUMN other_benefit_amount');
+    $pdo->exec('ALTER TABLE employee_salary_history DROP COLUMN other_benefit_amount');
     $pdo->exec('DELETE FROM portal_schema_versions WHERE version >= 8');
     expect($guest->request('login.php')['status'] === 200, 'First page request upgrades an older hosted database automatically');
     expect((int)scalar('SELECT MAX(version) FROM portal_schema_versions') === PORTAL_SCHEMA_VERSION && (int)scalar('SELECT COUNT(*) FROM users') === 2, 'Automatic update preserves accounts and completes the schema');
     expect((int)scalar('SELECT COUNT(*) FROM employee_attendance_days') === 0, 'Automatic update adds missing attendance table');
+    foreach (['employee_profiles','employee_salary_history'] as $table) expect((int)scalar("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME='other_benefit_amount'",[$table])===1, 'Automatic update adds benefits amount to '.$table);
     $routes = ['admin-dashboard.php', 'manager-dashboard.php', 'admin-employees.php', 'add-client.php', 'admin-holidays.php', 'manager-holidays.php', 'apply-leaves.php', 'check-leave.php', 'manager-dailywork.php', 'manager-leave-requist.php', 'manager-notification.php', 'employee-brands-assets.php', 'client-reuirement.php', 'website-employee-dashboard.php', 'seo-employee-dashboard.php', 'design-employee-dashboard.php', 'socialmedia-employee-dashboard.php', 'telecaller-employee-dashboard.php', 'manager-assign-work.php', 'manager-review-work.php', 'download-work.php', 'download-asset.php'];
     expect($guest->request('client-profile.php?id=1')['headers']['location']==='login.php','Client profile requires sign-in');
     foreach ($routes as $route) expect($guest->request($route)['headers']['location'] === 'login.php', 'Unauthenticated route ' . $route);
@@ -154,12 +157,20 @@ try {
     $dashboards = ['website' => 'website-employee-dashboard.php', 'seo' => 'seo-employee-dashboard.php', 'design_video' => 'design-employee-dashboard.php', 'telecaller' => 'telecaller-employee-dashboard.php', 'social_media' => 'socialmedia-employee-dashboard.php'];
     foreach ($dashboards as $code => $dashboard) {
         $admin->request('admin-add-employee.php');
-        $response = $admin->post('admin-add-employee.php', ['employee_name' => 'Employee ' . $code, 'email' => $code . '@example.test', 'username' => $code . '.test', 'temporary_password' => $password, 'role' => 'employee', 'account_status' => 'active', 'department_id' => scalar('SELECT id FROM departments WHERE code=?', [$code]), 'designation' => 'Team member', 'joining_date' => date('Y-m-d'), 'manager_id' => '']);
+        $employeeData = ['employee_name' => 'Employee ' . $code, 'email' => $code . '@example.test', 'username' => $code . '.test', 'temporary_password' => $password, 'role' => 'employee', 'account_status' => 'active', 'department_id' => scalar('SELECT id FROM departments WHERE code=?', [$code]), 'designation' => 'Team member', 'joining_date' => date('Y-m-d'), 'manager_id' => ''];
+        if ($code==='seo') $employeeData=array_merge($employeeData,['benefit_other'=>'1','other_benefit_amount'=>'750.25','other_benefits'=>'Travel allowance','salary'=>[['amount'=>'10000','from'=>date('Y-m-d'),'to'=>'']]]);
+        $response = $admin->post('admin-add-employee.php', $employeeData);
         expect($response['status'] === 303, 'Create ' . $code . ' employee');
         $employeeIds[$code] = (int)scalar('SELECT id FROM users WHERE username=?', [$code . '.test']);
         expect(password_verify($password, (string)scalar('SELECT password_hash FROM users WHERE id=?', [$employeeIds[$code]])), 'Password stored as hash');
         $browsers[$code] = new Browser($base);
         $browsers[$code]->login($code . '.test', $password, $dashboard);
+        if ($code==='seo') {
+            expect(scalar('SELECT other_benefit_amount FROM employee_profiles WHERE user_id=?',[$employeeIds[$code]])==='750.25','Other benefit amount persists when creating an employee');
+            expect(scalar('SELECT net_salary FROM employee_salary_history WHERE employee_id=?',[$employeeIds[$code]])==='10750.25','Other benefit amount adds to salary when creating an employee');
+            $benefitProfile=$browsers[$code]->request('employee-profile.php')['body'];
+            expect(str_contains($benefitProfile,'class="benefits-note"') && str_contains($benefitProfile,'750.25') && str_contains($benefitProfile,'Travel allowance'),'Created employee sees highlighted benefits amount and reason');
+        }
         expect($browsers[$code]->request('admin-dashboard.php')['status'] === 403, 'Employee forbidden admin dashboard');
         expect($browsers[$code]->request('manager-dailywork.php')['status'] === 403, 'Employee forbidden team reports');
         expect($browsers[$code]->request('download-work.php')['status'] === 403, 'Employee forbidden team export');
@@ -581,12 +592,51 @@ try {
     expect($website->post('admin-add-employee.php?id=' . $employeeIds['website'], $salaryData)['status'] === 403, 'Employee cannot change salary');
     expect($admin->post('admin-add-employee.php?id=' . $employeeIds['website'], $salaryData)['status'] === 200, 'Overlapping salary rejected');
     expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?', [$employeeIds['website']]) === 2, 'Rejected salary does not duplicate history');
-    $noBenefits = array_merge($employeeEdit, ['salary' => [['amount' => '17000', 'from' => date('Y-m-d', strtotime('+2 months')), 'to' => '']]]);
+    $noBenefits = array_merge($employeeEdit, ['other_benefit_amount'=>'500','other_benefits'=>'Unchecked allowance','salary' => [['amount' => '17000', 'from' => date('Y-m-d', strtotime('+2 months')), 'to' => '']]]);
     expect($admin->post('admin-add-employee.php?id=' . $employeeIds['website'], $noBenefits)['status'] === 303, 'Salary without benefits saved');
     expect(scalar('SELECT net_salary FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1', [$employeeIds['website']]) === '17000.00', 'Unchecked benefits deduct zero');
     expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13107.50', 'Historical deductions remain unchanged');
     $badDates = array_merge($employeeEdit, ['relieving_date' => date('Y-m-d', strtotime('-1 day'))]);
     expect($admin->post('admin-add-employee.php?id=' . $employeeIds['website'], $badDates)['status'] === 200, 'Invalid relieving date rejected');
+    // Current benefits replace the amount, preserve deductions and do not change future snapshots.
+    $benefitsPath='employee-profile.php?id='.$employeeIds['website'];
+    $admin->request($benefitsPath);
+    $benefitsData=['action'=>'save_benefits','salary_id'=>$salaryId,'other_benefit_amount'=>'500.25','other_benefits'=>'Performance bonus <approved>'];
+    expect($admin->post($benefitsPath,$benefitsData)['status']===303,'Management can save current monthly benefits');
+    expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?',[$salaryId])==='13607.75','Current benefits add after existing PF and ESI deductions');
+    expect(scalar('SELECT other_benefit_amount FROM employee_profiles WHERE user_id=?',[$employeeIds['website']])==='500.25' && scalar('SELECT other_benefit_amount FROM employee_salary_history WHERE id=?',[$salaryId])==='500.25','Benefit amount persists on profile and salary period');
+    expect(scalar('SELECT employee_pf FROM employee_salary_history WHERE id=?',[$salaryId])==='840.00' && scalar('SELECT employee_esi FROM employee_salary_history WHERE id=?',[$salaryId])==='52.50','Extra benefits preserve saved PF and ESI deductions');
+    $benefitProfile=$website->request('employee-profile.php')['body'];
+    expect(str_contains($benefitProfile,'class="benefits-note"') && str_contains($benefitProfile,'INR 500.25') && str_contains($benefitProfile,'Performance bonus &lt;approved&gt;'),'Own profile highlights benefit amount and safely escaped reason');
+    expect(!str_contains($benefitProfile,'id="current-benefits-form"'),'Employee benefits are read-only');
+    expect(!str_contains($browsers['seo']->request('employee-profile.php')['body'],'Performance bonus'),'Benefits reason is private to the employee and management');
+    expect($admin->post($benefitsPath,$benefitsData)['status']===303 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?',[$salaryId])==='13607.75','Repeated benefits save does not add the amount twice');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$employeeIds['website']])===3 && scalar('SELECT net_salary FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1',[$employeeIds['website']])==='17000.00','Current benefits do not duplicate history or change future salary periods');
+    expect($website->post($benefitsPath,$benefitsData)['status']===403,'Employee cannot submit own benefits changes');
+    expect($browsers['seo']->post($benefitsPath,$benefitsData)['status']===403,'Employee cannot submit another employee benefits changes');
+    expect($guest->post($benefitsPath,$benefitsData)['headers']['location']==='login.php','Benefits changes require sign-in');
+    expect($admin->post($benefitsPath,array_merge($benefitsData,['csrf'=>'invalid']))['status']===419,'Current benefits enforce CSRF');
+    foreach (['-1','1.001','1e3','10000000000','9999999999.99',['unexpected']] as $invalidAmount) {
+        expect($admin->post($benefitsPath,array_merge($benefitsData,['other_benefit_amount'=>$invalidAmount]))['status']===200 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?',[$salaryId])==='13607.75','Invalid or overflowing benefit amount leaves salary unchanged');
+    }
+    foreach (['',str_repeat('a',256),['unexpected']] as $invalidReason) expect($admin->post($benefitsPath,array_merge($benefitsData,['other_benefits'=>$invalidReason]))['status']===200 && scalar('SELECT other_benefits FROM employee_salary_history WHERE id=?',[$salaryId])===$benefitsData['other_benefits'],'Invalid benefit reason leaves saved note unchanged');
+    $futureSalaryId=(int)scalar('SELECT id FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1',[$employeeIds['website']]);
+    $foreignSalaryId=(int)scalar('SELECT id FROM employee_salary_history WHERE employee_id=?',[$employeeIds['seo']]);
+    foreach ([$futureSalaryId,$foreignSalaryId,0] as $invalidSalaryId) expect($admin->post($benefitsPath,array_merge($benefitsData,['salary_id'=>$invalidSalaryId]))['status']===200 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?',[$salaryId])==='13607.75','Invalid, future or foreign salary period cannot receive current benefits');
+    expect($admin->post('employee-profile.php?id='.$employeeIds['design_video'],$benefitsData)['status']===200 && (int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$employeeIds['design_video']])===0,'Employee without current salary cannot receive an unlinked benefit');
+    $manager->request($benefitsPath);
+    expect($manager->post($benefitsPath,array_merge($benefitsData,['other_benefit_amount'=>'250.75','other_benefits'=>'Travel allowance']))['status']===303 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?',[$salaryId])==='13358.25','Manager retains existing salary management permissions');
+    foreach (['0',''] as $emptyAmount) {
+        expect($admin->post($benefitsPath,array_merge($benefitsData,['other_benefit_amount'=>$emptyAmount,'other_benefits'=>'']))['status']===303,'Zero or blank benefit amount saves successfully');
+        expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?',[$salaryId])==='13107.50' && !str_contains($website->request('employee-profile.php')['body'],'class="benefits-note"'),'Zero or blank benefit restores normal salary and removes highlighted note');
+    }
+    $invalidOtherData=array_merge($employeeEdit,['benefit_other'=>'1','other_benefit_amount'=>'-1','other_benefits'=>'Travel allowance']);
+    $admin->request('admin-add-employee.php?id='.$employeeIds['website']);
+    expect($admin->post('admin-add-employee.php?id='.$employeeIds['website'],$invalidOtherData)['status']===200 && scalar('SELECT other_benefit_amount FROM employee_profiles WHERE user_id=?',[$employeeIds['website']])==='0.00','Employee form rejects negative Other benefits before saving');
+    $overflowSalaryData=array_merge($invalidOtherData,['other_benefit_amount'=>'500','salary'=>[['amount'=>'9999999999.99','from'=>date('Y-m-d',strtotime('+3 months')),'to'=>'']]]);
+    expect($admin->post('admin-add-employee.php?id='.$employeeIds['website'],$overflowSalaryData)['status']===200 && (int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$employeeIds['website']])===3 && scalar('SELECT other_benefit_amount FROM employee_profiles WHERE user_id=?',[$employeeIds['website']])==='0.00','Overflowing new salary and benefit changes roll back together');
+    portal_install($pdo,$database);
+    expect(scalar('SELECT net_salary FROM employee_salary_history WHERE employee_id=?',[$employeeIds['seo']])==='10750.25' && scalar('SELECT other_benefit_amount FROM employee_salary_history WHERE employee_id=?',[$employeeIds['seo']])==='750.25','Repeat schema installation preserves saved benefit amounts and salary totals');
     $clientData = ['client_name' => 'Shared Client Updated', 'website_url' => 'https://example.com/new', 'phone' => '9555511111', 'starting_date' => '2026-10-01', 'ending_date' => '2027-09-30', 'package' => 'PRIVATE-PACKAGE-TEST', 'social_links'=>[['platform'=>'Instagram','url'=>'https://instagram.com/example'],['platform'=>'Pinterest','url'=>'https://pinterest.com/example']], 'gmb_url' => 'https://maps.google.com/', 'monthly_reels' => '8', 'monthly_posters' => '12', 'monthly_carousels' => '4', 'payment_total' => '10000', 'payment_request_key' => bin2hex(random_bytes(16)), 'payments' => [['date' => '2026-10-10', 'amount' => '2000']]];
     $admin->request('admin-add-client.php?id=' . $clientId);
     expect($admin->post('admin-add-client.php?id=' . $clientId, $clientData)['status'] === 303, 'Client payment and monthly quantities saved');

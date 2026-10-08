@@ -13,11 +13,23 @@ function benefit_label(array $record): string {
     $items=[]; foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label) if (!empty($record['benefit_'.$key])) $items[]=$label;
     return implode(', ',$items)?:'None';
 }
-function salary_breakdown(int $gross,bool $pf,bool $esi,string $basis): array {
+function other_benefit_input(bool $enabled): array {
+    if (!$enabled) return ['benefit_other'=>0,'other_benefits'=>'','other_benefit_amount'=>'0.00'];
+    $amount=money_cents(($_POST['other_benefit_amount']??'')===''?'0':$_POST['other_benefit_amount']);
+    $reason=optional_text('other_benefits');
+    if ($amount>0 && $reason==='') throw new InvalidArgumentException('Enter the reason for adding benefits.');
+    return ['benefit_other'=>1,'other_benefits'=>$reason,'other_benefit_amount'=>decimal_money($amount)];
+}
+function salary_net_amount(int $gross,int $pf,int $esi,int $benefits=0): string {
+    $net=$gross-$pf-$esi+$benefits;
+    if ($net<0 || $net>999999999999) throw new InvalidArgumentException('Salary including benefits must be between INR 0 and INR 9,999,999,999.99.');
+    return decimal_money($net);
+}
+function salary_breakdown(int $gross,bool $pf,bool $esi,string $basis,int $benefits=0): array {
     $half=intdiv($gross+1,2); $esiBase=$basis==='half'?$half:$gross;
     $employeePf=$pf?(int)round($half*12/100):0;
     $employeeEsi=$esi?(int)round($esiBase*75/10000):0;
-    return array_map('decimal_money',['pf_base'=>$half,'esi_base'=>$esiBase,'employee_pf'=>$employeePf,'company_pf'=>$employeePf,'employee_esi'=>$employeeEsi,'company_esi'=>$esi?(int)round($esiBase*325/10000):0,'net_salary'=>$gross-$employeePf-$employeeEsi]);
+    return array_merge(array_map('decimal_money',['pf_base'=>$half,'esi_base'=>$esiBase,'employee_pf'=>$employeePf,'company_pf'=>$employeePf,'employee_esi'=>$employeeEsi,'company_esi'=>$esi?(int)round($esiBase*325/10000):0]),['net_salary'=>salary_net_amount($gross,$employeePf,$employeeEsi,$benefits)]);
 }
 function salary_rows_input(): array {
     $rows=$_POST['salary']??[];
@@ -40,7 +52,7 @@ function save_salary_rows(int $id,array $entries,array $benefits,string $joining
         $last=one('SELECT * FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1 FOR UPDATE',[$id]);
         if ($last && ($entry['effective_from']<=$last['effective_from'] || ($last['effective_to'] && $entry['effective_from']<=$last['effective_to']))) throw new InvalidArgumentException('New salary periods must start after the saved history, without overlaps.');
         if ($last && !$last['effective_to']) query('UPDATE employee_salary_history SET effective_to=? WHERE id=?',[(new DateTimeImmutable($entry['effective_from']))->modify('-1 day')->format('Y-m-d'),$last['id']]);
-        $calculation=salary_breakdown(money_cents($entry['amount']),(bool)$benefits['benefit_pf'],(bool)$benefits['benefit_esi'],$benefits['esi_basis']);
+        $calculation=salary_breakdown(money_cents($entry['amount']),(bool)$benefits['benefit_pf'],(bool)$benefits['benefit_esi'],$benefits['esi_basis'],money_cents($benefits['other_benefit_amount']));
         $data=array_merge(['employee_id'=>$id],$entry,$benefits,$calculation,['created_by'=>$actor]);
         query('INSERT INTO employee_salary_history ('.implode(',',array_keys($data)).') VALUES ('.implode(',',array_fill(0,count($data),'?')).')',array_values($data));
     }
@@ -48,6 +60,11 @@ function save_salary_rows(int $id,array $entries,array $benefits,string $joining
 function salary_summary(array $row): void {
     $deductions=(float)$row['employee_pf']+(float)$row['employee_esi']; ?>
 <div class="money-summary"><div class="money-card"><span>Monthly salary</span><strong><?= h(money_label($row['amount'])) ?></strong></div><div class="money-card"><span>Deducted from salary</span><strong><?= h(money_label($deductions)) ?></strong></div><div class="money-card highlight"><span>Employee receives</span><strong><?= h(money_label($row['net_salary'])) ?></strong></div></div>
+<?php }
+function salary_benefit_note(array $row): void {
+    $amount=money_cents($row['other_benefit_amount']??'0.00');
+    if (!$amount) return; ?>
+<aside class="benefits-note" aria-label="Benefits note"><h3>Benefits note</h3><p><strong><?= h(money_label($row['other_benefit_amount'])) ?></strong> added to your monthly salary.</p><p><strong>Reason:</strong> <?= h($row['other_benefits']) ?></p></aside>
 <?php }
 function salary_details(array $row): void { ?>
 <div class="contribution-grid"><div class="contribution-box"><h3>Deducted from employee salary</h3><dl class="simple-amounts"><dt>PF</dt><dd><?= h(money_label($row['employee_pf'])) ?></dd><dt>ESI</dt><dd><?= h(money_label($row['employee_esi'])) ?></dd><dt>Total deduction</dt><dd><?= h(money_label((float)$row['employee_pf']+(float)$row['employee_esi'])) ?></dd></dl></div>
@@ -59,7 +76,7 @@ function salary_table(array $history): void {
     $previous=null;
     foreach ($history as $row): ?>
 <article class="salary-history-item"><div class="history-heading"><h3><?= h($row['effective_from']) ?> <span class="muted">to</span> <?= h($row['effective_to']?:'Ongoing') ?></h3><?php if ($previous!==null): ?><span class="badge">Salary change: <?= h(money_label((float)$row['amount']-$previous)) ?></span><?php endif; ?></div>
-<?php salary_summary($row); ?><details class="simple-details"><summary>View PF, ESI & benefit details</summary><p>Benefits: <?= h(benefit_label($row)) ?><?= !empty($row['benefit_other'])?' · '.h($row['other_benefits']):'' ?></p><?php salary_details($row); ?></details></article>
+<?php salary_summary($row); salary_benefit_note($row); ?><details class="simple-details"><summary>View PF, ESI & benefit details</summary><p>Benefits: <?= h(benefit_label($row)) ?><?= !empty($row['benefit_other'])?' · '.h($row['other_benefits']):'' ?></p><?php salary_details($row); ?></details></article>
 <?php $previous=(float)$row['amount']; endforeach; ?>
-<p class="help">Employee receives = monthly salary − employee PF − employee ESI. Other deductions and attendance adjustments are not included.</p>
+<p class="help">Employee receives = monthly salary + benefits amount − employee PF − employee ESI. Other deductions and attendance adjustments are not included.</p>
 <?php }

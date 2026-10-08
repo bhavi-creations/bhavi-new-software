@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 10;
+const PORTAL_SCHEMA_VERSION = 11;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -231,6 +231,9 @@ function portal_install(PDO $pdo, string $database): void
         portal_install_view($pdo, "CREATE OR REPLACE VIEW v_employee_directory AS SELECT u.id,u.full_name,u.email,u.username,u.account_status,u.avatar_path,ep.designation,ep.joining_date,ep.manager_id,d.id AS department_id,d.code AS department_code,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.deleted_at IS NULL");
         portal_install_view($pdo, 'CREATE OR REPLACE VIEW v_daily_work_export AS SELECT ROW_NUMBER() OVER (PARTITION BY s.id ORDER BY e.row_order,e.id) AS s_no,s.work_date,s.employee_id,u.full_name AS employee_name,d.name AS department_name,c.client_name,s.submission_status,s.submitted_at,s.review_status,s.manager_remark,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id LEFT JOIN clients c ON c.id=e.client_id');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (10)');
+        $addColumn('employee_profiles','other_benefit_amount','DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+        $addColumn('employee_salary_history','other_benefit_amount','DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (11)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

@@ -5,7 +5,7 @@ require_once __DIR__.'/finance.php';
 $user = require_roles(['admin','manager']);
 $id = (int) ($_GET['id'] ?? 0);
 if (!$id && $user['role'] !== 'admin') { fail(403,'Only an administrator can create accounts.'); }
-$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.esi_basis FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
+$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
 if ($id && (!$record || !in_array($record['role'],['employee'],true))) { fail(403,'You cannot edit this account.'); }
 $error = null;
 $storedDocuments=[];
@@ -45,8 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $employeeCode=optional_text('employee_code',50);
         $relieving=optional_date('relieving_date');
         if ($relieving && $relieving<$joiningDate) throw new InvalidArgumentException('Relieving date cannot be before joining date.');
-        $benefits=['benefit_pf'=>isset($_POST['benefit_pf'])?1:0,'benefit_esi'=>isset($_POST['benefit_esi'])?1:0,'benefit_other'=>isset($_POST['benefit_other'])?1:0,'other_benefits'=>optional_text('other_benefits'),'esi_basis'=>'half'];
-        if (!$benefits['benefit_other']) $benefits['other_benefits']='';
+        $benefits=array_merge(['benefit_pf'=>isset($_POST['benefit_pf'])?1:0,'benefit_esi'=>isset($_POST['benefit_esi'])?1:0],other_benefit_input(isset($_POST['benefit_other'])),['esi_basis'=>'half']);
         $salaryEntries=salary_rows_input();
         db()->beginTransaction();
         if ($id) {
@@ -65,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             query('INSERT INTO employee_profiles (user_id,department_id,designation,joining_date,manager_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE department_id=VALUES(department_id),designation=VALUES(designation),joining_date=VALUES(joining_date),manager_id=VALUES(manager_id)',[$id,$department,$designation,$joiningDate,$manager]);
         }
         query('UPDATE employee_profiles SET role_title=? WHERE user_id=?',[$roleTitle?:'Employee',$id]);
-        query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
+        query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,other_benefit_amount=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
         save_salary_rows($id,$salaryEntries,$benefits,$joiningDate,$relieving,(int)$user['id']);
         if ($relieving) query('UPDATE employee_salary_history SET effective_to=? WHERE employee_id=? AND effective_to IS NULL',[$relieving,$id]);
         if ($photo) {
@@ -107,8 +106,8 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
 </div><details class="simple-details"><summary>Additional job title (optional)</summary><div class="field"><label for="role_title">Job title</label><input id="role_title" name="role_title" value="<?= h($value('role_title','Employee')) ?>" maxlength="150"></div></details></section>
 <section class="panel form-section"><h2><span class="section-number">3</span> Salary & benefits</h2>
 <p class="help">Tick the benefits that apply to this employee.</p><div class="benefit-options"><?php foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label): ?><label><input type="checkbox" name="benefit_<?= $key ?>" value="1" <?= ($_SERVER['REQUEST_METHOD']==='POST'?isset($_POST['benefit_'.$key]):!empty($record['benefit_'.$key]))?'checked':'' ?>><?= $label ?></label><?php endforeach; ?></div>
-<div class="field" id="other-benefits-field"><label for="other_benefits">Other benefit details</label><input id="other_benefits" name="other_benefits" maxlength="255" value="<?= h($value('other_benefits')) ?>" placeholder="e.g. Travel allowance"></div>
-<p class="help"><?= $record?'To change salary or benefits, add the new amount and its start date. Leave the salary rows empty to keep the saved history.':'Enter the monthly salary and the date it starts.' ?> The end date can be left empty.</p>
+<div id="other-benefits-field"><div class="fields"><div class="field"><label for="other_benefit_amount">Other benefits amount (₹)</label><input id="other_benefit_amount" name="other_benefit_amount" type="number" min="0" max="9999999999.99" step="0.01" value="<?= h($value('other_benefit_amount')) ?>" placeholder="e.g. 500"></div><div class="field"><label for="other_benefits">Reason for benefits</label><input id="other_benefits" name="other_benefits" maxlength="255" value="<?= h($value('other_benefits')) ?>" placeholder="e.g. Travel allowance"></div></div><p class="help">This amount is added to each new salary period below. Leave empty or enter 0 for no extra amount.</p></div>
+<p class="help"><?= $record?'To change salary or future benefits, add the new amount and its start date. Leave the salary rows empty to keep the saved history. Current benefits can be changed from Profile & salary.':'Enter the monthly salary and the date it starts.' ?> The end date can be left empty.</p>
 <div id="salary-rows"><?php $draft=$_POST['salary']??[['amount'=>'','from'=>'','to'=>'']]; if (!is_array($draft)) $draft=[]; foreach ($draft as $index=>$entry): if (!is_array($entry)) continue; ?><div class="fields repeat-row"><div class="field"><label>Monthly salary (₹)<input type="number" name="salary[<?= (int)$index ?>][amount]" min="0.01" max="9999999999.99" step="0.01" placeholder="e.g. 14000" value="<?= h($entry['amount']??'') ?>"></label></div><div class="field"><label>Salary starts on<input type="date" name="salary[<?= (int)$index ?>][from]" value="<?= h($entry['from']??'') ?>"></label></div><div class="field"><label>Ends on (optional)<input type="date" name="salary[<?= (int)$index ?>][to]" value="<?= h($entry['to']??'') ?>"></label></div><button type="button" class="secondary" data-remove-row>Remove</button></div><?php endforeach; ?></div>
 <button type="button" class="secondary" data-add-row="salary">+ Add another salary / increment</button><div id="salary-preview" aria-live="polite"></div>
 <details class="simple-details"><summary>How are PF & ESI calculated?</summary><p>Both use half of the monthly salary. PF: employee 12%, company 12%. ESI: employee 0.75%, company 3.25%.</p><p>Only the employee share is deducted from salary. The company pays its share separately. An unticked benefit has no deduction.</p><p>A new salary start date automatically ends the previous ongoing salary on the day before.</p></details>
@@ -121,4 +120,4 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
 <div class="form-actions"><button class="primary" type="submit">Save employee</button><a class="button secondary" href="admin-employees.php">Cancel</a></div></form>
 <?php if ($record): ?><section class="panel"><details class="simple-details"><summary>View saved salary history</summary><?php salary_table(rows('SELECT * FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from',[$record['id']])); ?></details></section>
 <?php $documents=rows('SELECT id,original_name,created_at FROM employee_documents WHERE employee_id=? ORDER BY id DESC',[$record['id']]); ?><section class="panel" id="saved-documents"><h2>Saved documents (<?= count($documents) ?>)</h2><?php if (!$documents): ?><p class="muted">No documents uploaded.</p><?php endif; foreach ($documents as $document): ?><p><a href="download-employee-document.php?id=<?= $document['id'] ?>"><?= h($document['original_name']) ?></a> <small><?= h($document['created_at']) ?></small></p><?php endforeach; ?></section><?php endif; ?>
-<script src="assets/js/records.js" defer></script><?php page_end(); ?>
+<script src="assets/js/records.js?v=<?= filemtime(__DIR__.'/../assets/js/records.js') ?>" defer></script><?php page_end(); ?>
