@@ -336,6 +336,10 @@ try {
     $manager->request('manager-review-work.php?id=' . $sheetId);
     expect($manager->post('manager-review-work.php?id=' . $sheetId, ['action' => 'review_sheet', 'review_status' => 'changes_requested', 'manager_remark' => 'Please update the mobile header'])['status'] === 303, 'Manager reviews work');
     expect(str_contains($website->request('employee-work-history.php')['body'], 'Please update the mobile header'), 'Employee sees manager feedback');
+    expect($admin->request('manager-review-work.php?id='.$sheetId)['status']===200,'Admin can open a daily work review');
+    expect($admin->post('manager-review-work.php?id='.$sheetId,['action'=>'review_sheet','review_status'=>'reviewed','manager_remark'=>'Admin checked the submitted work'])['status']===303,'Admin saves daily work review');
+    expect(scalar('SELECT review_status FROM daily_work_submissions WHERE id=?',[$sheetId])==='reviewed' && scalar('SELECT manager_remark FROM daily_work_submissions WHERE id=?',[$sheetId])==='Admin checked the submitted work' && (int)scalar('SELECT reviewed_by FROM daily_work_submissions WHERE id=?',[$sheetId])===(int)scalar("SELECT id FROM users WHERE username='admin.test'"),'Admin review status, remark and reviewer persist');
+    expect(str_contains($website->request('employee-work-history.php')['body'],'Admin checked the submitted work'),'Employee sees admin review feedback');
     $entryId = (int)scalar('SELECT id FROM daily_work_entries WHERE assignment_id=?', [$assignmentId]);
     $manager->request('manager-review-work.php?id=' . $sheetId);
     expect($manager->post('manager-review-work.php?id=' . $sheetId, ['action' => 'edit_entry', 'entry_id' => $entryId, 'task_title' => 'Reviewed home page', 'task_status' => 'pending', 'remark' => 'Needs revision', 'website_new_count' => '1', 'website_changes_count' => '2'])['status'] === 303, 'Manager edits submitted work');

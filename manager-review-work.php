@@ -6,16 +6,18 @@ if (!$sheet) fail(404,'Work report not found.');
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     check_csrf();
     try {
-        db()->beginTransaction(); query('SELECT id FROM daily_work_submissions WHERE id=? FOR UPDATE',[$id]);
+        db()->beginTransaction();
+        $lockedSheet=one('SELECT id,employee_id,work_date FROM daily_work_submissions WHERE id=? FOR UPDATE',[$id]);
+        if (!$lockedSheet) throw new InvalidArgumentException('Work report no longer exists.');
         if (($_POST['action']??'')==='review_sheet') {
             $review=$_POST['review_status']??'';
             if (!in_array($review,['pending','reviewed','changes_requested'],true)) throw new InvalidArgumentException('Choose a valid review status.');
             $remark=text_input('manager_remark',5000,false);
-            query('UPDATE daily_work_submissions SET review_status=?,manager_remark=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?',[$review,$remark,$user['id'],$id]);
-            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,submission_id) VALUES (?,?,'general',?,?,?)",[$sheet['employee_id'],$user['id'],'Work report '.str_replace('_',' ',$review),$sheet['work_date'].' · '.$remark,$id]);
+            query('UPDATE daily_work_submissions SET review_status=?,manager_remark=?,reviewed_by=?,reviewed_at=NOW() WHERE id=?',[$review,$remark,$user['id'],$lockedSheet['id']]);
+            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,submission_id) VALUES (?,?,'general',?,?,?)",[$lockedSheet['employee_id'],$user['id'],'Work report '.str_replace('_',' ',$review),$lockedSheet['work_date'].' · '.$remark,$lockedSheet['id']]);
         } elseif (($_POST['action']??'')==='edit_entry') {
             $entryId=positive_id($_POST['entry_id']??null);
-            $entry=one('SELECT * FROM daily_work_entries WHERE id=? AND submission_id=?',[$entryId,$id]);
+            $entry=one('SELECT * FROM daily_work_entries WHERE id=? AND submission_id=? FOR UPDATE',[$entryId,$lockedSheet['id']]);
             if (!$entry) fail(404,'Work entry not found in this report.');
             $status=$_POST['task_status']??'';
             if (!in_array($status,['pending','completed'],true)) throw new InvalidArgumentException('Choose Pending or Completed.');
