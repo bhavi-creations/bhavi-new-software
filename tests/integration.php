@@ -185,7 +185,10 @@ try {
     expect($admin->post('admin-add-client.php', ['client_name' => 'Shared Client', 'website_url' => 'https://example.com', 'client_logo' => new CURLFile($image, 'image/png', 'logo.png')])['status'] === 303, 'Client and logo upload');
     $clientId = (int)scalar("SELECT id FROM clients WHERE client_name='Shared Client'");
     $uploadedLogo = (string)scalar('SELECT logo_path FROM clients WHERE id=?', [$clientId]);
-    if (preg_match('~^uploads/logos/[a-f0-9]{32}\.png$~D', $uploadedLogo)) $temporary[] = dirname(__DIR__) . '/' . $uploadedLogo;
+    if (preg_match('~^uploads/photos/[a-f0-9]{32}\.png$~D', $uploadedLogo)) $temporary[] = dirname(__DIR__) . '/' . $uploadedLogo;
+    expect(str_starts_with($uploadedLogo, 'uploads/photos/') && is_file(dirname(__DIR__) . '/' . $uploadedLogo), 'Client logo saved under uploads/photos');
+    $logoResponse = $admin->request('client-logo.php?id=' . $clientId);
+    expect($logoResponse['status'] === 200 && str_starts_with($logoResponse['headers']['content-type'], 'image/png'), 'Client logo served through protected endpoint');
     foreach ([$manager, ...array_values($browsers)] as $browser) expect(str_contains($browser->request('add-client.php')['body'], 'Shared Client'), 'Client visible across roles');
     $admin->request('admin-add-client.php?id=' . $clientId);
     expect($admin->post('admin-add-client.php?id=' . $clientId, ['client_name' => 'Shared Client Updated', 'website_url' => 'https://example.com/new'])['status'] === 303, 'Client edit');

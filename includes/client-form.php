@@ -42,12 +42,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $mime=(new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
             $extension=['image/png'=>'png','image/jpeg'=>'jpg','image/webp'=>'webp'][$mime] ?? null;
             if (!$extension || !getimagesize($file['tmp_name'])) { throw new InvalidArgumentException('Choose a valid PNG, JPG or WebP image.'); }
-            $directory=dirname(__DIR__).'/uploads/logos';
-            if (!is_dir($directory) && !mkdir($directory,0755,true) && !is_dir($directory)) { throw new InvalidArgumentException('Unable to create uploads/logos. Check the folder permissions.'); }
-            if (!is_writable($directory)) { throw new InvalidArgumentException('uploads/logos is not writable by PHP. Check the folder permissions.'); }
-            $logo='uploads/logos/'.bin2hex(random_bytes(16)).'.'.$extension;
+            $directory=dirname(__DIR__).'/uploads/photos';
+            if (!is_dir($directory) && !mkdir($directory,0700,true) && !is_dir($directory)) { throw new InvalidArgumentException('Unable to create uploads/photos. Check the folder permissions.'); }
+            if (!is_writable($directory)) { throw new InvalidArgumentException('uploads/photos is not writable by PHP. Check the folder permissions.'); }
+            $logo='uploads/photos/'.bin2hex(random_bytes(16)).'.'.$extension;
             $savedFile=dirname(__DIR__).'/'.$logo;
-            if (!move_uploaded_file($file['tmp_name'],$savedFile)) { throw new InvalidArgumentException('The logo could not be stored. Check uploads/logos permissions and try a PNG, JPG or WebP under 50 MB.'); }
+            if (!move_uploaded_file($file['tmp_name'],$savedFile)) { throw new InvalidArgumentException('The logo could not be stored. Check uploads/photos permissions and try a PNG, JPG or WebP under 50 MB.'); }
         }
         if ($id) query('UPDATE clients SET client_name=?,website_url=?,logo_path=? WHERE id=?',[$name,$website,$logo,$id]);
         else query('INSERT INTO clients (client_name,website_url,logo_path,created_by) VALUES (?,?,?,?)',[$name,$website,$logo,$user['id']]);
@@ -78,7 +78,7 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
 <?php foreach (['phone'=>['Phone number','tel',30],'package'=>['Package name','text',255],'starting_date'=>['Starting date','date',10],'ending_date'=>['Ending date','date',10]] as $key=>$spec): ?><div class="field"><label for="<?= $key ?>"><?= $spec[0] ?></label><input id="<?= $key ?>" name="<?= $key ?>" type="<?= $spec[1] ?>" maxlength="<?= $spec[2] ?>" value="<?= h($value($key)) ?>"></div><?php endforeach; ?>
 </div><details class="simple-details"><summary>Website, social media & logo (optional)</summary><div class="fields">
 <?php foreach (['website_url'=>'Website URL','social_media_url'=>'Social media URL','gmb_url'=>'Google Business Profile URL'] as $key=>$label): ?><div class="field"><label for="<?= $key ?>"><?= $label ?></label><input type="url" id="<?= $key ?>" name="<?= $key ?>" value="<?= h($value($key)) ?>" placeholder="https://" maxlength="2048"></div><?php endforeach; ?>
-<div class="field"><label for="client_logo">Client logo</label><input type="file" id="client_logo" name="client_logo" accept="image/png,image/jpeg,image/webp"><p class="help">PNG, JPG or WebP, up to 50 MB. Leave empty to keep the current logo.</p><?php if (!empty($record['logo_path'])): ?><img class="client-logo" src="<?= h($record['logo_path']) ?>" alt="Current logo"><?php endif; ?></div></div></details></section>
+<div class="field"><label for="client_logo">Client logo</label><input type="file" id="client_logo" name="client_logo" accept="image/png,image/jpeg,image/webp"><p class="help">PNG, JPG or WebP, up to 50 MB. Leave empty to keep the current logo.</p><?php if (!empty($record['logo_path'])): ?><img class="client-logo" src="client-logo.php?id=<?= (int)$record['id'] ?>" alt="Current logo"><?php endif; ?></div></div></details></section>
 <section class="panel form-section"><h2><span class="section-number">2</span> Work to deliver each month</h2><p class="help">Enter how many of each item you need to create. Use 0 if it is not included.</p><div class="fields">
 <?php foreach (['monthly_reels'=>'Reels','monthly_posters'=>'Posters','monthly_carousels'=>'Carousels'] as $key=>$label): ?><div class="field"><label for="<?= $key ?>"><?= $label ?> per month</label><input type="number" min="0" max="1000000" step="1" id="<?= $key ?>" name="<?= $key ?>" value="<?= h($value($key,0)) ?>" required></div><?php endforeach; ?>
 </div></section>

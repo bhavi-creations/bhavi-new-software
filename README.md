@@ -36,7 +36,7 @@ The installer preserves existing records, applies the additional account, assign
 - Daily work reports include all submitted employee sheets. Filter by department, employee and inclusive date range. Today, last seven days, this month and custom ranges are available. Download creates a native Excel (.xlsx) workbook including all department fields. Managers can view details, edit entries, review sheets, give feedback or delete a report.
 - Employees apply for leave and see their own request history/calendar. Managers approve/reject pending requests; administrators do not access leave requests. Decisions appear in the employee's history and notifications. Working days exclude Sundays and published holidays unless a department schedule specifies otherwise. Overlapping pending/approved leave is rejected.
 - Account and client deletion hides them from current directories and prevents deleted accounts signing in. Historical work and leave records remain available. Holiday and assignment deletion also preserve existing history.
-- Client logos accept PNG, JPG and WebP up to 50 MB. Uploaded files live under `uploads/`; database rows store their paths. Brand assets show uploaded client logos and any existing saved brand files.
+- Client logos accept PNG, JPG and WebP up to 50 MB and are saved under `uploads/photos/`; protected image delivery keeps this folder private. Employee images also use `uploads/photos/`, and employee PDFs use `uploads/pdf/`. Database rows store file paths. Brand assets show uploaded client logos and any existing saved brand files.
 
 ## Employee salary and client payments
 
