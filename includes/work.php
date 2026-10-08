@@ -67,13 +67,23 @@ function sync_assignment(int $id): void
 function parse_work_duration(string $value): int
 {
     $value=trim($value);
-    if (!preg_match('/^(?:(\d{1,5})\s*(?:hours?|hrs?|h))?\s*(?:(\d{1,6})\s*(?:minutes?|mins?|m))?$/iD',$value,$matches) || ($matches[1]==='' && ($matches[2]??'')==='')) {
-        throw new InvalidArgumentException('Enter time like 1 hour 30 min or 45 min.');
+    if (preg_match('/^(\d{1,2}):(\d{2})$/D',$value,$matches)) {
+        if ((int)$matches[2]>59) throw new InvalidArgumentException('Minutes must be between 00 and 59.');
+        $total=(int)$matches[1]*60+(int)$matches[2];
+    } elseif (preg_match('/^\d{1,2}(?:\.\d{1,2})?$/D',$value)) {
+        $hours=(float)$value;
+        if ($hours>24) throw new InvalidArgumentException('Time spent must be between 0 and 24 hours.');
+        $total=(int)round($hours*60);
+    } elseif (preg_match('/^(?:(\d{1,2})\s*(?:hours?|hrs?|h))?\s*(?:(\d{1,4})\s*(?:minutes?|mins?|m))?$/iD',$value,$matches) && (($matches[1]??'')!=='' || ($matches[2]??'')!=='')) {
+        $hours=(int)($matches[1]??0);
+        $minutes=(int)($matches[2]??0);
+        if (($matches[1]??'')!=='' && $minutes>59) throw new InvalidArgumentException('Minutes must be below 60 when hours are included.');
+        $total=$hours*60+$minutes;
+    } else {
+        throw new InvalidArgumentException('Enter time like 2 hours 30 min, 02:30, 2.5 or 45 min (up to 24 hours).');
     }
-    $hours=(int)($matches[1]??0);
-    $minutes=(int)($matches[2]??0);
-    if ($hours>99999 || $minutes>5999999 || ($hours>0 && $minutes>59)) throw new InvalidArgumentException('Enter a valid duration; minutes must be below 60 when hours are included.');
-    return $hours*60+$minutes;
+    if ($total>1440) throw new InvalidArgumentException('Time spent must be between 0 and 24 hours.');
+    return $total;
 }
 function format_work_duration($minutes): string
 {
@@ -88,10 +98,14 @@ function format_work_duration($minutes): string
 function work_details(array $entry,string $department): array
 {
     $fields=['Task'=>$entry['task_title']?:($entry['website_page_task']?:($entry['seo_task']?:'Work entry')),'Status'=>$entry['task_status']];
-    if (array_key_exists('time_spent_minutes',$entry)) $fields['Time spent']=format_work_duration($entry['time_spent_minutes']);
+    if (array_key_exists('time_spent_minutes',$entry)) $fields['Time spent']=$entry['time_spent_minutes']===null?'—':format_work_duration($entry['time_spent_minutes']);
     $fields['Remark']=$entry['remark'];
     foreach (metric_definitions($department) as $name=>[$label]) $fields[$label]=$entry[$name];
     return $fields;
+}
+function report_work_status(array $report): string
+{
+    return (int)$report['entry_count']>0 && (int)$report['completed_count']===(int)$report['entry_count']?'completed':'pending';
 }
 function report_filter(): array
 {

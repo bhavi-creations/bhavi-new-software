@@ -8,7 +8,9 @@ const [browserPath, baseUrl, password] = process.argv.slice(2);
 const storage = path.resolve(__dirname, '../storage');
 fs.mkdirSync(storage, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'bhavi-browser-'));
-const browser = spawn(browserPath, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: 'ignore', env: { ...process.env, SystemDrive: process.env.SystemDrive || path.parse(os.homedir()).root.slice(0, 2), ProgramData: process.env.ProgramData || path.join(path.parse(os.homedir()).root, 'ProgramData'), LOCALAPPDATA: process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), APPDATA: process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming') } });
+const browser = spawn(browserPath, ['--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--in-process-gpu', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, SystemDrive: process.env.SystemDrive || path.parse(os.homedir()).root.slice(0, 2), ProgramData: process.env.ProgramData || path.join(path.parse(os.homedir()).root, 'ProgramData'), LOCALAPPDATA: process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), APPDATA: process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming') } });
+let browserErrors = '';
+browser.stderr.on('data', data => { browserErrors = (browserErrors + data).slice(-4000); });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let socket, messageId = 0;
 const pending = new Map();
@@ -33,8 +35,9 @@ async function waitFor(expression) {
   throw new Error('Browser wait timed out: ' + expression);
 }
 async function navigate(route) {
-  await command('Page.navigate', { url: `${baseUrl}/${route}` });
-  await waitFor('document.readyState === "complete"');
+  const destination = new URL(route, `${baseUrl}/`).href;
+  await command('Page.navigate', { url: destination });
+  await waitFor(`location.href === ${JSON.stringify(destination)} && document.readyState === "complete"`);
 }
 async function login(username, dashboard) {
   await navigate('login.php');
@@ -51,9 +54,17 @@ async function screenshot(filename, width, height) {
 (async () => {
   try {
     const portFile = path.join(profile, 'DevToolsActivePort');
-    for (let i = 0; i < 150 && !fs.existsSync(portFile); i++) { await delay(100); }
-    if (!fs.existsSync(portFile)) throw new Error('Headless browser did not start.');
-    const port = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim();
+    let port;
+    for (let i = 0; i < 150; i++) {
+      try {
+        const lines = fs.readFileSync(portFile, 'utf8').trim().split('\n');
+        if (/^\d+$/.test(lines[0]) && lines[1]?.startsWith('/devtools/')) { port = lines[0]; break; }
+      } catch (error) {
+        if (!['ENOENT', 'EBUSY', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+      }
+      await delay(100);
+    }
+    if (!port) throw new Error('Headless browser did not start. ' + browserErrors);
     const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
     const target = targets.find(item => item.type === 'page');
     socket = new WebSocket(target.webSocketDebuggerUrl);
@@ -65,7 +76,7 @@ async function screenshot(filename, width, height) {
       message.error ? request.reject(new Error(message.error.message)) : request.resolve(message.result);
     });
     socket.addEventListener('close', () => {
-      for (const request of pending.values()) request.reject(new Error('Browser disconnected before checks completed.'));
+      for (const request of pending.values()) request.reject(new Error('Browser disconnected before checks completed. ' + browserErrors));
       pending.clear();
     });
     await command('Page.enable');
@@ -78,6 +89,14 @@ async function screenshot(filename, width, height) {
     await evaluate("document.querySelector('dialog[open] [data-close-dialog]').click(); true");
     assert.equal(await evaluate("Boolean(document.querySelector('dialog[open]'))"), false);
     assert.equal(await evaluate('document.querySelectorAll("img[src^=\'employee-photo.php\']").length > 0'), true);
+    await navigate('add-client.php');
+    const clientProfileUrl = await evaluate("document.querySelector('a[href^=\"client-profile.php?id=\"]').getAttribute('href')");
+    await navigate(clientProfileUrl);
+    assert.equal(await evaluate("document.body.textContent.includes('PRIVATE-PACKAGE-TEST') && document.body.textContent.includes('3,900.00')"), true);
+    await screenshot('client-profile.png', 1440, 1100);
+    await screenshot('client-profile-mobile.png', 390, 844);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
+    await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await navigate('admin-add-client.php');
     await evaluate("document.querySelector('#payment_total').value='10000'; document.querySelector('#payment-rows input[type=number]').value='2000'; document.querySelector('#payment_total').dispatchEvent(new Event('input', {bubbles:true})); true");
     assert.equal(await evaluate("document.querySelector('#remaining-preview').textContent"), 'INR 8,000.00');
@@ -113,16 +132,30 @@ async function screenshot(filename, width, height) {
     assert.equal(await evaluate("document.querySelector('.role-badge').textContent"), 'Employee');
     await navigate('employee-profile.php');
     assert.equal(await evaluate("document.body.textContent.includes('13,107.50')"), true);
+    assert.equal(await evaluate("document.body.textContent.includes('website.test') && document.body.textContent.includes('Guardian number') && document.body.textContent.includes('Role / job title')"), true);
     await screenshot('employee-own-salary.png', 1440, 1100);
     await screenshot('employee-own-salary-mobile.png', 390, 844);
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
     await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await navigate('admin-employees.php');
+    assert.equal(await evaluate("document.querySelectorAll('table tbody tr').length === 1 && !document.body.textContent.includes('Employee seo')"), true);
+    assert.equal(await evaluate("Boolean(document.querySelector('a[href^=\"employee-profile.php?id=\"]'))"), true);
+    await navigate(clientProfileUrl);
+    assert.equal(await evaluate("document.body.textContent.includes('Pinterest') && !document.body.textContent.includes('PRIVATE-PACKAGE-TEST') && !document.body.textContent.includes('3,900.00')"), true);
     await navigate('employee-assigned-work.php');
+    const assignedDateUrl = await evaluate("document.querySelector('#assigned-work a[href*=assignment_date]').getAttribute('href')");
+    await navigate(assignedDateUrl);
     assert.equal(await evaluate("document.querySelectorAll('#assigned-work input[type=radio]').length >= 2"), true);
+    assert.equal(await evaluate("document.querySelector('[name=time_spent_hours]').value"), '6 hours 15 min');
+    await evaluate("document.querySelector('[name=time_spent_hours]').value='24:00'; document.querySelector('#assigned-work form').requestSubmit(); true");
+    await waitFor("location.search.includes('assignment_date=') && document.readyState==='complete' && document.querySelector('[name=time_spent_hours]')?.value==='24 hours'");
+    await navigate(assignedDateUrl);
+    assert.equal(await evaluate("document.querySelector('[name=time_spent_hours]').value"), '24 hours');
     await navigate('employee-daily-work.php');
     assert.equal(await evaluate("document.querySelector('#client_id').required"), false);
     assert.equal(await evaluate("document.querySelector('[name=website_new_count]').required"), false);
     assert.equal(await evaluate("Boolean(document.querySelector('#assigned-work'))"), false);
+    assert.equal(await evaluate("document.querySelector('[name=time_spent_hours]').type"), 'text');
     await screenshot('employee-daily-work.png', 1440, 1000);
     await navigate('manager-notification.php');
     assert.equal(await evaluate("document.querySelectorAll('.notification-day').length >= 2"), true);
@@ -136,7 +169,7 @@ async function screenshot(filename, width, height) {
     await evaluate("document.querySelector('.menu-toggle').click(); true");
     assert.equal(await evaluate("document.querySelector('.portal-sidebar').classList.contains('open')"), true);
     assert.equal(await evaluate("document.documentElement.scrollWidth <= innerWidth"), true);
-    console.log('PASS: Browser dialogs, role badges, date presets, category dropdown, employee controls and mobile menu/layout.');
+    console.log('PASS: Browser client profiles, own employee details, 24-hour time persistence, dialogs, filters and mobile layouts.');
   } finally {
     if (socket) socket.close();
     browser.kill();

@@ -1793,12 +1793,14 @@ img[src^="employee-photo.php"] {
 .attendance-control p{margin:0 0 8px;color:#d4d9eb;font-size:12px}
 .attendance-button{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:1px solid #8792d8;border-radius:8px;background:#354477;color:#fff;font-weight:600;cursor:pointer}
 .attendance-button:hover{background:#455895}
-.employee-profile-layout{display:grid;grid-template-columns:minmax(320px,.85fr) minmax(0,1.55fr);align-items:start;gap:22px}
-.employee-profile-card{position:sticky;top:20px}
-.employee-profile-card h2{font-size:24px}
-.employee-profile-photo{display:block;width:180px;height:180px;object-fit:cover;border-radius:14px;margin:16px 0 22px}
-.employee-profile-main{min-width:0}
-.employee-profile-main>.panel{min-width:0}
-@media(max-width:900px){.employee-profile-layout{grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr)}.employee-profile-card{position:static}}
+.employee-profile-layout,.client-profile-layout{display:grid;grid-template-columns:minmax(320px,.85fr) minmax(0,1.55fr);align-items:start;gap:22px}
+.employee-profile-card,.client-profile-card{position:sticky;top:20px}
+.employee-profile-card h2,.client-profile-card h2{font-size:24px}
+.employee-profile-photo,.client-profile-photo{display:block;width:180px;height:180px;object-fit:cover;border-radius:14px;margin:16px 0 22px}
+.client-profile-photo{object-fit:contain;background:#f5f7fc;padding:12px}
+.employee-profile-main,.client-profile-main{min-width:0}
+.employee-profile-main>.panel,.client-profile-main>.panel{min-width:0}
+.client-profile-layout .details-list dd{min-width:0;overflow-wrap:anywhere}
+@media(max-width:900px){.employee-profile-layout,.client-profile-layout{grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr)}.employee-profile-card,.client-profile-card{position:static}}
 @media(max-width:700px){.record-form .fields,.record-form .repeat-row,.money-summary,.contribution-grid{grid-template-columns:1fr}.money-card{padding:16px}.money-card>strong{font-size:23px}.money-summary{gap:10px}.record-form .form-actions{flex-wrap:wrap}.record-form .form-actions>*{flex:1;text-align:center}.simple-amounts{grid-template-columns:1fr 1fr}}
-@media(max-width:700px){.employee-profile-layout{grid-template-columns:1fr}.employee-profile-photo{width:140px;height:140px}.social-link-row{grid-template-columns:1fr!important}}
+@media(max-width:700px){.employee-profile-layout,.client-profile-layout{grid-template-columns:1fr}.employee-profile-photo,.client-profile-photo{width:140px;height:140px}.social-link-row{grid-template-columns:1fr!important}}

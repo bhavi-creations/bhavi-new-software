@@ -135,6 +135,7 @@ try {
     expect((int)scalar('SELECT MAX(version) FROM portal_schema_versions') === PORTAL_SCHEMA_VERSION && (int)scalar('SELECT COUNT(*) FROM users') === 2, 'Automatic update preserves accounts and completes the schema');
     expect((int)scalar('SELECT COUNT(*) FROM employee_attendance_days') === 0, 'Automatic update adds missing attendance table');
     $routes = ['admin-dashboard.php', 'manager-dashboard.php', 'admin-employees.php', 'add-client.php', 'admin-holidays.php', 'manager-holidays.php', 'apply-leaves.php', 'check-leave.php', 'manager-dailywork.php', 'manager-leave-requist.php', 'manager-notification.php', 'employee-brands-assets.php', 'client-reuirement.php', 'website-employee-dashboard.php', 'seo-employee-dashboard.php', 'design-employee-dashboard.php', 'socialmedia-employee-dashboard.php', 'telecaller-employee-dashboard.php', 'manager-assign-work.php', 'manager-review-work.php', 'download-work.php', 'download-asset.php'];
+    expect($guest->request('client-profile.php?id=1')['headers']['location']==='login.php','Client profile requires sign-in');
     foreach ($routes as $route) expect($guest->request($route)['headers']['location'] === 'login.php', 'Unauthenticated route ' . $route);
     $guest->request('login.php');
     expect($guest->post('authenticate.php', ['username' => 'admin.test', 'password' => 'bad-password'])['headers']['location'] === 'login.php', 'Bad password rejected');
@@ -223,7 +224,7 @@ try {
     expect(str_contains($manager->request('manager-dashboard.php')['body'], '<strong>5</strong>'), 'Manager total uses database employees');
     expect(str_contains($browsers['website']->request('employee-profile.php')['body'], 'employee-profile-layout'), 'Employee profile uses responsive desktop layout');
     expect($browsers['seo']->request('website-employee-dashboard.php')['headers']['location'] === 'seo-employee-dashboard.php', 'Wrong department route redirects');
-    expect(str_contains($browsers['website']->request('admin-employees.php')['body'], 'Employee seo'), 'Employee sees shared employee directory');
+    expect(!str_contains($browsers['website']->request('admin-employees.php')['body'], 'Employee seo') && str_contains($browsers['website']->request('admin-employees.php')['body'], 'Employee website'), 'Employee sees only their own saved employee details');
     $employeeEdit = ['employee_name' => 'Employee website', 'email' => 'website@example.test', 'username' => 'website.test', 'temporary_password' => '', 'role' => 'admin', 'account_status' => 'active', 'department_id' => scalar("SELECT id FROM departments WHERE code='website'"), 'designation' => 'Senior developer', 'joining_date' => date('Y-m-d'), 'manager_id' => ''];
     $manager->request('admin-add-employee.php?id=' . $employeeIds['website']);
     expect($manager->post('admin-add-employee.php?id=' . $employeeIds['website'], $employeeEdit)['status'] === 303, 'Manager edits employee');
@@ -298,7 +299,27 @@ try {
     expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?',[$assignmentId])===90 && (int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE assignment_id=?',[$assignmentId])===90,'Employee time spent is saved as minutes on assignment and work history');
     expect(str_contains($admin->request('manager-assigned-status.php?employee='.$employeeIds['website'])['body'],'=SUM(1,2)') && str_contains($admin->request('manager-assigned-status.php?employee='.$employeeIds['website'])['body'],'1 hour 30 min'),'Admin sees readable duration and employee remark');
     expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=(SELECT id FROM users WHERE username='admin.test') AND title LIKE '%assigned task update%' AND message LIKE '%1 hour 30 min%' AND message LIKE '%=SUM(1,2)%'")>0,'Admin receives submitted task status, readable time, and employee remark');
-    expect(str_contains($website->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'assets/js/assignment-duration.js'),'Employee assigned work loads the readable duration input');
+    expect(str_contains($website->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'value="1 hour 30 min"'),'Saved assignment duration is restored from minutes when the page reloads');
+    foreach (['0 min'=>0,'45 min'=>45,'2 hours'=>120,'04:45'=>285,'7.5'=>450,'23 hours 59 min'=>1439,'24 hours'=>1440,'1440 min'=>1440] as $duration=>$minutes) {
+        expect($website->post('employee-assigned-work.php?assignment_date='.$assignmentDate,array_replace($update,['time_spent_hours'=>$duration]))['status']===303,'Assignment duration accepted: '.$duration);
+        expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?',[$assignmentId])===$minutes && (int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE assignment_id=?',[$assignmentId])===$minutes,'Assignment and history retain duration: '.$duration);
+    }
+    expect(str_contains($website->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'value="24 hours"'),'Full-day duration remains correct after reload');
+    foreach (['24 hours 1 min','24:01','25','1441 min','2 hours 60 min','01:99','-1','not a time'] as $duration) {
+        $response=$website->post('employee-assigned-work.php?assignment_date='.$assignmentDate,array_replace($update,['time_spent_hours'=>$duration]));
+        expect($response['status']===200 && str_contains($response['body'],'alert error'),'Invalid duration is rejected: '.$duration);
+        expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?',[$assignmentId])===1440,'Rejected duration preserves saved assignment time');
+    }
+    expect($website->post('employee-assigned-work.php?assignment_date='.$assignmentDate,$update)['status']===303,'Restore ordinary assignment duration');
+    $website->request('employee-daily-work.php');
+    $dailyDuration=['action'=>'save_entry','task_title'=>'Full-day work duration','task_status'=>'completed','remark'=>'Time entry check','time_spent_hours'=>'24:00','submit_mode'=>'submitted'];
+    expect($website->post('employee-daily-work.php',$dailyDuration)['status']===303,'Daily work accepts 24 hours without a client');
+    $dailyDurationId=(int)scalar("SELECT id FROM daily_work_entries WHERE task_title='Full-day work duration'");
+    expect((int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE id=?',[$dailyDurationId])===1440,'Daily work duration persists');
+    expect(str_contains($website->request('employee-work-history.php')['body'],'24 hours'),'Daily work history shows full-day duration');
+    expect(str_contains($website->request('employee-daily-work.php?edit_entry='.$dailyDurationId)['body'],'value="24 hours"'),'Daily entry edit restores saved duration');
+    expect($website->post('employee-daily-work.php',array_replace($dailyDuration,['entry_id'=>$dailyDurationId,'time_spent_hours'=>'12:35']))['status']===303,'Daily work can update a duration above ninety minutes');
+    expect((int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE id=?',[$dailyDurationId])===755,'Updated daily work duration persists');
     foreach ($dashboards as $code => $dashboard) {
         $browser = $browsers[$code];
         $browser->request($dashboard);
@@ -324,6 +345,9 @@ try {
     $manager->request('manager-dailywork.php');
     $all = $manager->request('manager-dailywork.php')['body'];
     expect(str_contains($all, 'website daily task') && str_contains($all, 'seo daily task'), 'All submitted departments appear in report details');
+    $completedReport=$admin->request('manager-dailywork.php?employee='.$employeeIds['website'])['body'];
+    expect(str_contains($completedReport,'class="badge status-completed">Completed</span>'),'Report Review shows Completed when all submitted tasks are complete');
+    expect(scalar('SELECT review_status FROM daily_work_submissions WHERE employee_id=? AND work_date=?',[$employeeIds['website'],date('Y-m-d')])==='pending','Work completion displays independently of saved manager feedback');
     $filtered = $manager->request('manager-dailywork.php?department=' . $websiteDepartment)['body'];
     expect(str_contains($filtered, 'website daily task') && !str_contains($filtered, 'seo daily task'), 'Department report filtering');
     expect(!str_contains($filtered, '>Employee seo</option>'), 'Category dropdown lists matching employees');
@@ -356,6 +380,10 @@ try {
     $manager->request('manager-review-work.php?id=' . $sheetId);
     expect($manager->post('manager-review-work.php?id=' . $sheetId, ['action' => 'edit_entry', 'entry_id' => $entryId, 'task_title' => 'Reviewed home page', 'task_status' => 'pending', 'remark' => 'Needs revision', 'website_new_count' => '1', 'website_changes_count' => '2'])['status'] === 303, 'Manager edits submitted work');
     expect(scalar('SELECT status FROM work_assignments WHERE id=?', [$assignmentId]) === 'pending', 'Manager work edit synchronizes assignment');
+    expect(str_contains($admin->request('manager-dailywork.php?employee='.$employeeIds['website'])['body'],'class="badge status-pending">Pending</span>'),'Report Review shows Pending for a mix of completed and pending tasks');
+    expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?',[$assignmentId])===90,'Editing task details preserves duration when time is not changed');
+    expect($manager->post('manager-review-work.php?id='.$sheetId,['action'=>'edit_entry','entry_id'=>$entryId,'task_title'=>'Reviewed home page','task_status'=>'pending','remark'=>'Needs revision','time_spent_hours'=>'06:15'])['status']===303,'Management can update work duration');
+    expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?',[$assignmentId])===375,'Management duration edit synchronizes assigned work');
     $leaveDate = (new DateTimeImmutable('next tuesday'))->format('Y-m-d');
     $website->request('apply-leaves.php');
     $leaveData = ['leave_type_id' => '1', 'from_date' => $leaveDate, 'to_date' => $leaveDate, 'reason' => 'Family appointment'];
@@ -533,6 +561,15 @@ try {
     expect(scalar('SELECT effective_to FROM employee_salary_history WHERE id=?', [$salaryId]) === date('Y-m-d', strtotime(date('Y-m-d', strtotime('+1 month')) . ' -1 day')), 'Increment closes preceding salary period');
     expect(str_contains($website->request('employee-profile.php')['body'], '13,107.50'), 'Employee sees own take-home salary');
     expect(str_contains($admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'], '227.50'), 'Admin sees company ESI');
+    $ownProfile=$website->request('employee-profile.php')['body'];
+    $staffProfile=$admin->request('employee-profile.php?id='.$employeeIds['website'])['body'];
+    preg_match('/<dl class="details-list">(.*?)<\/dl>/s',$ownProfile,$ownDetails);
+    preg_match('/<dl class="details-list">(.*?)<\/dl>/s',$staffProfile,$staffDetails);
+    expect(isset($ownDetails[1],$staffDetails[1]) && $ownDetails[1]===$staffDetails[1],'Employee sees the same saved personal details as management');
+    expect(str_contains($ownProfile,'website.test') && str_contains($ownProfile,'9000022222') && str_contains($ownProfile,'Role / job title'),'Own profile includes username, guardian and saved role details');
+    $ownDirectory=$website->request('admin-employees.php')['body'];
+    expect(str_contains($ownDirectory,'employee-profile.php?id='.$employeeIds['website']) && !str_contains($ownDirectory,'Employee seo'),'Employee directory displays own record and profile link');
+    expect(str_contains($website->request($dashboards['website'])['body'],'<h2>My profile &amp; salary</h2>'),'Dashboard links directly to own saved profile');
     expect($browsers['seo']->request('employee-profile.php?id=' . $employeeIds['website'])['status'] === 403, 'Other employee salary URL forbidden');
     expect(!str_contains($browsers['seo']->request('employee-profile.php')['body'], '13,107.50'), 'Other profile does not leak salary');
     expect(!str_contains($website->request('admin-employees.php')['body'], '9000022222'), 'Guardian details excluded from shared directory');
@@ -557,6 +594,15 @@ try {
     expect((int)scalar('SELECT monthly_carousels FROM clients WHERE id=?', [$clientId]) === 4, 'Monthly carousel quota persisted');
     expect(str_contains($admin->request('add-client.php')['body'], '2026-10-10'), 'Admin sees dated payment history');
     expect(str_contains($admin->request('add-client.php')['body'], 'Pinterest') && str_contains($admin->request('add-client.php')['body'], 'https://instagram.com/example'), 'Client detail dialog includes named social links');
+    expect(str_contains($admin->request('add-client.php')['body'],'client-profile.php?id='.$clientId),'Client directory has a Profile action');
+    $clientProfile=$admin->request('client-profile.php?id='.$clientId);
+    expect($clientProfile['status']===200 && str_contains($clientProfile['body'],'Shared Client Updated') && str_contains($clientProfile['body'],'9555511111') && str_contains($clientProfile['body'],'Pinterest'),'Client profile shows saved contact and social details');
+    expect(str_contains($clientProfile['body'],'PRIVATE-PACKAGE-TEST') && str_contains($clientProfile['body'],'8,000.00') && str_contains($clientProfile['body'],'2026-10-10'),'Management client profile shows package, balance and dated payments');
+    expect($manager->request('client-profile.php?id='.$clientId)['status']===200,'Manager can open client profile');
+    $employeeClientProfile=$website->request('client-profile.php?id='.$clientId);
+    expect($employeeClientProfile['status']===200 && str_contains($employeeClientProfile['body'],'Monthly work') && str_contains($employeeClientProfile['body'],'Pinterest'),'Employee can read shared client profile details');
+    expect(!str_contains($employeeClientProfile['body'],'PRIVATE-PACKAGE-TEST') && !str_contains($employeeClientProfile['body'],'8,000.00') && !str_contains($employeeClientProfile['body'],'2026-10-10') && !str_contains($employeeClientProfile['body'],'Edit client'),'Employee client profile excludes financial data and edit controls');
+    expect($website->request('client-profile.php?id=invalid')['status']===404 && $admin->request('client-profile.php?id=99999999')['status']===404,'Invalid or missing client profiles return not found');
     $employeeClients = $website->request('add-client.php')['body'];
     expect(!str_contains($employeeClients, 'Remaining') && !str_contains($employeeClients, '8,000.00'), 'Employee does not see client remaining balance');
     expect(!str_contains($employeeClients, 'PRIVATE-PACKAGE-TEST') && !str_contains($employeeClients, 'Total payment') && !str_contains($employeeClients, 'Paid') && !str_contains($employeeClients, '2026-10-10'), 'Package and payment ledger hidden from employee');
@@ -576,6 +622,7 @@ try {
     expect($admin->post('admin-add-client.php?id='.$clientId,['action'=>'update_payment','payment_id'=>$paymentToEdit,'payment_date'=>'2026-10-11','amount'=>'2100'])['status']===303, 'Saved payment date and amount can be edited');
     expect(scalar('SELECT payment_date FROM client_payments WHERE id=?',[$paymentToEdit])==='2026-10-11' && scalar('SELECT amount FROM client_payments WHERE id=?',[$paymentToEdit])==='2100.00', 'Saved payment changes persist');
     expect(scalar('SELECT remaining_amount FROM clients WHERE id=?',[$clientId])==='3900.00', 'Editing payment refreshes client balance');
+    expect(str_contains($admin->request('client-profile.php?id='.$clientId)['body'],'3,900.00') && str_contains($admin->request('client-profile.php?id='.$clientId)['body'],'2026-10-11'),'Client profile reflects edited payments and current balance');
     $badAmount = array_merge($clientData, ['payment_request_key' => bin2hex(random_bytes(16)), 'payments' => [['date' => '2026-10-15', 'amount' => '-1']]]);
     expect($admin->post('admin-add-client.php?id=' . $clientId, $badAmount)['status'] === 200, 'Negative payment rejected');
     expect($admin->request('admin-add-client.php?id=' . $clientId, ['csrf' => 'wrong'])['status'] === 419, 'Client payment CSRF enforced');
@@ -608,6 +655,7 @@ try {
     $admin->request('add-client.php');
     expect($admin->post('add-client.php', ['action' => 'delete_client', 'id' => $clientId])['status'] === 303, 'Client delete');
     expect(!str_contains($website->request('add-client.php')['body'], 'Shared Client Updated'), 'Deleted client hidden from employee');
+    expect($website->request('client-profile.php?id='.$clientId)['status']===404 && $admin->request('client-profile.php?id='.$clientId)['status']===404,'Deleted client profile cannot be opened');
     $admin->request('admin-employees.php');
     expect($admin->post('admin-employees.php', ['action' => 'delete_employee', 'id' => $employeeIds['social_media']])['status'] === 303, 'Employee account deletion');
     expect($browsers['social_media']->request($dashboards['social_media'])['headers']['location'] === 'login.php', 'Deleted employee session loses access');

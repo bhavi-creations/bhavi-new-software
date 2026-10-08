@@ -23,7 +23,7 @@ function page_start(string $title, string $active = ''): void
 {
     $user = require_roles();
     $dashboard = dashboard_path($user);
-    $nav = [$dashboard => 'Dashboard', 'admin-employees.php' => 'Employees', 'add-client.php' => 'Clients'];
+    $nav = [$dashboard => 'Dashboard', 'admin-employees.php' => is_staff()?'Employees':'My details', 'add-client.php' => 'Clients'];
     if ($user['role'] === 'admin') { $nav['admin-add-employee.php'] = 'Add employee'; }
     if (is_staff()) {
         $nav += ['manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-assigned-status.php' => 'Assigned work status'];
