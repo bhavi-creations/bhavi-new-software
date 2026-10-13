@@ -2,13 +2,14 @@
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/finance.php';
 
-require_roles();
+$viewer=require_roles(['admin','manager','employee','client']);
 $id=filter_var($_GET['id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
 if (!$id) fail(404,'Client not found.');
 $staff=is_staff();
 $client=one('SELECT * FROM clients WHERE id=? AND deleted_at IS NULL'.($staff?'':' AND is_active=1'),[$id]);
 if (!$client) fail(404,'Client not found.');
-$socialLinks=rows('SELECT platform_name,url FROM client_social_links WHERE client_id=? ORDER BY id',[$id]);
+if ($viewer['role']==='client' && (int)$client['user_id']!==(int)$viewer['id']) fail(403,'You can only view your own profile.');
+$socialLinks=rows('SELECT platform_name,url,username,password_cipher FROM client_social_links WHERE client_id=? ORDER BY id',[$id]);
 if (!$socialLinks && $client['social_media_url']) $socialLinks[]=['platform_name'=>'Social media','url'=>$client['social_media_url']];
 
 function client_profile_link(string $url): void
@@ -18,23 +19,25 @@ function client_profile_link(string $url): void
     ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($url) ?></a><?php
 }
 
-page_start('Client profile','add-client.php');
+page_start('Client profile',$viewer['role']==='client'?'client-details.php':'add-client.php');
 ?>
-<div class="toolbar"><a class="button secondary" href="add-client.php">Back to clients</a></div>
+<?php if ($viewer['role']!=='client'): ?><div class="toolbar"><a class="button secondary" href="add-client.php">Back to clients</a></div><?php endif; ?>
 <div class="client-profile-layout">
     <section class="panel client-profile-card">
         <h2><?= h($client['client_name']) ?></h2>
         <?php if ($client['logo_path']): ?><img class="client-profile-photo" src="client-logo.php?id=<?= $id ?>" alt="<?= h($client['client_name']) ?> logo"><?php endif; ?>
         <dl class="details-list">
-            <?php foreach (['phone'=>'Phone number','starting_date'=>'Starting date','ending_date'=>'Ending date','created_at'=>'Added on'] as $key=>$label): ?>
+            <?php foreach (['client_type'=>'Type of client','phone'=>'Phone number','starting_date'=>'Starting date','ending_date'=>'Ending date','created_at'=>'Added on'] as $key=>$label): ?>
                 <dt><?= h($label) ?></dt><dd><?= h($client[$key]?:'—') ?></dd>
             <?php endforeach; ?>
-            <dt>Status</dt><dd><?= status_badge($client['is_active']?'active':'inactive') ?></dd>
-            <?php if ($staff): ?><dt>Package</dt><dd><?= h($client['package']?:'—') ?></dd><?php endif; ?>
+            <dt>Project age</dt><dd><?= h(project_age($client['starting_date'])) ?></dd><dt>Status</dt><dd><?= status_badge($client['is_active']?'active':'inactive') ?></dd>
+            <?php if ($staff || $viewer['role']==='client'): ?><dt>Package</dt><dd><?= h($client['package']?:'—') ?></dd><?php endif; ?>
         </dl>
         <?php if ($staff): ?><a class="button" href="admin-add-client.php?id=<?= $id ?>">Edit client</a><?php endif; ?>
     </section>
     <div class="client-profile-main">
+<?php if (($staff || $viewer['role']==='client') && !$client['user_id']): ?><section class="panel"><h2>Client login</h2><p>Login credentials have not been created yet.</p><?php if ($staff): ?><a class="button secondary" href="admin-add-client.php?id=<?= $id ?>">Create client login</a><?php endif; ?></section><?php endif; ?>
+<?php if (($staff || $viewer['role']==='client') && $client['user_id']): $loginDetails=one('SELECT username,credential_cipher FROM users WHERE id=?',[$client['user_id']]); ?><section class="panel"><h2>Client login</h2><p>Username: <?= h($loginDetails['username']) ?></p><?php if ($viewer['role']==='admin'): ?><details><summary>Show password</summary><p><?= h(credential_decrypt($loginDetails['credential_cipher']) ?: 'Not available') ?></p></details><?php endif; ?></section><?php endif; ?>
         <section class="panel">
             <h2>Monthly work</h2>
             <div class="money-summary">
@@ -48,7 +51,7 @@ page_start('Client profile','add-client.php');
             <dl class="details-list">
                 <dt>Website</dt><dd><?php client_profile_link($client['website_url']); ?></dd>
                 <dt>Google Business Profile</dt><dd><?php client_profile_link($client['gmb_url']); ?></dd>
-                <?php foreach ($socialLinks as $link): ?><dt><?= h($link['platform_name']) ?></dt><dd><?php client_profile_link($link['url']); ?></dd><?php endforeach; ?>
+                <?php foreach ($socialLinks as $link): ?><dt><?= h($link['platform_name']) ?></dt><dd><?php client_profile_link($link['url']); ?><?php if ($staff || $viewer['role']==='client'): ?><p>Username: <?= h($link['username']??'') ?></p><details><summary>Show password</summary><p><?= h(credential_decrypt($link['password_cipher']??null) ?: 'Not set') ?></p></details><?php endif; ?></dd><?php endforeach; ?>
             </dl>
         </section>
         <?php if ($staff): ?>
@@ -59,7 +62,7 @@ page_start('Client profile','add-client.php');
                         <div class="money-card <?= $key==='remaining_amount'?'highlight':'' ?>"><span><?= h($label) ?></span><strong><?= h(money_label($client[$key])) ?></strong></div>
                     <?php endforeach; ?>
                 </div>
-                <a class="button secondary" href="admin-add-client.php?id=<?= $id ?>#saved-payments">Manage payments</a>
+                <?php if ($staff): ?><a class="button secondary" href="admin-add-client.php?id=<?= $id ?>#saved-payments">Manage payments</a><?php endif; ?>
             </section>
             <section class="panel">
                 <h2>Payment history</h2>
@@ -68,7 +71,7 @@ page_start('Client profile','add-client.php');
                     <thead><tr><th>Date</th><th>Amount</th><th>Recorded by</th><th>Actions</th></tr></thead>
                     <tbody>
                         <?php if (!$payments) empty_row(4,'No payments saved yet.'); foreach ($payments as $payment): ?>
-                            <tr><td><?= h($payment['payment_date']) ?></td><td><?= h(money_label($payment['amount'])) ?></td><td><?= h($payment['recorded_by']) ?></td><td><a class="button secondary" href="admin-add-client.php?id=<?= $id ?>&amp;edit_payment=<?= (int)$payment['id'] ?>#saved-payments">Edit payment</a></td></tr>
+                            <tr><td><?= h($payment['payment_date']) ?></td><td><?= h(money_label($payment['amount'])) ?></td><td><?= h($payment['recorded_by']) ?></td><td><?php if ($staff): ?><a class="button secondary" href="admin-add-client.php?id=<?= $id ?>&amp;edit_payment=<?= (int)$payment['id'] ?>#saved-payments">Edit payment</a><?php endif; ?></td></tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table></div>

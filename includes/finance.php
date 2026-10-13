@@ -31,7 +31,7 @@ function salary_breakdown(int $gross,bool $pf,bool $esi,string $basis,int $benef
     $employeeEsi=$esi?(int)round($esiBase*75/10000):0;
     return array_merge(array_map('decimal_money',['pf_base'=>$half,'esi_base'=>$esiBase,'employee_pf'=>$employeePf,'company_pf'=>$employeePf,'employee_esi'=>$employeeEsi,'company_esi'=>$esi?(int)round($esiBase*325/10000):0]),['net_salary'=>salary_net_amount($gross,$employeePf,$employeeEsi,$benefits)]);
 }
-function salary_rows_input(): array {
+function salary_rows_input(?string $initialStart = null): array {
     $rows=$_POST['salary']??[];
     if (!is_array($rows) || count($rows)>100) throw new InvalidArgumentException('Add up to 100 salary periods at a time.');
     $result=[];
@@ -39,7 +39,11 @@ function salary_rows_input(): array {
         if (!is_array($row)) throw new InvalidArgumentException('Invalid salary entry.');
         if (($row['amount']??'')==='' && ($row['from']??'')==='' && ($row['to']??'')==='') continue;
         $amount=money_cents($row['amount']??''); if (!$amount) throw new InvalidArgumentException('Salary must be greater than zero.');
-        $from=date_input('from',$row); $to=empty($row['to'])?null:date_input('to',$row);
+        if (($row['from']??'')==='' && !$result && $initialStart!==null) $row['from']=$initialStart;
+        try { $from=date_input('from',$row); }
+        catch (InvalidArgumentException $e) { throw new InvalidArgumentException('Choose a valid salary start date for salary entry '.(count($result)+1).'.'); }
+        try { $to=empty($row['to'])?null:date_input('to',$row); }
+        catch (InvalidArgumentException $e) { throw new InvalidArgumentException('Choose a valid salary end date for salary entry '.(count($result)+1).'.'); }
         if ($to && $to<$from) throw new InvalidArgumentException('Salary end date must be on or after its start date.');
         $result[]=['amount'=>decimal_money($amount),'effective_from'=>$from,'effective_to'=>$to];
     }

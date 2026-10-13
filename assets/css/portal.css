@@ -1810,3 +1810,9 @@ img[src^="employee-photo.php"] {
 @media(max-width:900px){.employee-profile-layout,.client-profile-layout{grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr)}.employee-profile-card,.client-profile-card{position:static}}
 @media(max-width:700px){.record-form .fields,.record-form .repeat-row,.money-summary,.contribution-grid{grid-template-columns:1fr}.money-card{padding:16px}.money-card>strong{font-size:23px}.money-summary{gap:10px}.record-form .form-actions{flex-wrap:wrap}.record-form .form-actions>*{flex:1;text-align:center}.simple-amounts{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.employee-profile-layout,.client-profile-layout{grid-template-columns:1fr}.employee-profile-photo,.client-profile-photo{width:140px;height:140px}.social-link-row{grid-template-columns:1fr!important}}
+.client-report-calendar { table-layout: fixed; min-width: 550px; }
+.client-report-calendar td { height: 90px; vertical-align: top; }
+.client-report-calendar td > a { font-weight: 700; display: inline-block; padding: 5px 10px; }
+.client-report-calendar .selected-report-day { background: #e9f1ff; box-shadow: inset 0 0 0 2px #4773ce; }
+
+.calendar-work-detail{padding:18px 0;border-bottom:1px solid var(--border)}.calendar-work-detail:last-child{border-bottom:0}.calendar-work-detail h3{overflow-wrap:anywhere}.calendar-work-detail .details-list dd{white-space:pre-wrap}

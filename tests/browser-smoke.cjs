@@ -39,10 +39,10 @@ async function navigate(route) {
   await command('Page.navigate', { url: destination });
   await waitFor(`location.href === ${JSON.stringify(destination)} && document.readyState === "complete"`);
 }
-async function login(username, dashboard) {
+async function login(username, dashboard, loginPassword = password) {
   await navigate('login.php');
   await waitFor('Boolean(document.querySelector("#username"))');
-  await evaluate(`document.querySelector('#username').value=${JSON.stringify(username)}; document.querySelector('#password').value=${JSON.stringify(password)}; document.querySelector('form').requestSubmit(); true`);
+  await evaluate(`document.querySelector('#username').value=${JSON.stringify(username)}; document.querySelector('#password').value=${JSON.stringify(loginPassword)}; document.querySelector('form').requestSubmit(); true`);
   await waitFor(`location.pathname.endsWith(${JSON.stringify(dashboard)}) && document.readyState === 'complete' && Boolean(document.querySelector('.portal-topbar'))`);
 }
 async function screenshot(filename, width, height) {
@@ -80,6 +80,22 @@ async function screenshot(filename, width, height) {
       pending.clear();
     });
     await command('Page.enable');
+    await login('client.test', 'client-dashboard.php', 'Client-New-Password');
+    for (const route of ['client-dashboard.php','client-details.php','client-payments.php','client-reports.php?month=2026-10']) {
+      await navigate(route);
+      for (const width of [1440,768,390,320]) {
+        await screenshot(route.split('.')[0]+'-'+width+'.png',width,900);
+        assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,route+' overflow at '+width);
+      }
+    }
+    await command('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await evaluate("document.querySelector('[data-report-preview]').dispatchEvent(new PointerEvent('pointerenter',{pointerType:'mouse'})); true");
+    assert.equal(await evaluate("document.querySelector('.cp-hover-preview').textContent.includes('Two revisions')"),true);
+    await evaluate("document.querySelector('[data-report-preview]').click(); true");
+    assert.equal(await evaluate("document.querySelector('dialog[open]').textContent.includes('Client approval')"),true);
+    await evaluate("document.querySelector('[data-close-dialog]').click(); true");
+    await evaluate("document.querySelector('.signout').requestSubmit(); true");
+    await waitFor("location.pathname.endsWith('login.php')");
     await login('manager.test', 'manager-dashboard.php');
     await screenshot('manager-dashboard.png', 1440, 1000);
     assert.equal(await evaluate("document.querySelector('.role-badge').textContent"), 'Manager');
@@ -90,14 +106,28 @@ async function screenshot(filename, width, height) {
     assert.equal(await evaluate("Boolean(document.querySelector('dialog[open]'))"), false);
     assert.equal(await evaluate('document.querySelectorAll("img[src^=\'employee-photo.php\']").length > 0'), true);
     await navigate('add-client.php');
-    const clientProfileUrl = await evaluate("document.querySelector('a[href^=\"client-profile.php?id=\"]').getAttribute('href')");
+    const clientProfileUrl = await evaluate("[...document.querySelectorAll('table tbody tr')].find(row=>row.textContent.includes('Shared Client Updated')).querySelector('a[href^=\"client-profile.php?id=\"]').getAttribute('href')");
     await navigate(clientProfileUrl);
     assert.equal(await evaluate("document.body.textContent.includes('PRIVATE-PACKAGE-TEST') && document.body.textContent.includes('3,900.00')"), true);
     await screenshot('client-profile.png', 1440, 1100);
     await screenshot('client-profile-mobile.png', 390, 844);
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
     await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+    await navigate('admin-client-work-report.php');
+    const reportClient = await evaluate("[...document.querySelector('[name=client_id]').options].find(o=>o.textContent==='Credential client').value");
+    await navigate('admin-client-work-report.php?client_id='+reportClient+'&date=2026-10-15');
+    assert.equal(await evaluate("document.querySelectorAll('.client-report-calendar .icon-button').length"),1);
+    await evaluate("document.querySelector('[data-dialog]').click(); true");
+    assert.equal(await evaluate("document.querySelector('dialog[open]')?.id==='calendar-day-2026-10-15' && document.querySelector('dialog[open]').textContent.includes('Two revisions')"),true);
+    await evaluate("document.querySelector('dialog[open] [data-close-dialog]').click(); true");
+    await screenshot('client-work-report.png',1440,1100);
+    await screenshot('client-work-report-mobile.png',390,844);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
+    await command('Emulation.setDeviceMetricsOverride', {width:1440,height:1000,deviceScaleFactor:1,mobile:false});
     await navigate('admin-add-client.php');
+    await evaluate("document.querySelector('[data-add-row=social]').click(); true");
+    assert.equal(await evaluate("document.querySelectorAll('#social-link-rows input[type=password]').length"),2);
+    assert.equal(await evaluate("document.querySelectorAll('[name=client_type] option').length"),2);
     await evaluate("document.querySelector('#payment_total').value='10000'; document.querySelector('#payment-rows input[type=number]').value='2000'; document.querySelector('#payment_total').dispatchEvent(new Event('input', {bubbles:true})); true");
     assert.equal(await evaluate("document.querySelector('#remaining-preview').textContent"), 'INR 8,000.00');
     await evaluate("document.querySelector('[data-add-row=payment]').click(); true");

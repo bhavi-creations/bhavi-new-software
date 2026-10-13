@@ -10,7 +10,7 @@ if (count_value('SELECT COUNT(*) FROM login_attempts WHERE attempt_key=? AND att
 }
 $user = one("SELECT u.*, d.code AS department_code FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.username=? AND u.account_status='active' AND u.deleted_at IS NULL", [$username]);
 $valid = password_verify($password, $user['password_hash'] ?? '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.');
-if (!$user || !$valid || ($user['role'] === 'employee' && !$user['department_code'])) {
+if (!$user || !$valid || ($user['role']==='client' && !one('SELECT id FROM clients WHERE user_id=? AND deleted_at IS NULL AND is_active=1',[$user['id']])) || ($user['role'] === 'employee' && !$user['department_code'])) {
     query('INSERT INTO login_attempts (attempt_key) VALUES (?)', [$key]);
     $_SESSION['login_error'] = 'Incorrect username or password. Please try again.';
     redirect('login.php');

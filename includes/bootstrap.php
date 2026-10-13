@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/credentials.php';
 
 date_default_timezone_set('Asia/Kolkata');
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -80,6 +81,7 @@ function current_user(): ?array
         $loaded = true;
         if (isset($_SESSION['user_id'])) {
             $user = one('SELECT u.*, ep.department_id, ep.designation, d.code AS department_code, d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=? AND u.account_status=\'active\' AND u.deleted_at IS NULL', [$_SESSION['user_id']]);
+            if ($user && $user['role']==='client' && !one('SELECT id FROM clients WHERE user_id=? AND deleted_at IS NULL AND is_active=1',[$user['id']])) $user=null;
             if (!$user) { unset($_SESSION['user_id']); }
         }
     }

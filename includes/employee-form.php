@@ -5,7 +5,7 @@ require_once __DIR__.'/finance.php';
 $user = require_roles(['admin','manager']);
 $id = (int) ($_GET['id'] ?? 0);
 if (!$id && $user['role'] !== 'admin') { fail(403,'Only an administrator can create accounts.'); }
-$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
+$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis,ep.pf_number,ep.esi_number FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
 if ($id && (!$record || !in_array($record['role'],['employee'],true))) { fail(403,'You cannot edit this account.'); }
 $error = null;
 $storedDocuments=[];
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $relieving=optional_date('relieving_date');
         if ($relieving && $relieving<$joiningDate) throw new InvalidArgumentException('Relieving date cannot be before joining date.');
         $benefits=array_merge(['benefit_pf'=>isset($_POST['benefit_pf'])?1:0,'benefit_esi'=>isset($_POST['benefit_esi'])?1:0],other_benefit_input(isset($_POST['benefit_other'])),['esi_basis'=>'half']);
-        $salaryEntries=salary_rows_input();
+        $salaryEntries=salary_rows_input($id?null:$joiningDate);
         db()->beginTransaction();
         if ($id) {
             one('SELECT user_id FROM employee_profiles WHERE user_id=? FOR UPDATE',[$id]);
@@ -65,6 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         query('UPDATE employee_profiles SET role_title=? WHERE user_id=?',[$roleTitle?:'Employee',$id]);
         query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,other_benefit_amount=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
+        query('UPDATE employee_profiles SET pf_number=?,esi_number=? WHERE user_id=?',[optional_text('pf_number',100),optional_text('esi_number',100),$id]);
+        if ($password!=='') query('UPDATE users SET credential_cipher=? WHERE id=?',[credential_encrypt($password),$id]);
         save_salary_rows($id,$salaryEntries,$benefits,$joiningDate,$relieving,(int)$user['id']);
         if ($relieving) query('UPDATE employee_salary_history SET effective_to=? WHERE employee_id=? AND effective_to IS NULL',[$relieving,$id]);
         if ($photo) {
@@ -105,10 +107,11 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
 <div class="field"><label for="relieving_date">Relieving date (if leaving)</label><input type="date" id="relieving_date" name="relieving_date" value="<?= h($value('relieving_date')) ?>"></div>
 </div><details class="simple-details"><summary>Additional job title (optional)</summary><div class="field"><label for="role_title">Job title</label><input id="role_title" name="role_title" value="<?= h($value('role_title','Employee')) ?>" maxlength="150"></div></details></section>
 <section class="panel form-section"><h2><span class="section-number">3</span> Salary & benefits</h2>
+<div class="fields"><?php foreach (['pf_number'=>'PF number','esi_number'=>'ESI number'] as $key=>$label): ?><div class="field"><label><?= $label ?><input name="<?= $key ?>" maxlength="100" value="<?= h($value($key)) ?>"></label></div><?php endforeach; ?></div>
 <p class="help">Tick the benefits that apply to this employee.</p><div class="benefit-options"><?php foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label): ?><label><input type="checkbox" name="benefit_<?= $key ?>" value="1" <?= ($_SERVER['REQUEST_METHOD']==='POST'?isset($_POST['benefit_'.$key]):!empty($record['benefit_'.$key]))?'checked':'' ?>><?= $label ?></label><?php endforeach; ?></div>
 <div id="other-benefits-field"><div class="fields"><div class="field"><label for="other_benefit_amount">Other benefits amount (₹)</label><input id="other_benefit_amount" name="other_benefit_amount" type="number" min="0" max="9999999999.99" step="0.01" value="<?= h($value('other_benefit_amount')) ?>" placeholder="e.g. 500"></div><div class="field"><label for="other_benefits">Reason for benefits</label><input id="other_benefits" name="other_benefits" maxlength="255" value="<?= h($value('other_benefits')) ?>" placeholder="e.g. Travel allowance"></div></div><p class="help">This amount is added to each new salary period below. Leave empty or enter 0 for no extra amount.</p></div>
-<p class="help"><?= $record?'To change salary or future benefits, add the new amount and its start date. Leave the salary rows empty to keep the saved history. Current benefits can be changed from Profile & salary.':'Enter the monthly salary and the date it starts.' ?> The end date can be left empty.</p>
-<div id="salary-rows"><?php $draft=$_POST['salary']??[['amount'=>'','from'=>'','to'=>'']]; if (!is_array($draft)) $draft=[]; foreach ($draft as $index=>$entry): if (!is_array($entry)) continue; ?><div class="fields repeat-row"><div class="field"><label>Monthly salary (₹)<input type="number" name="salary[<?= (int)$index ?>][amount]" min="0.01" max="9999999999.99" step="0.01" placeholder="e.g. 14000" value="<?= h($entry['amount']??'') ?>"></label></div><div class="field"><label>Salary starts on<input type="date" name="salary[<?= (int)$index ?>][from]" value="<?= h($entry['from']??'') ?>"></label></div><div class="field"><label>Ends on (optional)<input type="date" name="salary[<?= (int)$index ?>][to]" value="<?= h($entry['to']??'') ?>"></label></div><button type="button" class="secondary" data-remove-row>Remove</button></div><?php endforeach; ?></div>
+<p class="help"><?= $record?'To change salary or future benefits, add the new amount and its start date. Leave the salary rows empty to keep the saved history. Current benefits can be changed from Profile & salary.':'Enter the monthly salary. If its first start date is empty, the joining date is used. Enter a start date for additional salary periods.' ?> The end date can be left empty.</p>
+<div id="salary-rows" data-initial-salary="<?= $record?'0':'1' ?>"><?php $draft=$_POST['salary']??[['amount'=>'','from'=>'','to'=>'']]; if (!is_array($draft)) $draft=[]; foreach ($draft as $index=>$entry): if (!is_array($entry)) continue; ?><div class="fields repeat-row"><div class="field"><label>Monthly salary (₹)<input type="number" name="salary[<?= (int)$index ?>][amount]" min="0.01" max="9999999999.99" step="0.01" placeholder="e.g. 14000" value="<?= h($entry['amount']??'') ?>"></label></div><div class="field"><label>Salary starts on<input type="date" name="salary[<?= (int)$index ?>][from]" value="<?= h($entry['from']??'') ?>"></label></div><div class="field"><label>Ends on (optional)<input type="date" name="salary[<?= (int)$index ?>][to]" value="<?= h($entry['to']??'') ?>"></label></div><button type="button" class="secondary" data-remove-row>Remove</button></div><?php endforeach; ?></div>
 <button type="button" class="secondary" data-add-row="salary">+ Add another salary / increment</button><div id="salary-preview" aria-live="polite"></div>
 <details class="simple-details"><summary>How are PF & ESI calculated?</summary><p>Both use half of the monthly salary. PF: employee 12%, company 12%. ESI: employee 0.75%, company 3.25%.</p><p>Only the employee share is deducted from salary. The company pays its share separately. An unticked benefit has no deduction.</p><p>A new salary start date automatically ends the previous ongoing salary on the day before.</p></details>
 </section>

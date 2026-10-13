@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
-$user = require_roles();
+$user = require_roles(['admin','manager','employee','client']);
 $error = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password = password_input('new_password');
         if (!password_verify($old, $user['password_hash'])) { throw new InvalidArgumentException('Your current password is incorrect.'); }
         if (strlen($password) < 8 || $password !== ($_POST['confirm_password'] ?? '')) { throw new InvalidArgumentException('Enter matching new passwords with at least 8 characters.'); }
-        query('UPDATE users SET password_hash=?,must_change_password=0 WHERE id=?', [password_hash($password,PASSWORD_DEFAULT),$user['id']]);
+        query('UPDATE users SET password_hash=?,credential_cipher=?,must_change_password=0 WHERE id=?', [password_hash($password,PASSWORD_DEFAULT),credential_encrypt($password),$user['id']]);
         session_regenerate_id(true);
         flash('Password updated.'); redirect('change-password.php');
     } catch (Throwable $e) { $error = mutation_error($e); }

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 11;
+const PORTAL_SCHEMA_VERSION = 12;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -234,6 +234,26 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('employee_profiles','other_benefit_amount','DECIMAL(12,2) NOT NULL DEFAULT 0.00');
         $addColumn('employee_salary_history','other_benefit_amount','DECIMAL(12,2) NOT NULL DEFAULT 0.00');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (11)');
+        $pdo->exec("ALTER TABLE users MODIFY role ENUM('manager','admin','employee','client') NOT NULL");
+        $addColumn('users','credential_cipher','TEXT NULL');
+        $addColumn('clients','user_id','BIGINT UNSIGNED NULL UNIQUE');
+        $addColumn('clients','client_type',"ENUM('premium','non-premium') NOT NULL DEFAULT 'non-premium'");
+        $addColumn('client_social_links','username',"VARCHAR(255) NOT NULL DEFAULT ''");
+        $addColumn('client_social_links','password_cipher','TEXT NULL');
+        $addColumn('employee_profiles','pf_number',"VARCHAR(100) NOT NULL DEFAULT ''");
+        $addColumn('employee_profiles','esi_number',"VARCHAR(100) NOT NULL DEFAULT ''");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS client_work_reports (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, client_id BIGINT UNSIGNED NOT NULL,
+            report_date DATE NOT NULL, work_type ENUM('reel','poster','carousel','other') NOT NULL DEFAULT 'other',
+            title VARCHAR(255) NOT NULL DEFAULT '', content_source ENUM('client','own') NULL,
+            received_at DATETIME NULL, started_at DATETIME NULL, sent_at DATETIME NULL,
+            approved_at DATETIME NULL, uploaded_at DATETIME NULL, platform VARCHAR(255) NOT NULL DEFAULT '',
+            remarks TEXT NULL, created_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_client_report_date (client_id,report_date),
+            FOREIGN KEY (client_id) REFERENCES clients(id), FOREIGN KEY (created_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (12)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

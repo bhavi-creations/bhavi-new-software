@@ -2,6 +2,19 @@
   const format = n => 'INR ' + (n / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const cents = value => Math.round((Number(value) || 0) * 100);
   function refresh() {
+    const salaryRows = document.getElementById('salary-rows');
+    if (salaryRows) {
+      let firstFilled = true;
+      salaryRows.querySelectorAll('.repeat-row').forEach(row => {
+        const amount = row.querySelector('[name$="[amount]"]');
+        const from = row.querySelector('[name$="[from]"]');
+        const to = row.querySelector('[name$="[to]"]');
+        const filled = Boolean(amount.value || from.value || to.value);
+        amount.required = filled;
+        from.required = filled && !(salaryRows.dataset.initialSalary === '1' && firstFilled);
+        if (filled) firstFilled = false;
+      });
+    }
     const remaining = document.getElementById('remaining-preview');
     if (remaining) {
       let paid = cents(remaining.dataset.paid);
@@ -104,12 +117,14 @@
     const index = Math.max(-1, ...indices) + 1;
     const row = document.createElement('div'); row.className = 'fields repeat-row';
     if (social) row.classList.add('social-link-row');
-    const fields = salary ? [['amount','Monthly salary (₹)','number'],['from','Salary starts on','date'],['to','Ends on (optional)','date']] : social ? [['platform','Platform name','text'],['url','Social media URL','url']] : [['date','Date received','date'],['amount','Amount received (₹)','number']];
+    const fields = salary ? [['amount','Monthly salary (₹)','number'],['from','Salary starts on','date'],['to','Ends on (optional)','date']] : social ? [['platform','Platform name','text'],['url','Social media URL','url'],['username','Username','text'],['password','Password','password']] : [['date','Date received','date'],['amount','Amount received (₹)','number']];
     fields.forEach(([key,label,type]) => {
       const field = document.createElement('div'); field.className = 'field';
       const wrapper = document.createElement('label'); wrapper.textContent = label;
       const input = document.createElement('input'); input.type = type; input.name = (salary ? 'salary' : social ? 'social_links' : 'payments') + '[' + index + '][' + (social && key === 'platform' ? 'platform' : social && key === 'url' ? 'url' : key) + ']';
       if (social && key === 'platform') { input.maxLength = 100; input.placeholder = 'e.g. Instagram'; }
+      if (social && key === 'username') input.maxLength = 255;
+      if (social && key === 'password') { input.maxLength = 1000; input.autocomplete = 'new-password'; }
       if (social && key === 'url') { input.maxLength = 2048; input.placeholder = 'https://'; }
       if (type === 'number') { input.min = '0.01'; input.max = '9999999999.99'; input.step = '0.01'; }
       wrapper.append(input); field.append(wrapper); row.append(field);

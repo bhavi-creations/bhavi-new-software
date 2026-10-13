@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/includes/bootstrap.php';
-$user=require_roles();
+$user=$viewer=require_roles(['admin','manager','employee','client']);
+if ($viewer['role']==='client' && !one('SELECT id FROM clients WHERE id=? AND user_id=? AND is_active=1 AND deleted_at IS NULL',[(int)($_GET['id']??0),$viewer['id']])) fail(403,'Access denied.');
 $client=one('SELECT logo_path,is_active FROM clients WHERE id=? AND deleted_at IS NULL',[(int)($_GET['id']??0)]);
 if (!$client || (!$client['is_active'] && !is_staff()) || !$client['logo_path']) fail(404,'Client logo not found.');
 
