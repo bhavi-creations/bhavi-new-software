@@ -2,6 +2,7 @@
 require_once __DIR__ . '/layout.php';
 require_once __DIR__.'/employee-documents.php';
 require_once __DIR__.'/finance.php';
+require_once __DIR__.'/employee-accounts.php';
 $user = require_roles(['admin','manager']);
 $id = (int) ($_GET['id'] ?? 0);
 if (!$id && $user['role'] !== 'admin') { fail(403,'Only an administrator can create accounts.'); }
@@ -48,6 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $benefits=array_merge(['benefit_pf'=>isset($_POST['benefit_pf'])?1:0,'benefit_esi'=>isset($_POST['benefit_esi'])?1:0],other_benefit_input(isset($_POST['benefit_other'])),['esi_basis'=>'half']);
         $salaryEntries=salary_rows_input($id?null:$joiningDate);
         db()->beginTransaction();
+        if ($id && !one("SELECT id FROM users WHERE id=? AND role='employee' AND deleted_at IS NULL FOR UPDATE",[$id])) throw new InvalidArgumentException('This employee has been deleted. Add a new employee instead.');
+        release_matching_deleted_employees($username,$email,$employeeCode);
         if ($id) {
             one('SELECT user_id FROM employee_profiles WHERE user_id=? FOR UPDATE',[$id]);
             if (one('SELECT id FROM employee_salary_history WHERE employee_id=? AND (effective_from<? OR (? IS NOT NULL AND (effective_from>? OR effective_to>?))) LIMIT 1',[$id,$joiningDate,$relieving,$relieving,$relieving])) throw new InvalidArgumentException('Employment dates conflict with saved salary history.');

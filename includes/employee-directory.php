@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/layout.php';
 require_once __DIR__.'/finance.php';
+require_once __DIR__.'/employee-accounts.php';
 $user = require_roles();
 $error = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -8,11 +9,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (($_POST['action'] ?? '') !== 'delete_employee') { throw new InvalidArgumentException('Invalid action.'); }
         $id = positive_id($_POST['id'] ?? null);
-        $target = one('SELECT id,role FROM users WHERE id=? AND deleted_at IS NULL', [$id]);
-        if (!$target || !in_array($target['role'], ['employee'], true)) { fail(403,'You cannot delete this account.'); }
+        db()->beginTransaction();
+        $target = one('SELECT id,role FROM users WHERE id=? AND deleted_at IS NULL FOR UPDATE', [$id]);
+        if (!$target || !in_array($target['role'], ['employee'], true)) { db()->rollBack(); fail(403,'You cannot delete this account.'); }
         query("UPDATE users SET deleted_at=NOW(),account_status='inactive' WHERE id=?",[$id]);
-        flash('Account deleted. The employee can no longer sign in.'); redirect('admin-employees.php');
-    } catch (Throwable $e) { $error = mutation_error($e); }
+        release_deleted_employee_identifiers($id);
+        query('UPDATE employee_attendance_sessions SET logout_at=NOW() WHERE employee_id=? AND logout_at IS NULL',[$id]);
+        db()->commit();
+        flash('Employee deleted. You can add a new employee using the same username, email and employee ID.'); redirect('admin-employees.php');
+    } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error = mutation_error($e); }
 }
 $department = (int) ($_GET['department'] ?? 0);
 $staff=is_staff();

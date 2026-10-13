@@ -794,7 +794,7 @@ try {
     $website->login('website.test', $newPassword, $dashboards['website']);
     // Regression: first salary without start date must still save with employee photo.
     $admin->request('admin-add-employee.php');
-    $photoEmployee=['employee_name'=>'Salary date regression','email'=>'','username'=>'salary.date.test','temporary_password'=>$password,'account_status'=>'active','department_id'=>scalar("SELECT id FROM departments WHERE code='website'"),'designation'=>'Designer','joining_date'=>date('Y-m-d'),'salary[0][amount]'=>'12000','salary[0][from]'=>'','salary[0][to]'=>'','employee_photo'=>new CURLFile($image,'image/png','avatar.png')];
+    $photoEmployee=['employee_name'=>'Salary date regression','email'=>'salary.date@example.test','employee_code'=>'REUSE-TEST','username'=>'salary.date.test','temporary_password'=>$password,'account_status'=>'active','department_id'=>scalar("SELECT id FROM departments WHERE code='website'"),'designation'=>'Designer','joining_date'=>date('Y-m-d'),'salary[0][amount]'=>'12000','salary[0][from]'=>'','salary[0][to]'=>'','employee_photo'=>new CURLFile($image,'image/png','avatar.png')];
     expect($admin->post('admin-add-employee.php',$photoEmployee)['status']===303,'Employee with photo and salary but no salary start date saves');
     $photoEmployeeId=(int)scalar("SELECT id FROM users WHERE username='salary.date.test'");
     expect(scalar('SELECT effective_from FROM employee_salary_history WHERE employee_id=?',[$photoEmployeeId])===date('Y-m-d'),'Initial salary defaults to employee joining date');
@@ -807,6 +807,29 @@ try {
     $badSalary=$admin->post('admin-add-employee.php?id='.$photoEmployeeId,$photoEmployee);
     expect($badSalary['status']===200 && str_contains($badSalary['body'],'Choose a valid salary start date'),'Salary increment still requires an explicit start date');
     expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$photoEmployeeId])===1,'Invalid increment leaves saved salary unchanged');
+    $deletedSession=new Browser($base);
+    $deletedSession->login('salary.date.test',$password,'website-employee-dashboard.php');
+    $admin->request('admin-employees.php');
+    expect($admin->post('admin-employees.php',['action'=>'delete_employee','id'=>$photoEmployeeId])['status']===303,'Delete releases employee identifiers');
+    expect(scalar('SELECT email FROM users WHERE id=?',[$photoEmployeeId])===null && scalar('SELECT employee_code FROM employee_profiles WHERE user_id=?',[$photoEmployeeId])===null,'Deleted employee email and employee ID are released');
+    expect(scalar('SELECT credential_cipher FROM users WHERE id=?',[$photoEmployeeId])===null,'Deleted employee recoverable password removed');
+    expect($deletedSession->request('website-employee-dashboard.php')['headers']['location']==='login.php','Deleted employee session is revoked');
+    $photoEmployee['temporary_password']='Recreated-Password-2026';
+    $admin->request('admin-add-employee.php');
+    expect($admin->post('admin-add-employee.php',$photoEmployee)['status']===303,'Same username email and employee ID can be reused');
+    $recreatedId=(int)scalar("SELECT id FROM users WHERE username='salary.date.test' AND deleted_at IS NULL");
+    expect($recreatedId!==$photoEmployeeId && $recreatedId>0,'Recreated employee has a separate account ID');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$recreatedId])===1 && (int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$photoEmployeeId])===1,'Old salary history remains separate from recreated account');
+    $recreatedBrowser=new Browser($base);
+    $recreatedBrowser->login('salary.date.test','Recreated-Password-2026','website-employee-dashboard.php');
+    $admin->request('admin-add-employee.php');
+    expect($admin->post('admin-add-employee.php',$photoEmployee)['status']===200,'Duplicate active employee still rejected');
+    expect((int)scalar("SELECT COUNT(*) FROM users WHERE username='salary.date.test' AND deleted_at IS NULL")===1,'Active duplicate does not create another employee');
+    // Simulate an employee deleted before the identifier-release fix was installed.
+    $pdo->prepare("UPDATE users SET deleted_at=NOW(),account_status='inactive' WHERE id=?")->execute([$recreatedId]);
+    $admin->request('admin-add-employee.php');
+    expect($admin->post('admin-add-employee.php',$photoEmployee)['status']===303,'Previously deleted legacy employee identifiers can also be reused');
+    expect((int)scalar("SELECT id FROM users WHERE username='salary.date.test' AND deleted_at IS NULL")!==$recreatedId,'Legacy deletion creates a new account without restoring old access');
     echo "PASS: $checks integration checks (authentication, roles, departments, CRUD, assignments, submissions, reports, Excel, documents, department changes, notifications, reviews, leaves and logout).\n";
 } catch (Throwable $e) {
     fwrite(STDERR, 'FAIL: ' . $e->getMessage() . "\n");
