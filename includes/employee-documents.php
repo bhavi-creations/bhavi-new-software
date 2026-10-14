@@ -57,10 +57,10 @@ function store_employee_document(array $document): string
 {
     $folder=str_starts_with($document['mime'],'image/')?'uploads/photos':'uploads/pdf';
     $root=dirname(__DIR__).'/'.$folder;
-    if (!is_dir($root) && !mkdir($root,0700,true) && !is_dir($root)) throw new InvalidArgumentException('The server cannot create the document storage folder. Please check storage permissions.');
-    if (!is_writable($root)) throw new InvalidArgumentException('The document storage folder is not writable. Please check storage permissions.');
+    if (!is_dir($root) && !@mkdir($root,0700,true) && !is_dir($root)) throw new InvalidArgumentException('Hosting upload error: PHP cannot create '.$folder.'/. Give the hosting PHP account permission to create this folder.');
+    if (!is_writable($root)) throw new InvalidArgumentException('Hosting upload error: '.$folder.'/ is not writable by PHP. Correct its owner and write permissions in the hosting file manager.');
     $extension=['application/pdf'=>'pdf','image/jpeg'=>'jpg','image/png'=>'png','image/gif'=>'gif','image/webp'=>'webp','image/bmp'=>'bmp','image/tiff'=>'tiff','image/heic'=>'heic','image/heif'=>'heif','image/avif'=>'avif','image/svg+xml'=>'svg'][$document['mime']]??'bin';
     $relative=$folder.'/'.bin2hex(random_bytes(24)).'.'.$extension;
-    if (!move_uploaded_file($document['tmp_path'],dirname(__DIR__).'/'.$relative)) throw new InvalidArgumentException('The document could not be saved to storage. Please retry the upload.');
+    if (!@move_uploaded_file($document['tmp_path'],dirname(__DIR__).'/'.$relative)) throw new InvalidArgumentException('Hosting upload error: the file could not be saved in '.$folder.'/. Check folder ownership, disk quota and upload temporary storage.');
     return $relative;
 }

@@ -10,6 +10,7 @@ $record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_
 if ($id && (!$record || !in_array($record['role'],['employee'],true))) { fail(403,'You cannot edit this account.'); }
 $error = null;
 $storedDocuments=[];
+$saveStage='validate input';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
     try {
@@ -20,7 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!preg_match('/^[A-Za-z0-9._-]{3,100}$/D',$username)) { throw new InvalidArgumentException('Use at least 3 letters, numbers, dots, underscores or hyphens for the username.'); }
         $role = 'employee';
         $roleTitle=isset($_POST['role_title'])?text_input('role_title',150,false):'Employee';
+        $saveStage='validate documents';
         $documents=employee_document_uploads();
+        $saveStage='validate employee details';
         $photo=null;
         $file=$_FILES['employee_photo']??null;
         if ($file && $file['error']!==UPLOAD_ERR_NO_FILE) {
@@ -48,9 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($relieving && $relieving<$joiningDate) throw new InvalidArgumentException('Relieving date cannot be before joining date.');
         $benefits=array_merge(['benefit_pf'=>isset($_POST['benefit_pf'])?1:0,'benefit_esi'=>isset($_POST['benefit_esi'])?1:0],other_benefit_input(isset($_POST['benefit_other'])),['esi_basis'=>'half']);
         $salaryEntries=salary_rows_input($id?null:$joiningDate);
+        $saveStage='encrypt login credential';
+        $encryptedPassword=$password!==''?credential_encrypt($password):null;
+        $saveStage='save account and profile';
         db()->beginTransaction();
         if ($id && !one("SELECT id FROM users WHERE id=? AND role='employee' AND deleted_at IS NULL FOR UPDATE",[$id])) throw new InvalidArgumentException('This employee has been deleted. Add a new employee instead.');
-        release_matching_deleted_employees($username,$email,$employeeCode);
+        $deletedFiles=release_matching_deleted_employees($username,$email,$employeeCode);
         if ($id) {
             one('SELECT user_id FROM employee_profiles WHERE user_id=? FOR UPDATE',[$id]);
             if (one('SELECT id FROM employee_salary_history WHERE employee_id=? AND (effective_from<? OR (? IS NOT NULL AND (effective_from>? OR effective_to>?))) LIMIT 1',[$id,$joiningDate,$relieving,$relieving,$relieving])) throw new InvalidArgumentException('Employment dates conflict with saved salary history.');
@@ -69,23 +75,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         query('UPDATE employee_profiles SET role_title=? WHERE user_id=?',[$roleTitle?:'Employee',$id]);
         query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,other_benefit_amount=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
         query('UPDATE employee_profiles SET pf_number=?,esi_number=? WHERE user_id=?',[optional_text('pf_number',100),optional_text('esi_number',100),$id]);
-        if ($password!=='') query('UPDATE users SET credential_cipher=? WHERE id=?',[credential_encrypt($password),$id]);
+        if ($password!=='') query('UPDATE users SET credential_cipher=? WHERE id=?',[$encryptedPassword,$id]);
+        $saveStage='save salary history';
         save_salary_rows($id,$salaryEntries,$benefits,$joiningDate,$relieving,(int)$user['id']);
         if ($relieving) query('UPDATE employee_salary_history SET effective_to=? WHERE employee_id=? AND effective_to IS NULL',[$relieving,$id]);
+        $saveStage='save employee photo';
         if ($photo) {
             $path=store_employee_document($photo); $storedDocuments[]=$path;
             query('UPDATE users SET avatar_path=? WHERE id=?',[$path,$id]);
         }
+        $saveStage='save employee documents';
         foreach ($documents as $document) {
             $path=store_employee_document($document); $storedDocuments[]=$path;
             query('INSERT INTO employee_documents (employee_id,original_name,mime_type,file_path,uploaded_by) VALUES (?,?,?,?,?)',[$id,$document['name'],$document['mime'],$path,$user['id']]);
         }
-        db()->commit(); flash('Employee saved.'.(count($documents)?' '.count($documents).' document(s) uploaded successfully.':'')); redirect(count($documents)?'admin-add-employee.php?id='.$id.'#saved-documents':'admin-employees.php');
+        $saveStage='commit employee';
+        db()->commit();
+        if (!remove_deleted_employee_files($deletedFiles)) flash('Old employee files could not be removed. Check upload folder permissions.','error');
+        flash('Employee saved.'.(count($documents)?' '.count($documents).' document(s) uploaded successfully.':'')); redirect(count($documents)?'admin-add-employee.php?id='.$id.'#saved-documents':'admin-employees.php');
     } catch (Throwable $e) {
+        if (!($e instanceof InvalidArgumentException)) error_log('[employee-save: '.$saveStage.'] '.get_class($e).': '.$e->getMessage());
         if (db()->inTransaction()) db()->rollBack();
         foreach ($storedDocuments as $path) if (is_file(dirname(__DIR__).'/'.$path)) unlink(dirname(__DIR__).'/'.$path);
         if (!$record) $id=0;
         $error=mutation_error($e);
+        if (!($e instanceof InvalidArgumentException)) $error.=' Save step: '.$saveStage.'.';
         if (!empty($_FILES['documents']['name'][0])) $error.=' Please select your documents again before saving.';
         if (!empty($_FILES['employee_photo']['name'])) $error.=' Please select the employee photo again before saving.';
     }

@@ -35,6 +35,7 @@ function page_start(string $title, string $active = ''): void
         $nav['employee-assigned-work.php'] = 'My assigned work';
     }
     if ($user['role']==='admin') $nav['departments.php']='Departments';
+    if ($user['role']==='admin') $nav['hosting-check.php']='Hosting checks';
     if ($user['role']==='admin') $nav['employee-attendance.php']='Employee attendance';
     if (is_staff()) $nav['manager-leave-requist.php']='Leave requests';
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
@@ -79,7 +80,15 @@ function delete_button(int $id, string $action, string $message): void
 }
 function mutation_error(Throwable $e): string
 {
-    if ($e instanceof InvalidArgumentException) { return $e->getMessage(); }
+    if ($e instanceof InvalidArgumentException || $e instanceof CredentialStorageException) { return $e->getMessage(); }
     error_log($e->getMessage());
-    return $e instanceof PDOException && $e->getCode() === '23000' ? 'This username, email or date is already in use. Please choose another.' : 'Unable to save this change. Please try again.';
+    if ($e instanceof PDOException) {
+        $code=(int)($e->errorInfo[1]??0);
+        if ($code===1062) return 'This username, email or employee ID is already in use. Please choose another.';
+        if (in_array($code,[1054,1146,1364],true)) return 'Hosting database schema is out of date or incomplete. Upload the matching database/install.php and run the database update through setup.php before retrying.';
+        if (in_array($code,[1044,1045,1142,1143],true)) return 'Hosting database permission denied. Give the configured database user access to the portal tables and retry.';
+        if (in_array($code,[1205,1213],true)) return 'Another request is updating this record. Please retry saving.';
+        if (in_array($code,[1114,1021],true)) return 'Hosting database storage is full. Ask hosting support to check the database quota and disk space.';
+    }
+    return 'Unable to save this change. Please check the PHP error log for this request, or contact the administrator.';
 }

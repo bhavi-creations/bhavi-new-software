@@ -146,8 +146,14 @@ try {
     expect(!str_contains($guest->request('login.php')['body'], 'Incorrect username or password'), 'Login error clears');
     $admin = new Browser($base);
     $admin->login('admin.test', $password, 'admin-dashboard.php');
+    expect($guest->request('hosting-check.php')['headers']['location']==='login.php','Hosting checks require sign-in');
+    expect($admin->request('hosting-check.php')['status']===200,'Admin can view hosting checks');
+    expect($admin->post('hosting-check.php',[])['status']===200,'Hosting write checks complete');
+    expect(str_contains($admin->post('hosting-check.php',[])['body'],'Session data persisted'),'Hosting session probe persists');
+    expect($admin->request('hosting-check.php',['csrf'=>'invalid'])['status']===419,'Hosting checks require CSRF');
     $manager = new Browser($base);
     $manager->login('manager.test', $password, 'manager-dashboard.php');
+    expect($manager->request('hosting-check.php')['status']===403,'Manager cannot view hosting checks');
     expect($admin->request('manager-dashboard.php')['status'] === 403, 'Admin dashboard role separation');
     expect($manager->request('admin-dashboard.php')['status'] === 403, 'Manager cannot open admin dashboard');
     expect($manager->request('admin-add-employee.php')['status'] === 403, 'Manager cannot create users');
@@ -561,6 +567,8 @@ try {
     }
     $admin->request('admin-employees.php');
     expect($admin->post('admin-employees.php', ['action' => 'delete_employee', 'id' => $uploadEmployee])['status'] === 303, 'Upload test employee removed from active directory');
+    clearstatcache();
+    foreach ($uploadedDocuments as $document) expect(!is_file(dirname(__DIR__).'/'.$document['file_path']),'Deleted employee document file removed');
     // Employee salary history, exact deductions, ownership and client payment persistence.
     $admin->request('admin-add-employee.php?id=' . $employeeIds['website']);
     $salaryData = array_merge($employeeEdit, ['employee_code' => 'BH-001', 'phone' => '9000011111', 'guardian_phone' => '9000022222', 'benefit_pf' => '1', 'benefit_esi' => '1', 'benefit_other' => '1', 'other_benefits' => 'Travel allowance', 'salary' => [['amount' => '14000', 'from' => date('Y-m-d'), 'to' => ''], ['amount' => '16000', 'from' => date('Y-m-d', strtotime('+1 month')), 'to' => '']]]);
@@ -781,6 +789,9 @@ try {
     expect($website->request('client-profile.php?id=' . $clientId)['status'] === 404 && $admin->request('client-profile.php?id=' . $clientId)['status'] === 404, 'Deleted client profile cannot be opened');
     $admin->request('admin-employees.php');
     expect($admin->post('admin-employees.php', ['action' => 'delete_employee', 'id' => $employeeIds['social_media']])['status'] === 303, 'Employee account deletion');
+    foreach (['daily_work_submissions','work_assignments','leave_requests','payslips','employee_documents','employee_salary_history','employee_attendance_sessions','employee_attendance_days'] as $table) {
+        expect((int)scalar("SELECT COUNT(*) FROM $table WHERE employee_id=?",[$employeeIds['social_media']])===0,'Permanent deletion clears '.$table);
+    }
     expect($browsers['social_media']->request($dashboards['social_media'])['headers']['location'] === 'login.php', 'Deleted employee session loses access');
     expect(str_contains($manager->request('manager-dashboard.php')['body'], '<strong>4</strong>'), 'Employee dashboard total updates after deletion');
     $website->request('change-password.php');
@@ -811,15 +822,16 @@ try {
     $deletedSession->login('salary.date.test',$password,'website-employee-dashboard.php');
     $admin->request('admin-employees.php');
     expect($admin->post('admin-employees.php',['action'=>'delete_employee','id'=>$photoEmployeeId])['status']===303,'Delete releases employee identifiers');
-    expect(scalar('SELECT email FROM users WHERE id=?',[$photoEmployeeId])===null && scalar('SELECT employee_code FROM employee_profiles WHERE user_id=?',[$photoEmployeeId])===null,'Deleted employee email and employee ID are released');
-    expect(scalar('SELECT credential_cipher FROM users WHERE id=?',[$photoEmployeeId])===null,'Deleted employee recoverable password removed');
+    expect((int)scalar('SELECT COUNT(*) FROM users WHERE id=?',[$photoEmployeeId])===0 && (int)scalar('SELECT COUNT(*) FROM employee_profiles WHERE user_id=?',[$photoEmployeeId])===0,'Deleted employee email and employee ID are released');
+    clearstatcache();
+    expect(!is_file(dirname(__DIR__).'/'.$savedPhoto),'Deleted employee photo file removed');
     expect($deletedSession->request('website-employee-dashboard.php')['headers']['location']==='login.php','Deleted employee session is revoked');
     $photoEmployee['temporary_password']='Recreated-Password-2026';
     $admin->request('admin-add-employee.php');
     expect($admin->post('admin-add-employee.php',$photoEmployee)['status']===303,'Same username email and employee ID can be reused');
     $recreatedId=(int)scalar("SELECT id FROM users WHERE username='salary.date.test' AND deleted_at IS NULL");
     expect($recreatedId!==$photoEmployeeId && $recreatedId>0,'Recreated employee has a separate account ID');
-    expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$recreatedId])===1 && (int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$photoEmployeeId])===1,'Old salary history remains separate from recreated account');
+    expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$recreatedId])===1 && (int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?',[$photoEmployeeId])===0,'Deleted salary history removed and recreated account starts fresh');
     $recreatedBrowser=new Browser($base);
     $recreatedBrowser->login('salary.date.test','Recreated-Password-2026','website-employee-dashboard.php');
     $admin->request('admin-add-employee.php');
