@@ -748,6 +748,27 @@ try {
     expect(str_contains($clientReport,'1 completed') && str_contains($clientReport,'3 remaining'),'Client progress uses admin targets and uploaded count');
     expect(!str_contains($clientReport,'Save report') && !str_contains($clientReport,'Edit work report'),'Client reports read-only');
     expect(str_contains($clientReport,'<th>Download</th>') && str_contains($clientReport,'download-client-report.php?id='.$reportId),'Client daily report table has Excel download instead of edit');
+    expect(substr_count($clientReport,'id="reports-2026-10-')===31 && str_contains($clientReport,'No report added for this date.'),'Every day appears including dates without reports');
+    expect(str_contains($clientReport,'<th>Date</th><th>Work</th>') && str_contains($clientReport,'name="from"') && str_contains($clientReport,'name="to"'),'Client has compact dated table and arbitrary date range download');
+    expect(str_contains($reportPage,'<th>Date</th><th>Work</th>') && str_contains($reportPage,'<th>Download</th>') && str_contains($reportPage,'<th>Edit</th>'),'Admin report table matches client with editing retained');
+    foreach (['from=2026-10-01&to=2026-10-12'=>['2026-10-01','2026-10-12','2026-10-13'],'from=2026-01-01&to=2026-10-13'=>['2026-01-01','2026-10-13','2026-10-14']] as $query=>$dates) {
+        $custom=report_content($clientBrowser->request('download-client-report.php?period=custom&'.$query));
+        expect(str_contains($custom,$dates[0]) && str_contains($custom,$dates[1]) && !str_contains($custom,$dates[2]),'Custom export includes exact requested endpoints');
+    }
+    $custom=report_content($clientBrowser->request('download-client-report.php?period=custom&from=2026-10-15&to=2026-10-15'));
+    expect(str_contains($custom,'Two revisions'),'Single-day custom export includes report on both inclusive boundaries');
+    $adminExport=report_content($admin->request('download-client-report.php?period=custom&from=2026-01-01&to=2026-12-31&client_id='.$credentialClient));
+    expect(str_contains($adminExport,'Two revisions'),'Admin exports selected client date range');
+    foreach (['from=2026-10-15&to=2026-10-01','from=2026-02-30&to=2026-10-01','from=2026-10-01'] as $invalidRange) expect($clientBrowser->request('download-client-report.php?period=custom&'.$invalidRange)['status']===400,'Invalid custom dates rejected');
+    foreach (['day'=>['2026-10-15','2026-10-15'],'week'=>['2026-10-12','2026-10-18'],'month'=>['2026-10-01','2026-10-31']] as $period=>$bounds) {
+        $rangeExport=report_content($clientBrowser->request('download-client-report.php?period='.$period.'&date=2026-10-15&client_id='.$clientId));
+        expect(str_contains($rangeExport,$bounds[0]) && str_contains($rangeExport,$bounds[1]) && str_contains($rangeExport,'Two revisions'),'Client '.$period.' export contains correct dates and report');
+    }
+    $emptyExport=report_content($clientBrowser->request('download-client-report.php?period=day&date=2026-10-16'));
+    expect(str_contains($emptyExport,'No report added') && !str_contains($emptyExport,'Two revisions'),'Empty day exports explicit empty status without other reports');
+    $crossMonth=report_content($clientBrowser->request('download-client-report.php?period=week&date=2026-11-01'));
+    expect(str_contains($crossMonth,'2026-10-26') && str_contains($crossMonth,'2026-11-01') && !str_contains($crossMonth,'2026-11-02'),'Weekly export spans month boundary Monday through Sunday');
+    foreach (['period=year&date=2026-10-15','period=day&date=2026-02-30','period=month&date[]=bad'] as $invalid) expect($clientBrowser->request('download-client-report.php?'.$invalid)['status']===400,'Invalid export range rejected');
     $export=report_content($clientBrowser->request('download-client-report.php?id='.$reportId.'&client_id='.$clientId));
     expect(str_contains($export,'Two revisions') && str_contains($export,'Instagram / Admin') && str_contains($export,'2026-10-15'),'Client Excel contains saved report details');
     expect($guest->request('download-client-report.php?id='.$reportId)['headers']['location']==='login.php','Report download requires sign-in');
@@ -756,6 +777,8 @@ try {
     expect($clientBrowser->request('download-client-report.php?id=0')['status']===400,'Invalid report ID rejected');
     $pdo->prepare('UPDATE client_work_reports SET client_id=? WHERE id=?')->execute([$clientId,$reportId]);
     expect($clientBrowser->request('download-client-report.php?id='.$reportId.'&client_id='.$clientId)['status']===404,'Client cannot download another client report');
+    $privateRange=report_content($clientBrowser->request('download-client-report.php?period=month&date=2026-10-15&client_id='.$clientId));
+    expect(!str_contains($privateRange,'Two revisions'),'Range export cannot expose another client reports');
     $pdo->prepare('UPDATE client_work_reports SET client_id=? WHERE id=?')->execute([$credentialClient,$reportId]);
     expect(str_contains($clientBrowser->request('client-reports.php?month=2026-11')['body'],'No work updates this month'),'Month filter excludes other months');
     expect($clientBrowser->request('client-reports.php?month=2026-13')['status']===400,'Invalid month rejected');
