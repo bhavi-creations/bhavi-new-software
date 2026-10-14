@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $saveStage='save account and profile';
         db()->beginTransaction();
         if ($id && !one("SELECT id FROM users WHERE id=? AND role='employee' AND deleted_at IS NULL FOR UPDATE",[$id])) throw new InvalidArgumentException('This employee has been deleted. Add a new employee instead.');
-        $deletedFiles=release_matching_deleted_employees($username,$email,$employeeCode);
+        release_matching_deleted_employees($username,$email,$employeeCode);
         if ($id) {
             one('SELECT user_id FROM employee_profiles WHERE user_id=? FOR UPDATE',[$id]);
             if (one('SELECT id FROM employee_salary_history WHERE employee_id=? AND (effective_from<? OR (? IS NOT NULL AND (effective_from>? OR effective_to>?))) LIMIT 1',[$id,$joiningDate,$relieving,$relieving,$relieving])) throw new InvalidArgumentException('Employment dates conflict with saved salary history.');
@@ -90,9 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             query('INSERT INTO employee_documents (employee_id,original_name,mime_type,file_path,uploaded_by) VALUES (?,?,?,?,?)',[$id,$document['name'],$document['mime'],$path,$user['id']]);
         }
         $saveStage='commit employee';
-        db()->commit();
-        if (!remove_deleted_employee_files($deletedFiles)) flash('Old employee files could not be removed. Check upload folder permissions.','error');
-        flash('Employee saved.'.(count($documents)?' '.count($documents).' document(s) uploaded successfully.':'')); redirect(count($documents)?'admin-add-employee.php?id='.$id.'#saved-documents':'admin-employees.php');
+        db()->commit(); flash('Employee saved.'.(count($documents)?' '.count($documents).' document(s) uploaded successfully.':'')); redirect(count($documents)?'admin-add-employee.php?id='.$id.'#saved-documents':'admin-employees.php');
     } catch (Throwable $e) {
         if (!($e instanceof InvalidArgumentException)) error_log('[employee-save: '.$saveStage.'] '.get_class($e).': '.$e->getMessage());
         if (db()->inTransaction()) db()->rollBack();

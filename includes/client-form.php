@@ -8,7 +8,7 @@ if ($id && !$record) fail(404,'Client not found.');
 $login=$record && $record['user_id']?one('SELECT username,credential_cipher FROM users WHERE id=?',[$record['user_id']]):null;
 $error=null;
 if ($_SERVER['REQUEST_METHOD']==='POST') {
-    check_csrf(); $savedFile=null; $saveStage='validate client details';
+    check_csrf(); $savedFile=null;
     try {
         $action=$_POST['action']??'save_client';
         if ($action==='update_payment') {
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $cipher=null;
             if ($id && !empty($link['id'])) $cipher=one('SELECT password_cipher FROM client_social_links WHERE id=? AND client_id=?',[(int)$link['id'],$id])['password_cipher']??null;
             if (!empty($link['clear_password'])) $cipher=null;
-            if ($socialPassword!=='') { $saveStage='encrypt social credential'; $cipher=credential_encrypt($socialPassword); }
+            if ($socialPassword!=='') $cipher=credential_encrypt($socialPassword);
             if ($platform==='' || mb_strlen($platform)>100) throw new InvalidArgumentException('Enter a platform name up to 100 characters for each social media link.');
             if (!filter_var($url,FILTER_VALIDATE_URL) || !in_array(strtolower(parse_url($url,PHP_URL_SCHEME)??''),['http','https'],true) || strlen($url)>2048) throw new InvalidArgumentException('Enter a valid http:// or https:// URL for each social media link.');
             $validSocialLinks[]=['platform'=>$platform,'url'=>$url,'username'=>$socialUsername,'cipher'=>$cipher];
@@ -87,7 +87,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         }
         db()->beginTransaction();
         if ($id && !one('SELECT id FROM clients WHERE id=? AND deleted_at IS NULL FOR UPDATE',[$id])) throw new InvalidArgumentException('Client is no longer available.');
-        $saveStage='save client logo';
         $logo=$record['logo_path'] ?? '';
         $file=$_FILES['client_logo'] ?? null;
         if ($file && $file['error']!==UPLOAD_ERR_NO_FILE) {
@@ -102,11 +101,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $savedFile=dirname(__DIR__).'/'.$logo;
             if (!move_uploaded_file($file['tmp_name'],$savedFile)) { throw new InvalidArgumentException('The logo could not be stored. Check uploads/photos permissions and try a PNG, JPG or WebP under 50 MB.'); }
         }
-        $saveStage='save client details';
         if ($id) query('UPDATE clients SET client_name=?,website_url=?,logo_path=? WHERE id=?',[$name,$website,$logo,$id]);
         else query('INSERT INTO clients (client_name,website_url,logo_path,created_by) VALUES (?,?,?,?)',[$name,$website,$logo,$user['id']]);
         if (!$id) $id=(int)db()->lastInsertId();
-        $saveStage='save client login';
         if ($loginName!=='') {
             $loginId=$record['user_id']??null;
             if ($loginId) {
@@ -118,7 +115,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
                 query('UPDATE clients SET user_id=? WHERE id=?',[$loginId,$id]);
             }
         }
-        $saveStage='save client payments';
         foreach ($newPayments as $payment) {
             $existing=one('SELECT * FROM client_payments WHERE request_key=?',[$payment['key']]);
             if ($existing) {
@@ -132,14 +128,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         $extra['paid_amount']=$paid;
         $assignments=implode(',',array_map(static fn($key)=>$key.'=?',array_keys($extra)));
         query('UPDATE clients SET '.$assignments.' WHERE id=?',array_merge(array_values($extra),[$id]));
-        $saveStage='save social accounts';
         query('DELETE FROM client_social_links WHERE client_id=?',[$id]);
         foreach ($validSocialLinks as $link) {
             query('INSERT INTO client_social_links (client_id,platform_name,url,username,password_cipher) VALUES (?,?,?,?,?)',[$id,$link['platform'],$link['url'],$link['username'],$link['cipher']]);
         }
         db()->commit();
         flash('Client saved.'); redirect('add-client.php');
-    } catch (Throwable $e) { if (!($e instanceof InvalidArgumentException)) error_log('[client-save: '.$saveStage.'] '.get_class($e).': '.$e->getMessage()); if (db()->inTransaction()) db()->rollBack(); if (!$record) $id=0; if ($savedFile && is_file($savedFile)) unlink($savedFile); $error=mutation_error($e); if (!($e instanceof InvalidArgumentException)) $error.=' Save step: '.$saveStage.'.'; }
+    } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); if (!$record) $id=0; if ($savedFile && is_file($savedFile)) unlink($savedFile); $error=mutation_error($e); }
 }
 $value=static fn($key,$fallback='')=>$_POST[$key]??$record[$key]??$fallback;
 page_start($record?'Edit client':'Add client','add-client.php'); error_message($error);
