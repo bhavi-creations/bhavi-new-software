@@ -35,7 +35,6 @@ function page_start(string $title, string $active = ''): void
         $nav['employee-assigned-work.php'] = 'My assigned work';
     }
     if ($user['role']==='admin') $nav['departments.php']='Departments';
-    if ($user['role']==='admin') $nav['hosting-check.php']='Hosting checks';
     if ($user['role']==='admin') $nav['employee-attendance.php']='Employee attendance';
     if (is_staff()) $nav['manager-leave-requist.php']='Leave requests';
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';

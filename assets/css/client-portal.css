@@ -32,6 +32,7 @@ body[data-role=client] .portal-main {
     margin-bottom:28px
 }
 .cp-hero h2 {
+    color:#fff;
     font-size:clamp(23px,3vw,34px);
     margin:10px 0;
     overflow-wrap:anywhere
@@ -40,8 +41,8 @@ body[data-role=client] .portal-main {
     color:#d4e2fa
 }
 .cp-hero img {
-    width:88px;
-    height:88px;
+    width:128px;
+    height:128px;
     object-fit:contain;
     background:white;
     border-radius:20px;
@@ -397,8 +398,8 @@ body[data-role=client] .portal-main {
         align-items:flex-start
     }
     .cp-hero img {
-        width:56px;
-        height:56px
+        width:80px;
+        height:80px
     }
     .cp-hero p {
         font-size:13px
