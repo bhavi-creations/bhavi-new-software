@@ -747,6 +747,16 @@ try {
     expect(str_contains($clientReport,'Two revisions') && str_contains($clientReport,'15 Oct 2026, 09:00 AM') && str_contains($clientReport,'data-report-preview'),'Client calendar shows saved workflow and preview trigger');
     expect(str_contains($clientReport,'1 completed') && str_contains($clientReport,'3 remaining'),'Client progress uses admin targets and uploaded count');
     expect(!str_contains($clientReport,'Save report') && !str_contains($clientReport,'Edit work report'),'Client reports read-only');
+    expect(str_contains($clientReport,'<th>Download</th>') && str_contains($clientReport,'download-client-report.php?id='.$reportId),'Client daily report table has Excel download instead of edit');
+    $export=report_content($clientBrowser->request('download-client-report.php?id='.$reportId.'&client_id='.$clientId));
+    expect(str_contains($export,'Two revisions') && str_contains($export,'Instagram / Admin') && str_contains($export,'2026-10-15'),'Client Excel contains saved report details');
+    expect($guest->request('download-client-report.php?id='.$reportId)['headers']['location']==='login.php','Report download requires sign-in');
+    expect($website->request('download-client-report.php?id='.$reportId)['status']===403,'Employee cannot use client export');
+    expect($clientBrowser->request('download-client-report.php?id='.$reportId,['action'=>'edit'])['status']===405,'Report download is read-only');
+    expect($clientBrowser->request('download-client-report.php?id=0')['status']===400,'Invalid report ID rejected');
+    $pdo->prepare('UPDATE client_work_reports SET client_id=? WHERE id=?')->execute([$clientId,$reportId]);
+    expect($clientBrowser->request('download-client-report.php?id='.$reportId.'&client_id='.$clientId)['status']===404,'Client cannot download another client report');
+    $pdo->prepare('UPDATE client_work_reports SET client_id=? WHERE id=?')->execute([$credentialClient,$reportId]);
     expect(str_contains($clientBrowser->request('client-reports.php?month=2026-11')['body'],'No work updates this month'),'Month filter excludes other months');
     expect($clientBrowser->request('client-reports.php?month=2026-13')['status']===400,'Invalid month rejected');
     $clientBrowser->request('change-password.php');
