@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 12;
+const PORTAL_SCHEMA_VERSION = 13;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -254,6 +254,8 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (client_id) REFERENCES clients(id), FOREIGN KEY (created_by) REFERENCES users(id)
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (12)');
+        $pdo->exec('ALTER TABLE work_assignments MODIFY client_id BIGINT UNSIGNED NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (13)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

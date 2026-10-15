@@ -1,7 +1,8 @@
 <?php
 require_once __DIR__ . '/includes/work.php';
 require_once __DIR__ . '/includes/excel-export.php';
-require_roles(['admin','manager']);
+$user=require_roles(['admin','manager','employee']);
+if ($user['role']==='employee') { $_GET['employee']=$user['id']; unset($_GET['department']); }
 try { $filter=report_filter(); } catch (InvalidArgumentException $e) { fail(422,$e->getMessage()); }
 $metrics=[]; foreach (['website','seo','design_video','telecaller','social_media'] as $department) foreach (metric_definitions($department) as $key=>[$label]) $metrics[$key]=$label;
 $stmt=query('SELECT s.work_date,u.full_name,u.username,d.name AS department_name,c.client_name,s.submitted_at,s.manager_remark,COUNT(*) OVER (PARTITION BY s.id) AS entry_count,SUM(e.task_status=\'completed\') OVER (PARTITION BY s.id) AS completed_count,e.* FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id LEFT JOIN clients c ON c.id=e.client_id WHERE '.$filter['where'].' ORDER BY s.work_date,u.full_name,e.row_order',$filter['params']);

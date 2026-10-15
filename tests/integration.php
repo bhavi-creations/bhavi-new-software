@@ -179,7 +179,7 @@ try {
         }
         expect($browsers[$code]->request('admin-dashboard.php')['status'] === 403, 'Employee forbidden admin dashboard');
         expect($browsers[$code]->request('manager-dailywork.php')['status'] === 403, 'Employee forbidden team reports');
-        expect($browsers[$code]->request('download-work.php')['status'] === 403, 'Employee forbidden team export');
+        expect($browsers[$code]->request('download-work.php')['status'] === 200, 'Employee can export own work');
     }
     $attendanceEmployee = $browsers['website'];
     expect(str_contains($attendanceEmployee->request($dashboards['website'])['body'], 'attendance.php'), 'Employee sidebar has attendance login control');
@@ -378,6 +378,21 @@ try {
     $allDatesExcel = $manager->request('download-work.php?all_dates=1&employee=' . $employeeIds['website']);
     $allDatesSheet = report_content($allDatesExcel);
     expect(str_contains($allDatesSheet, 'Yesterday page') && str_contains($allDatesSheet, 'website daily task') && str_contains($allDatesSheet, '1 hour 30 min') && !str_contains($allDatesSheet, 'seo daily task'), 'All-dates Excel includes selected employee history and time without other employees');
+    $ownExport=report_content($website->request('download-work.php?all_dates=1&employee='.$employeeIds['seo']));
+    expect(str_contains($ownExport,'website daily task') && !str_contains($ownExport,'seo daily task'),'Employee export ignores another employee ID');
+    $internalData=array_replace($assignmentData,['client_id'=>'','tasks'=>[['title'=>'Internal assignment regression','description'=>'No client required']]]);
+    expect($admin->post('manager-assign-work.php',$internalData)['status']===303,'Assignment accepts optional client');
+    $internalId=(int)scalar("SELECT id FROM work_assignments WHERE title='Internal assignment regression'");
+    expect(scalar('SELECT client_id FROM work_assignments WHERE id=?',[$internalId])===null,'Optional assignment client stored as null');
+    expect(str_contains($website->request('employee-assigned-work.php?assignment_date='.$assignmentDate)['body'],'Internal assignment regression'),'Employee sees assignment without client');
+    expect($website->post('employee-assigned-work.php?assignment_date='.$assignmentDate,array_replace($update,['assignment_id'=>$internalId]))['status']===303,'Employee submits assignment without client');
+    $departmentExport=report_content($admin->request('download-assignments.php?department='.$websiteDepartment));
+    expect(str_contains($departmentExport,'Internal assignment regression'),'Department assignment export includes internal tasks');
+    $seoDepartment=(int)scalar("SELECT id FROM departments WHERE code='seo'");
+    expect(!str_contains($admin->request('manager-assigned-status.php?department='.$seoDepartment)['body'],'Internal assignment regression'),'Department filter excludes other department tasks');
+    expect(!str_contains(report_content($admin->request('download-assignments.php?employee='.$employeeIds['seo'])),'Internal assignment regression'),'Employee assignment export filters tasks');
+    expect(!str_contains(report_content($browsers['seo']->request('download-assignments.php?employee='.$employeeIds['website'])),'Internal assignment regression'),'Employee cannot export another employee assignments');
+    expect(str_contains(report_content($website->request('download-assignments.php')),'Internal assignment regression'),'Employee downloads own assignments');
     $employeeExcel = $manager->request('download-work.php?employee=' . $employeeIds['seo']);
     $employeeSheet = report_content($employeeExcel);
     expect(str_contains($employeeSheet, 'seo daily task') && !str_contains($employeeSheet, 'website daily task'), 'Employee Excel filter');
@@ -447,7 +462,7 @@ try {
     expect($admin->post('manager-leave-requist.php', ['id' => $adminLeaveId, 'decision' => 'approved', 'decision_note' => 'Approved by admin'])['status'] === 303, 'Admin can approve employee leave');
     expect(scalar('SELECT status FROM leave_requests WHERE id=?', [$adminLeaveId]) === 'approved' && (int)scalar('SELECT decided_by FROM leave_requests WHERE id=?', [$adminLeaveId]) === (int)scalar("SELECT id FROM users WHERE username='admin.test'"), 'Admin leave approval is saved with approver');
     expect(str_contains($website->request('my-leave-requests.php')['body'], 'Approved by admin'), 'Employee sees admin leave decision');
-    expect($admin->post('manager-leave-requist.php', ['action' => 'delete_leave', 'id' => $adminLeaveId])['status'] === 403, 'Admin cannot delete employee leave requests');
+    expect($admin->post('manager-leave-requist.php', ['action' => 'delete_leave', 'id' => $adminLeaveId])['status'] === 303, 'Admin can delete employee leave requests');
     expect(!str_contains($manager->request('manager-dashboard.php')['body'], 'Upcoming holidays'), 'Manager dashboard omits holiday card');
     $admin->request('departments.php');
     expect($admin->post('departments.php', ['name' => 'Quality Assurance'])['status'] === 303, 'Admin adds department');
@@ -820,6 +835,8 @@ try {
     expect($website->request('client-profile.php?id=' . $clientId)['status'] === 404 && $admin->request('client-profile.php?id=' . $clientId)['status'] === 404, 'Deleted client profile cannot be opened');
     $admin->request('admin-employees.php');
     expect($admin->post('admin-employees.php', ['action' => 'delete_employee', 'id' => $employeeIds['social_media']])['status'] === 303, 'Employee account deletion');
+    expect(!str_contains($manager->request('manager-dailywork.php?all_dates=1')['body'],'social_media daily task'),'Deleted employee work hidden from reports');
+    expect(!str_contains(report_content($admin->request('download-work.php?all_dates=1')),'social_media daily task'),'Deleted employee work excluded from exports');
     expect($browsers['social_media']->request($dashboards['social_media'])['headers']['location'] === 'login.php', 'Deleted employee session loses access');
     expect(str_contains($manager->request('manager-dashboard.php')['body'], '<strong>4</strong>'), 'Employee dashboard total updates after deletion');
     $website->request('change-password.php');

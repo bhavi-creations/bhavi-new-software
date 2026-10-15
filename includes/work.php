@@ -107,6 +107,20 @@ function report_work_status(array $report): string
 {
     return (int)$report['entry_count']>0 && (int)$report['completed_count']===(int)$report['entry_count']?'completed':'pending';
 }
+function assignment_filter(array $user): array
+{
+    $where='a.deleted_at IS NULL AND u.deleted_at IS NULL'; $params=[];
+    $employee=$user['role']==='employee'?(int)$user['id']:(int)($_GET['employee']??0);
+    $department=$user['role']==='employee'?0:(int)($_GET['department']??0);
+    if ($employee) { $where.=' AND a.employee_id=?'; $params[]=$employee; }
+    if ($department) { $where.=' AND a.department_id=?'; $params[]=$department; }
+    if (isset($_GET['assignment_date'])) { $where.=' AND a.work_date=?'; $params[]=date_input('assignment_date',$_GET); }
+    return compact('where','params');
+}
+function assignment_rows(array $filter): array
+{
+    return rows("SELECT a.*,u.full_name,d.name AS department_name,c.client_name,manager.full_name AS assigned_by_name,COALESCE(e.task_status,a.status) AS reported_status,COALESCE(e.time_spent_minutes,a.time_spent_minutes) AS reported_time,COALESCE(e.remark,a.employee_remark) AS reported_remark FROM work_assignments a JOIN users u ON u.id=a.employee_id JOIN departments d ON d.id=a.department_id LEFT JOIN clients c ON c.id=a.client_id JOIN users manager ON manager.id=a.assigned_by LEFT JOIN daily_work_entries e ON e.id=(SELECT latest.id FROM daily_work_entries latest JOIN daily_work_submissions sheet ON sheet.id=latest.submission_id WHERE latest.assignment_id=a.id ORDER BY sheet.work_date DESC,latest.updated_at DESC,latest.id DESC LIMIT 1) WHERE ".$filter['where']." ORDER BY a.work_date DESC,u.full_name,a.id",$filter['params']);
+}
 function report_filter(): array
 {
     $allDates=($_GET['all_dates']??'')==='1';
@@ -114,7 +128,7 @@ function report_filter(): array
     $to=$allDates?null:date_input('to_date',['to_date'=>$_GET['to_date']??$from]);
     if (!$allDates && $to<$from) throw new InvalidArgumentException('The end date must be on or after the start date.');
     $department=(int)($_GET['department']??0); $employee=(int)($_GET['employee']??0);
-    $where="s.submission_status='submitted'"; $params=[];
+    $where="s.submission_status='submitted' AND u.deleted_at IS NULL"; $params=[];
     if (!$allDates) { $where.=' AND s.work_date BETWEEN ? AND ?'; $params[]=$from; $params[]=$to; }
     if ($department) { $where.=' AND s.department_id=?'; $params[]=$department; }
     if ($employee) { $where.=' AND s.employee_id=?'; $params[]=$employee; }
