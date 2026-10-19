@@ -183,6 +183,7 @@ CREATE TABLE daily_work_entries (
   remark TEXT NULL,
 
   -- Designer: Video, Poster, Carousel, Changes, Remark.
+  work_type ENUM('poster','video_editing','carousel') NULL,
   video_count INT UNSIGNED NULL,
   poster_count INT UNSIGNED NULL,
   carousel_count INT UNSIGNED NULL,

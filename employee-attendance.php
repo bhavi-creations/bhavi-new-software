@@ -7,7 +7,7 @@ $selectedEmployeeId=$isAdmin?(isset($_GET['employee'])?positive_id($_GET['employ
 if ($isAdmin && $selectedEmployeeId===null) {
     $directory=rows("SELECT u.id,u.full_name,ep.employee_code,d.name AS department_name,ep.joining_date,
         (SELECT MIN(a.login_at) FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND DATE(a.login_at)=CURDATE()) AS today_login,
-        (SELECT MAX(a.logout_at) FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND DATE(a.login_at)=CURDATE()) AS today_logout
+        (SELECT CASE WHEN SUM(a.logout_at IS NULL)>0 THEN NULL ELSE MAX(a.logout_at) END FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND DATE(a.login_at)=CURDATE()) AS today_logout
         FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id
         WHERE u.role='employee' AND u.deleted_at IS NULL ORDER BY u.full_name");
     page_start('Employee attendance','employee-attendance.php');
@@ -33,7 +33,7 @@ $joinDate=new DateTimeImmutable($attendanceEmployee['joining_date']);
 $start=$first>$joinDate?$first:$joinDate;
 $schedule=array_column(rows('SELECT iso_weekday,is_working_day FROM department_weekly_schedule WHERE department_id=?',[$attendanceEmployee['department_id']]),'is_working_day','iso_weekday');
 $holidays=array_fill_keys(array_column(rows('SELECT holiday_date FROM holidays WHERE is_published=1 AND holiday_date BETWEEN ? AND ?',[$start->format('Y-m-d'),$end->format('Y-m-d')]),'holiday_date'),true);
-$sessions=rows("SELECT DATE(login_at) AS attendance_date,MIN(login_at) AS first_login,MAX(logout_at) AS last_logout,SUM(logout_at IS NULL) AS open_sessions FROM employee_attendance_sessions WHERE employee_id=? AND login_at>=? AND login_at<? GROUP BY DATE(login_at) ORDER BY attendance_date",[$attendanceEmployee['id'],$start->format('Y-m-d 00:00:00'),$end->modify('+1 day')->format('Y-m-d 00:00:00')]);
+$sessions=rows("SELECT DATE(login_at) AS attendance_date,MIN(login_at) AS first_login,CASE WHEN SUM(logout_at IS NULL)>0 THEN NULL ELSE MAX(logout_at) END AS last_logout,SUM(logout_at IS NULL) AS open_sessions FROM employee_attendance_sessions WHERE employee_id=? AND login_at>=? AND login_at<? GROUP BY DATE(login_at) ORDER BY attendance_date",[$attendanceEmployee['id'],$start->format('Y-m-d 00:00:00'),$end->modify('+1 day')->format('Y-m-d 00:00:00')]);
 $sessionByDate=[];
 foreach ($sessions as $session) $sessionByDate[$session['attendance_date']]=$session;
 $leaveRequests=rows("SELECT l.from_date,l.to_date,l.status,t.name AS leave_type FROM leave_requests l JOIN leave_types t ON t.id=l.leave_type_id WHERE l.employee_id=? AND l.status<>'cancelled' AND l.from_date<=? AND l.to_date>=? ORDER BY l.from_date,l.id",[$attendanceEmployee['id'],$end->format('Y-m-d'),$start->format('Y-m-d')]);

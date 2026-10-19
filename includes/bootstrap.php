@@ -3,12 +3,13 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/credentials.php';
+require_once __DIR__ . '/persistent-login.php';
 
 date_default_timezone_set('Asia/Kolkata');
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_name('bhavi_portal');
     session_set_cookie_params([
-        'lifetime' => 0, 'path' => '/',
+        'lifetime' => PORTAL_COOKIE_LIFETIME, 'path' => '/',
         'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
         'httponly' => true, 'samesite' => 'Lax',
     ]);
@@ -65,6 +66,7 @@ function csrf_field(): string { return '<input type="hidden" name="csrf" value="
 function check_csrf(): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') { fail(405, 'Use the form to submit this request.'); }
+    current_user(); // Restore persistent authentication before checking an open form.
     if (empty($_POST) && (int)($_SERVER['CONTENT_LENGTH']??0)>0) {
         $limit=trim(ini_get('post_max_size')); $bytes=(float)$limit;
         $unit=strtolower(substr($limit,-1));
@@ -79,10 +81,12 @@ function current_user(): ?array
     static $loaded = false, $user = null;
     if (!$loaded) {
         $loaded = true;
+        if (!isset($_SESSION['user_id'])) restore_browser_login();
         if (isset($_SESSION['user_id'])) {
             $user = one('SELECT u.*, ep.department_id, ep.designation, d.code AS department_code, d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=? AND u.account_status=\'active\' AND u.deleted_at IS NULL', [$_SESSION['user_id']]);
             if ($user && $user['role']==='client' && !one('SELECT id FROM clients WHERE user_id=? AND deleted_at IS NULL AND is_active=1',[$user['id']])) $user=null;
-            if (!$user) { unset($_SESSION['user_id']); }
+            if ($user && !maintain_browser_login($user)) $user=null;
+            if (!$user) { revoke_browser_login(); unset($_SESSION['user_id'],$_SESSION['auth_selector'],$_SESSION['auth_fingerprint']); }
         }
     }
     return $user;

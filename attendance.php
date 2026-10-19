@@ -10,7 +10,7 @@ try {
     if (!one('SELECT user_id FROM employee_profiles WHERE user_id=? FOR UPDATE',[$user['id']])) {
         throw new InvalidArgumentException('Employee profile not found.');
     }
-    $active=one('SELECT id,login_at FROM employee_attendance_sessions WHERE employee_id=? AND logout_at IS NULL ORDER BY login_at DESC LIMIT 1 FOR UPDATE',[$user['id']]);
+    $active=one('SELECT id,login_at FROM employee_attendance_sessions WHERE employee_id=? AND logout_at IS NULL AND login_at>=CURDATE() AND login_at<CURDATE()+INTERVAL 1 DAY ORDER BY login_at DESC LIMIT 1 FOR UPDATE',[$user['id']]);
     if ($action==='login') {
         if ($active) throw new InvalidArgumentException('You are already logged in for attendance.');
         query('INSERT INTO employee_attendance_sessions (employee_id) VALUES (?)',[$user['id']]);

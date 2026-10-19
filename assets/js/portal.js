@@ -68,3 +68,28 @@ document.querySelectorAll('[data-filter-department]').forEach(select => select.a
   select.form.querySelector('[name="employee"]').value = '';
   select.form.requestSubmit();
 }));
+
+// Reset only the attendance display at midnight in the portal's timezone.
+// Portal authentication and yesterday's unfinished record stay intact.
+(() => {
+  const attendance = document.querySelector('[data-attendance-date]');
+  if (!attendance) return;
+  function refreshDay() {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(part => [part.type,part.value]));
+    const day = parts.year + '-' + parts.month + '-' + parts.day;
+    if (attendance.dataset.attendanceDate === day) return;
+    attendance.dataset.attendanceDate = day;
+    attendance.querySelector('[name="action"]').value = 'login';
+    attendance.querySelector('p')?.remove();
+    attendance.querySelector('button').textContent = 'Login';
+    const card = document.querySelector('[data-attendance-card]');
+    if (card) {
+      card.querySelector('strong').textContent = 'Not logged in';
+      card.querySelector('p').textContent = 'Use Login in the sidebar to record today’s time';
+      card.querySelector('[data-attendance-logout]')?.remove();
+    }
+  }
+  document.addEventListener('visibilitychange',refreshDay);
+  setInterval(refreshDay,30000);
+  refreshDay();
+})();

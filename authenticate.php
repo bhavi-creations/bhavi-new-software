@@ -17,10 +17,10 @@ if (!$user || !$valid || ($user['role']==='client' && !one('SELECT id FROM clien
 }
 query('DELETE FROM login_attempts WHERE attempt_key=? OR attempted_at < DATE_SUB(NOW(),INTERVAL 1 DAY)', [$key]);
 if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
-    query('UPDATE users SET password_hash=? WHERE id=?', [password_hash($password,PASSWORD_DEFAULT),$user['id']]);
+    $user['password_hash']=password_hash($password,PASSWORD_DEFAULT);
+    query('UPDATE users SET password_hash=? WHERE id=?', [$user['password_hash'],$user['id']]);
 }
 session_regenerate_id(true);
-$_SESSION['user_id'] = $user['id'];
-$_SESSION['csrf'] = bin2hex(random_bytes(32));
+begin_browser_login($user);
 query('UPDATE users SET last_login_at=NOW() WHERE id=?', [$user['id']]);
 redirect(dashboard_path($user));

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 13;
+const PORTAL_SCHEMA_VERSION = 15;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -224,6 +224,7 @@ function portal_install(PDO $pdo, string $database): void
         $hasEntryMinutes=(bool)$pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='daily_work_entries' AND COLUMN_NAME='time_spent_minutes'")->fetchColumn();
         $addColumn('work_assignments','time_spent_minutes','INT UNSIGNED NOT NULL DEFAULT 0');
         $addColumn('daily_work_entries','time_spent_minutes','INT UNSIGNED NULL');
+        $addColumn('daily_work_entries','work_type',"ENUM('poster','video_editing','carousel') NULL");
         if (!$hasAssignmentMinutes) $pdo->exec('UPDATE work_assignments SET time_spent_minutes=ROUND(time_spent_hours*60)');
         if (!$hasEntryMinutes) $pdo->exec('UPDATE daily_work_entries SET time_spent_minutes=ROUND(time_spent_hours*60) WHERE time_spent_hours IS NOT NULL');
         portal_install_view($pdo, "CREATE OR REPLACE VIEW v_employee_totals AS SELECT COUNT(*) AS total_employees, COALESCE(SUM(account_status='active'),0) AS active_employees, COALESCE(SUM(account_status='inactive'),0) AS inactive_employees FROM users WHERE role='employee' AND deleted_at IS NULL");
@@ -256,6 +257,20 @@ function portal_install(PDO $pdo, string $database): void
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (12)');
         $pdo->exec('ALTER TABLE work_assignments MODIFY client_id BIGINT UNSIGNED NULL');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (13)');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (14)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS portal_login_tokens (
+            selector CHAR(32) PRIMARY KEY, user_id BIGINT UNSIGNED NOT NULL,
+            validator_hash CHAR(64) NOT NULL, password_fingerprint CHAR(64) NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_login_token_user (user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+        // An unfinished previous day must retain its empty logout time without
+        // blocking a fresh attendance login on the next calendar date.
+        $addColumn('employee_attendance_sessions','active_attendance_date','DATE GENERATED ALWAYS AS (CASE WHEN logout_at IS NULL THEN DATE(login_at) ELSE NULL END) STORED');
+        if (!$pdo->query("SHOW INDEX FROM employee_attendance_sessions WHERE Key_name='uq_attendance_open_day'")->fetch()) $pdo->exec('ALTER TABLE employee_attendance_sessions ADD UNIQUE KEY uq_attendance_open_day (employee_id,active_attendance_date)');
+        if ($pdo->query("SHOW INDEX FROM employee_attendance_sessions WHERE Key_name='uq_active_employee_session'")->fetch()) $pdo->exec('ALTER TABLE employee_attendance_sessions DROP INDEX uq_active_employee_session');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (15)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

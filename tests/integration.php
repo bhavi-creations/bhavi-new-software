@@ -63,6 +63,18 @@ final class Browser
     {
         return $this->request($path, array_merge(['csrf' => $this->csrf], $data));
     }
+    public function forgetCookie(string $name): void
+    {
+        $lines=file($this->cookie,FILE_IGNORE_NEW_LINES)?:[];
+        $lines=array_filter($lines,static function ($line) use ($name) { $parts=explode("\t",$line); return count($parts)!==7 || $parts[5]!==$name; });
+        file_put_contents($this->cookie,implode("\n",$lines)."\n");
+    }
+    public function copyStateTo(Browser $browser): void { copy($this->cookie,$browser->cookie); $browser->csrf=$this->csrf; }
+    public function cookieValue(string $name): ?string
+    {
+        foreach (file($this->cookie,FILE_IGNORE_NEW_LINES)?:[] as $line) { $parts=explode("\t",$line); if (count($parts)===7 && $parts[5]===$name) return $parts[6]; }
+        return null;
+    }
     public function login(string $username, string $password, string $dashboard): void
     {
         $this->request('login.php');
@@ -179,15 +191,24 @@ try {
         }
         expect($browsers[$code]->request('admin-dashboard.php')['status'] === 403, 'Employee forbidden admin dashboard');
         expect($browsers[$code]->request('manager-dailywork.php')['status'] === 403, 'Employee forbidden team reports');
+        expect($browsers[$code]->request('manager-work-details.php?id=1')['status'] === 403, 'Employee forbidden team report details');
         expect($browsers[$code]->request('download-work.php')['status'] === 200, 'Employee can export own work');
     }
     $attendanceEmployee = $browsers['website'];
+    foreach ([[$admin,'admin-dashboard.php'],[$manager,'manager-dashboard.php'],[$attendanceEmployee,$dashboards['website']]] as [$signedIn,$signedInRoute]) {
+        expect($signedIn->cookieValue('bhavi_remember')!==null,'Signed-in browser has persistent login cookie');
+        $signedIn->forgetCookie('bhavi_portal');
+        expect($signedIn->request($signedInRoute)['status']===200,'Sign-in survives loss of PHP session for '.$signedInRoute);
+    }
+    $rememberParts=explode('.',(string)$attendanceEmployee->cookieValue('bhavi_remember'));
+    expect(scalar('SELECT validator_hash FROM portal_login_tokens WHERE selector=?',[$rememberParts[0]])===hash('sha256',$rememberParts[1]),'Database stores a hash of the browser token');
     expect(str_contains($attendanceEmployee->request($dashboards['website'])['body'], 'attendance.php'), 'Employee sidebar has attendance login control');
     expect(str_contains($admin->request('admin-dashboard.php')['body'], 'href="employee-attendance.php"'), 'Admin sidebar links to employee attendance');
     expect($manager->request('employee-attendance.php')['status'] === 403, 'Manager cannot access admin attendance list');
     expect($attendanceEmployee->request('employee-attendance.php?employee=' . $employeeIds['seo'])['status'] === 403, 'Employee cannot view another employee attendance');
     expect($admin->post('attendance.php', ['action' => 'login'])['status'] === 403, 'Staff cannot submit employee attendance controls');
-    expect($attendanceEmployee->post('attendance.php', ['action' => 'login'])['status'] === 303, 'Employee attendance login saves');
+    $attendanceEmployee->forgetCookie('bhavi_portal');
+    expect($attendanceEmployee->post('attendance.php', ['action' => 'login'])['status'] === 303, 'An open attendance form saves after the PHP session is lost');
     $attendanceId = (int)scalar('SELECT id FROM employee_attendance_sessions WHERE employee_id=? AND logout_at IS NULL', [$employeeIds['website']]);
     expect($attendanceId > 0 && scalar('SELECT login_at FROM employee_attendance_sessions WHERE id=?', [$attendanceId]) !== null, 'Attendance login timestamp persists');
     expect(str_contains($attendanceEmployee->request($dashboards['website'])['body'], 'name="action" value="logout"'), 'Active attendance shows logout control');
@@ -210,6 +231,15 @@ try {
     expect($adminAttendanceList['status'] === 200 && str_contains($adminAttendanceList['body'], 'Employee website'), 'Admin attendance page lists employees');
     $adminAttendanceDetails = $admin->request('employee-attendance.php?employee=' . $employeeIds['website'] . '&month=' . date('Y-m'));
     expect($adminAttendanceDetails['status'] === 200 && str_contains($adminAttendanceDetails['body'], 'Employee website · Attendance') && str_contains($adminAttendanceDetails['body'], 'Attendance by day'), 'Admin opens selected employee attendance history');
+    $unfinishedAttendance=(int)scalar('SELECT id FROM employee_attendance_sessions WHERE employee_id=? AND DATE(login_at)=? AND logout_at IS NULL',[$employeeIds['website'],$yesterdayAttendance]);
+    expect($attendanceEmployee->post('attendance.php',['action'=>'logout'])['status']===409,'Today cannot log out an unfinished previous day');
+    expect($attendanceEmployee->post('attendance.php',['action'=>'login'])['status']===303,'A new attendance day can start while yesterday logout is empty');
+    $attendanceEmployee->forgetCookie('bhavi_portal');
+    expect(str_contains($attendanceEmployee->request($dashboards['website'])['body'],'name="action" value="logout"'),'Attendance stays logged in after portal session restoration');
+    expect(scalar('SELECT logout_at FROM employee_attendance_sessions WHERE id=?',[$unfinishedAttendance])===null,'Yesterday logout remains empty');
+    expect($attendanceEmployee->post('attendance.php',['action'=>'logout'])['status']===303,'Today attendance logout updates today only');
+    expect(scalar('SELECT logout_at FROM employee_attendance_sessions WHERE id=?',[$unfinishedAttendance])===null,'Today logout does not change yesterday record');
+    expect($attendanceEmployee->request($dashboards['website'])['status']===200,'Attendance logout preserves portal sign-in');
     $pdf = tempnam(sys_get_temp_dir(), 'bhavi_payslip_');
     $temporary[] = $pdf;
     $pdfContent = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n";
@@ -343,13 +373,76 @@ try {
         $metrics = match ($code) {
             'website' => ['website_new_count' => '1', 'website_changes_count' => '0'],
             'seo' => ['seo_quantity' => '3.50', 'seo_quantity_unit' => 'pages'],
-            'design_video' => ['video_count' => '1', 'poster_count' => '2', 'carousel_count' => '1', 'design_changes_count' => '0'],
+            'design_video' => ['work_type'=>'video_editing','time_spent_hours'=>'45 min','video_count' => '1', 'poster_count' => '2', 'carousel_count' => '1', 'design_changes_count' => '0'],
             'telecaller' => ['calls_count' => '10', 'connected_count' => '5', 'followups_count' => '3', 'leads_count' => '2'],
             'social_media' => ['social_platform' => 'Instagram', 'posts_count' => '2', 'reels_count' => '1', 'replies_count' => '6']
         };
         $work = array_merge(['action' => 'save_entry', 'client_id' => $clientId, 'task_title' => $code . ' daily task', 'task_status' => 'completed', 'remark' => 'Daily ' . $code, 'submit_mode' => 'submitted'], $metrics);
         expect($browser->post($dashboard, $work)['status'] === 303, 'Department work submission ' . $code);
     }
+    $designer=$browsers['design_video'];
+    $creativeForm=$designer->request('employee-daily-work.php')['body'];
+    expect(str_contains($creativeForm,'data-add-daily-task') && str_contains($creativeForm,'Video Editing') && str_contains($creativeForm,'Carousel'),'Creative daily work shows task types and Add task');
+    $creativeTasks=[
+        ['work_type'=>'poster','task_title'=>'Campaign poster','task_status'=>'completed','time_spent_hours'=>'45 min','remark'=>'Poster ready <today>','client_id'=>$clientId],
+        ['work_type'=>'video_editing','task_title'=>'Campaign video','task_status'=>'completed','time_spent_hours'=>'02:30','remark'=>'Video rendered','client_id'=>''],
+        ['work_type'=>'carousel','task_title'=>'Campaign carousel','task_status'=>'pending','time_spent_hours'=>'1.25','remark'=>'Awaiting copy','client_id'=>''],
+    ];
+    $creativePayload=['action'=>'save_tasks','tasks'=>$creativeTasks,'task_count'=>'3'];
+    expect($designer->post('employee-daily-work.php',$creativePayload)['status']===303,'Creative employee submits three tasks together');
+    foreach ($creativeTasks as $index=>$task) {
+        expect(scalar('SELECT work_type FROM daily_work_entries WHERE task_title=?',[$task['task_title']])===$task['work_type'],'Task type persists for '.$task['work_type']);
+        expect((int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE task_title=?',[$task['task_title']])===[45,150,75][$index],'Individual task duration persists');
+    }
+    $creativeSheet=(int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?',[$employeeIds['design_video'],date('Y-m-d')]);
+    expect(scalar('SELECT submission_status FROM daily_work_submissions WHERE id=?',[$creativeSheet])==='submitted','Multiple tasks submit the daily report');
+    $creativeHistory=$designer->request('employee-work-history.php')['body'];
+    expect(str_contains($creativeHistory,'Video Editing') && str_contains($creativeHistory,'2 hours 30 min') && str_contains($creativeHistory,'Poster ready &lt;today&gt;'),'History shows saved types, duration and safely escaped remarks');
+    $creativeList=$admin->request('manager-dailywork.php?all_dates=1&employee='.$employeeIds['design_video'])['body'];
+    expect(str_contains($creativeList,'href="manager-work-details.php?id='.$creativeSheet.'&amp;') && !str_contains($creativeList,'data-dialog="report-'),'Report View links to a separate page');
+    $creativeReport=$admin->request('manager-work-details.php?id='.$creativeSheet.'&all_dates=1&employee='.$employeeIds['design_video'])['body'];
+    expect(str_contains($creativeReport,'Campaign carousel') && str_contains($creativeReport,'<dt>Task type</dt><dd>Video Editing</dd>') && str_contains($creativeReport,'2 hours 30 min'),'Admin detail page includes every task type and duration');
+    expect(str_contains($creativeReport,'Poster ready &lt;today&gt;') && str_contains($creativeReport,'No client / internal work'),'Detail page escapes remarks and identifies internal work');
+    expect(str_contains($creativeReport,'all_dates=1&amp;department=0&amp;employee='.$employeeIds['design_video']),'Details Back link preserves all-dates and employee filters');
+    expect(str_contains($manager->request('manager-work-details.php?id='.$creativeSheet)['body'],'Campaign carousel'),'Manager can open report details');
+    expect($guest->request('manager-work-details.php?id='.$creativeSheet)['headers']['location']==='login.php','Report details require authentication');
+    foreach (['','0','-1','invalid','999999','1%27%20OR%201=1'] as $invalidId) expect($admin->request('manager-work-details.php?id='.$invalidId)['status']===404,'Invalid or missing report ID is rejected');
+    expect($admin->request('manager-work-details.php?id[]=1')['status']===404,'Array report ID is rejected');
+    expect(str_contains($creativeReport,'class="badge status-pending">Pending</span>'),'Pending creative task keeps the report pending');
+    $creativeExport=report_content($admin->request('download-work.php?employee='.$employeeIds['design_video']));
+    expect(str_contains($creativeExport,'Task type') && str_contains($creativeExport,'Video Editing') && str_contains($creativeExport,'Campaign carousel'),'Excel includes creative task types and titles');
+    $monthlyPath='manager-monthly-design-report.php?month='.date('Y-m');
+    $monthly=$admin->request($monthlyPath)['body'];
+    expect(str_contains($monthly,'Monthly design report') && str_contains($monthly,'Reels / Videos') && str_contains($monthly,'Campaign poster'),'Admin monthly report shows totals and date-wise tasks');
+    expect(str_contains($monthly,'data-monthly-employee="'.$employeeIds['design_video'].'"') && !str_contains($monthly,'data-monthly-employee="'.$employeeIds['website'].'"'),'Monthly report includes design employees only');
+    expect((bool)preg_match('/data-monthly-employee="'.$employeeIds['design_video'].'".*?<td>1<\/td><td>2<\/td><td>0<\/td>/s',$monthly),'Monthly totals count completed typed work and exclude pending carousel');
+    expect(str_contains($monthly,date('d-m-Y')) && str_contains($monthly,'Awaiting copy'),'Monthly details include dated pending work and remarks');
+    expect($manager->request($monthlyPath)['status']===200 && $designer->request($monthlyPath)['status']===403,'Only management can open monthly design report');
+    expect($admin->request('manager-monthly-design-report.php?month=2026-13')['status']===422 && $admin->request($monthlyPath.'&department='.$employeeIds['website'].'invalid')['status']===422,'Monthly report rejects invalid filters');
+    $monthlyExport=report_content($admin->request($monthlyPath.'&format=xlsx'));
+    expect(str_contains($monthlyExport,'Monthly total') && str_contains($monthlyExport,'Work detail') && str_contains($monthlyExport,'Campaign video'),'Monthly Excel includes summary and date-wise details');
+    $creativeEntry=(int)scalar("SELECT id FROM daily_work_entries WHERE task_title='Campaign video'");
+    $creativeEdit=$designer->request('employee-daily-work.php?edit_entry='.$creativeEntry)['body'];
+    expect(str_contains($creativeEdit,'value="video_editing" selected') && str_contains($creativeEdit,'value="2 hours 30 min"'),'Employee edit restores type and time');
+    $editCreative=['action'=>'save_entry','entry_id'=>$creativeEntry,'work_type'=>'poster','task_title'=>'Campaign video revised','task_status'=>'completed','time_spent_hours'=>'1 hour','remark'=>'Changed to poster','client_id'=>''];
+    expect($designer->post('employee-daily-work.php?edit_entry='.$creativeEntry,$editCreative)['status']===303,'Employee can edit a saved creative task');
+    expect(scalar('SELECT work_type FROM daily_work_entries WHERE id=?',[$creativeEntry])==='poster','Employee type edit persists');
+    expect(str_contains($admin->request('manager-review-work.php?id='.$creativeSheet)['body'],'name="work_type"'),'Management can edit task type');
+    expect($admin->post('manager-review-work.php?id='.$creativeSheet,array_replace($editCreative,['action'=>'edit_entry','work_type'=>'video_editing','task_title'=>'Campaign video','time_spent_hours'=>'02:30']))['status']===303,'Admin edits type, title and duration');
+    expect(scalar('SELECT work_type FROM daily_work_entries WHERE id=?',[$creativeEntry])==='video_editing' && (int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE id=?',[$creativeEntry])===150,'Admin creative edits persist');
+    $entryCount=(int)scalar('SELECT COUNT(*) FROM daily_work_entries');
+    $notificationCount=(int)scalar('SELECT COUNT(*) FROM notifications');
+    foreach (['bad type'=>['work_type'=>'invalid'],'missing title'=>['task_title'=>''],'bad time'=>['time_spent_hours'=>'24:01'],'missing time'=>['time_spent_hours'=>''],'invalid client'=>['client_id'=>'999999'],'invalid status'=>['task_status'=>'invalid']] as $label=>$invalid) {
+        $badTasks=$creativeTasks;
+        $badTasks[1]=array_replace($badTasks[1],$invalid);
+        $response=$designer->post('employee-daily-work.php',array_replace($creativePayload,['tasks'=>$badTasks]));
+        expect($response['status']===200 && str_contains($response['body'],'Task 2:'),'Batch rejects '.$label.' with task number');
+        expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries')===$entryCount && (int)scalar('SELECT COUNT(*) FROM notifications')===$notificationCount,'Invalid batch saves no tasks or notifications');
+        expect(str_contains($response['body'],'value="Campaign poster"') && str_contains($response['body'],'Awaiting copy'),'Invalid batch preserves entered task details');
+    }
+    expect(str_contains($designer->post('employee-daily-work.php',array_replace($creativePayload,['task_count'=>'2']))['body'],'incomplete'),'Truncated task batch is rejected');
+    expect(str_contains($browsers['seo']->post('employee-daily-work.php',$creativePayload)['body'],'Graphic Designer and Video Editing'),'Other departments cannot use the creative batch action');
+    expect($browsers['seo']->request('employee-daily-work.php?edit_entry='.$creativeEntry)['status']===404,'Other employees cannot open creative entry edits');
     $tele = $browsers['telecaller'];
     $tele->request($dashboards['telecaller']);
     expect($tele->post($dashboards['telecaller'], ['action' => 'save_entry', 'client_id' => $clientId, 'task_title' => 'Bad counts', 'task_status' => 'pending', 'remark' => '', 'calls_count' => '1', 'connected_count' => '2', 'followups_count' => '0', 'leads_count' => '0'])['status'] === 200, 'Invalid telecaller quantities rejected');
@@ -357,16 +450,18 @@ try {
     $website->request($dashboards['website'] . '?date=' . $yesterday);
     expect($website->post($dashboards['website'] . '?date=' . $yesterday, ['action' => 'save_entry', 'client_id' => $clientId, 'task_title' => 'Yesterday page', 'task_status' => 'pending', 'remark' => 'Historic work', 'website_new_count' => '1', 'website_changes_count' => '0', 'submit_mode' => 'draft'])['status'] === 303, 'Draft save');
     expect(scalar('SELECT submission_status FROM daily_work_submissions WHERE employee_id=? AND work_date=?', [$employeeIds['website'], $yesterday]) === 'draft', 'Draft status persists');
+    $draftSheetId=(int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?',[$employeeIds['website'],$yesterday]);
+    expect($admin->request('manager-work-details.php?id='.$draftSheetId)['status']===404,'Draft report is unavailable through direct detail URL');
     $website->request($dashboards['website'] . '?date=' . $yesterday);
     expect($website->post($dashboards['website'] . '?date=' . $yesterday, ['action' => 'submit_day'])['status'] === 303, 'Submit entire day');
     $manager->request('manager-dailywork.php');
     $all = $manager->request('manager-dailywork.php')['body'];
-    expect(str_contains($all, 'website daily task') && str_contains($all, 'seo daily task'), 'All submitted departments appear in report details');
+    expect(str_contains($all, '<td>Employee website</td>') && str_contains($all, '<td>Employee seo</td>'), 'All submitted departments appear in report list');
     $completedReport = $admin->request('manager-dailywork.php?employee=' . $employeeIds['website'])['body'];
     expect(str_contains($completedReport, 'class="badge status-completed">Completed</span>'), 'Report Review shows Completed when all submitted tasks are complete');
     expect(scalar('SELECT review_status FROM daily_work_submissions WHERE employee_id=? AND work_date=?', [$employeeIds['website'], date('Y-m-d')]) === 'pending', 'Work completion displays independently of saved manager feedback');
     $filtered = $manager->request('manager-dailywork.php?department=' . $websiteDepartment)['body'];
-    expect(str_contains($filtered, 'website daily task') && !str_contains($filtered, 'seo daily task'), 'Department report filtering');
+    expect(str_contains($filtered, '<td>Employee website</td>') && !str_contains($filtered, '<td>Employee seo</td>'), 'Department report filtering');
     expect(!str_contains($filtered, '>Employee seo</option>'), 'Category dropdown lists matching employees');
     expect($manager->request('manager-dailywork.php?from_date=invalid')['status'] === 422, 'Invalid report date rejected');
     $excel = $manager->request('download-work.php?from_date=' . $yesterday . '&to_date=' . date('Y-m-d') . '&department=' . $websiteDepartment);
@@ -502,8 +597,8 @@ try {
     $website->request('employee-daily-work.php');
     expect($website->post('employee-daily-work.php', ['action' => 'save_entry', 'client_id' => '', 'task_title' => 'Internal planning without client', 'task_status' => 'completed', 'remark' => 'Team planning', 'website_new_count' => '', 'website_changes_count' => '', 'submit_mode' => 'submitted'])['status'] === 303, 'Daily work saves with blank optional client and metrics');
     expect(str_contains($website->request('employee-work-history.php')['body'], 'Internal planning without client'), 'Employee sees submitted internal work');
-    expect(str_contains($manager->request('manager-dailywork.php')['body'], 'Internal planning without client'), 'Manager sees internal work without client');
-    expect(str_contains($admin->request('manager-dailywork.php')['body'], 'Internal planning without client'), 'Admin sees same internal work report');
+    expect(str_contains($manager->request('manager-work-details.php?id='.$sheetId)['body'], 'Internal planning without client'), 'Manager sees internal work without client');
+    expect(str_contains($admin->request('manager-work-details.php?id='.$sheetId)['body'], 'Internal planning without client'), 'Admin sees same internal work report');
     expect(!str_contains($website->request('employee-daily-work.php')['body'], 'id="assigned-work"'), 'Daily work screen excludes assignments');
     expect(!str_contains($website->request('employee-assigned-work.php')['body'], 'name="website_new_count"'), 'Assignment form only requests status and remark');
     expect(str_contains($manager->request('manager-assigned-status.php')['body'], 'Employees completed all work'), 'Assignment progress summary available');
@@ -720,6 +815,9 @@ try {
     expect(str_contains($editClient,'View saved login credentials') && str_contains($editClient,'View saved password') && str_contains($editClient,'Social-Test-Secret'),'Client edit form exposes saved credentials separately from replacement inputs');
     $clientBrowser = new Browser($base);
     $clientBrowser->login('client.test', $password, 'client-dashboard.php');
+    $clientBrowser->forgetCookie('bhavi_portal');
+    expect($clientBrowser->request('client-dashboard.php')['status']===200,'Client login survives loss of PHP session');
+    expect($clientBrowser->request('manager-monthly-design-report.php')['status']===403,'Clients cannot access employee monthly work reports');
     expect($clientBrowser->request('client-dashboard.php')['status'] === 200, 'Client dashboard opens own profile');
     expect($clientBrowser->request('client-profile.php?id=' . $clientId)['status'] === 403, 'Client cannot open another profile');
     expect($clientBrowser->request('admin-employees.php')['status'] === 403, 'Client cannot open employee directory');
@@ -819,6 +917,7 @@ try {
     $historicSheet = (int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?', [$employeeIds['website'], $yesterday]);
     expect($manager->post('manager-dailywork.php', ['action' => 'delete_submission', 'id' => $historicSheet])['status'] === 303, 'Manager deletes work report');
     expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries WHERE submission_id=?', [$historicSheet]) === 0, 'Deleted report rows removed');
+    expect($admin->request('manager-work-details.php?id='.$historicSheet)['status']===404,'Deleted report is unavailable through its old detail URL');
     expect($manager->request('manager-assign-work.php?edit=' . $assignmentId)['status'] === 403, 'Manager cannot edit assignments');
     $manager->request('manager-assign-work.php');
     expect($manager->post('manager-assign-work.php', ['action' => 'delete_assignment', 'id' => $assignmentId])['status'] === 403, 'Manager cannot delete assignments');
@@ -835,7 +934,9 @@ try {
     expect($website->request('client-profile.php?id=' . $clientId)['status'] === 404 && $admin->request('client-profile.php?id=' . $clientId)['status'] === 404, 'Deleted client profile cannot be opened');
     $admin->request('admin-employees.php');
     expect($admin->post('admin-employees.php', ['action' => 'delete_employee', 'id' => $employeeIds['social_media']])['status'] === 303, 'Employee account deletion');
-    expect(!str_contains($manager->request('manager-dailywork.php?all_dates=1')['body'],'social_media daily task'),'Deleted employee work hidden from reports');
+    expect(!str_contains($manager->request('manager-dailywork.php?all_dates=1')['body'],'<td>Employee social_media</td>'),'Deleted employee work hidden from reports');
+    $deletedEmployeeSheet=(int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? LIMIT 1',[$employeeIds['social_media']]);
+    expect($admin->request('manager-work-details.php?id='.$deletedEmployeeSheet)['status']===404,'Deleted employee report cannot be opened directly');
     expect(!str_contains(report_content($admin->request('download-work.php?all_dates=1')),'social_media daily task'),'Deleted employee work excluded from exports');
     expect($browsers['social_media']->request($dashboards['social_media'])['headers']['location'] === 'login.php', 'Deleted employee session loses access');
     expect(str_contains($manager->request('manager-dashboard.php')['body'], '<strong>4</strong>'), 'Employee dashboard total updates after deletion');
@@ -886,7 +987,49 @@ try {
     $admin->request('admin-add-employee.php');
     expect($admin->post('admin-add-employee.php',$photoEmployee)['status']===303,'Previously deleted legacy employee identifiers can also be reused');
     expect((int)scalar("SELECT id FROM users WHERE username='salary.date.test' AND deleted_at IS NULL")!==$recreatedId,'Legacy deletion creates a new account without restoring old access');
-    echo "PASS: $checks integration checks (authentication, roles, departments, CRUD, assignments, submissions, reports, Excel, documents, department changes, notifications, reviews, leaves and logout).\n";
+    foreach (['Graphic Designer','Video Editing'] as $index=>$departmentName) {
+        $admin->request('departments.php');
+        expect($admin->post('departments.php',['name'=>$departmentName])['status']===303,'Create custom '.$departmentName.' department');
+        $departmentId=(int)scalar('SELECT id FROM departments WHERE name=?',[$departmentName]);
+        $admin->request('admin-add-employee.php');
+        expect($admin->post('admin-add-employee.php',['employee_name'=>'Creative custom '.$index,'email'=>'creative.'.$index.'@example.test','username'=>'creative.'.$index,'temporary_password'=>$password,'account_status'=>'active','department_id'=>$departmentId,'designation'=>$departmentName,'joining_date'=>date('Y-m-d')])['status']===303,'Create employee in custom creative department');
+        $customBrowser=new Browser($base);
+        $customBrowser->login('creative.'.$index,$password,'employee-dashboard.php');
+        expect(str_contains($customBrowser->request('employee-daily-work.php')['body'],'data-add-daily-task'),'Custom '.$departmentName.' gets the creative task form');
+        $customTasks=$creativeTasks;
+        foreach ($customTasks as &$customTask) { $customTask['task_title'].=' custom '.$index; $customTask['client_id']=''; }
+        unset($customTask);
+        expect($customBrowser->post('employee-daily-work.php',['action'=>'save_tasks','tasks'=>$customTasks,'task_count'=>'3'])['status']===303,'Custom creative department saves multiple tasks');
+        expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries e JOIN daily_work_submissions s ON s.id=e.submission_id WHERE s.department_id=?',[$departmentId])===3,'Custom creative tasks are stored in the database');
+        $customSheet=(int)scalar('SELECT id FROM daily_work_submissions WHERE department_id=?',[$departmentId]);
+        expect(str_contains($admin->request('manager-dailywork.php?department='.$departmentId)['body'],'manager-work-details.php?id='.$customSheet),'Custom creative report links to its details');
+        expect(str_contains($admin->request('manager-work-details.php?id='.$customSheet)['body'],'<dt>Task type</dt><dd>Video Editing</dd>'),'Admin sees custom creative department task types');
+        $customMonthly=$admin->request('manager-monthly-design-report.php?month='.date('Y-m').'&department='.$departmentId)['body'];
+        expect(str_contains($customMonthly,'Campaign poster custom '.$index) && !str_contains($customMonthly,'Campaign poster custom '.(1-$index)),'Monthly report supports custom creative departments and department filters');
+    }
+    $legacyOrder=(int)scalar('SELECT COALESCE(MAX(row_order),0)+1 FROM daily_work_entries WHERE submission_id=?',[$customSheet]);
+    $pdo->prepare("INSERT INTO daily_work_entries (submission_id,row_order,task_title,task_status,poster_count,video_count,carousel_count) VALUES (?,?,'Legacy creative quantities','completed',2,3,4)")->execute([$customSheet,$legacyOrder]);
+    $legacyMonthly=$admin->request('manager-monthly-design-report.php?month='.date('Y-m').'&department='.$departmentId)['body'];
+    expect((bool)preg_match('/data-monthly-employee="\d+".*?<td>3<\/td><td>4<\/td><td>4<\/td>/s',$legacyMonthly),'Monthly report counts saved legacy quantities without a task type');
+    $earlierMonth=date('Y-m-d',strtotime('first day of last month'));
+    $earlierTask=array_replace($creativeTasks[0],['task_title'=>'Outside monthly date range','client_id'=>'']);
+    expect($customBrowser->post('employee-daily-work.php?date='.$earlierMonth,['action'=>'save_tasks','tasks'=>[$earlierTask],'task_count'=>'1'])['status']===303,'Save a previous month creative task');
+    $currentMonthly=$admin->request('manager-monthly-design-report.php?month='.date('Y-m').'&employee='.scalar('SELECT id FROM users WHERE username=?',['creative.1']))['body'];
+    expect(!str_contains($currentMonthly,'Outside monthly date range'),'Monthly report excludes the previous month');
+    expect(str_contains($admin->request('manager-monthly-design-report.php?month='.substr($earlierMonth,0,7))['body'],'Outside monthly date range'),'Changing the month shows its dated work');
+    $persistentEmployee=new Browser($base);
+    $persistentEmployee->login('design_video.test',$password,'design-employee-dashboard.php');
+    $replayLogin=new Browser($base);
+    $persistentEmployee->copyStateTo($replayLogin);
+    $persistentEmployee->forgetCookie('bhavi_portal');
+    expect($persistentEmployee->post('logout.php',[])['status']===303,'Explicit Sign out succeeds even after loss of PHP session');
+    expect($replayLogin->request('design-employee-dashboard.php')['headers']['location']==='login.php','Replaying cookies from a signed-out browser cannot restore access');
+    $invalidRemember=new Browser($base);
+    $admin->copyStateTo($invalidRemember);
+    $invalidRemember->forgetCookie('bhavi_portal');
+    $pdo->prepare('DELETE FROM portal_login_tokens WHERE selector=?')->execute([explode('.',(string)$invalidRemember->cookieValue('bhavi_remember'))[0]]);
+    expect($invalidRemember->request('admin-dashboard.php')['headers']['location']==='login.php','Revoked persistent token cannot restore administrator access');
+    echo "PASS: $checks integration checks (authentication, roles, departments, CRUD, assignments, submissions, reports, Excel, documents, creative multi-task work, department changes, notifications, reviews, leaves and logout).\n";
 } catch (Throwable $e) {
     fwrite(STDERR, 'FAIL: ' . $e->getMessage() . "\n");
     if (isset($log) && is_file($log)) fwrite(STDERR, substr(file_get_contents($log), -3500));

@@ -71,6 +71,7 @@ try {
     $passwordHash = password_hash('Legacy-fixture-password', PASSWORD_DEFAULT);
     $pdo->prepare("INSERT INTO users (full_name,username,password_hash,role) VALUES ('Existing account','legacy.fixture',?,'admin')")->execute([$passwordHash]);
     foreach (['v_employee_totals', 'v_client_totals', 'v_employee_directory', 'v_daily_work_export'] as $view) $pdo->exec('DROP VIEW ' . $view);
+    $pdo->exec('ALTER TABLE daily_work_entries DROP COLUMN work_type');
 
     // Mimic hosting: only table permissions on this one database, no views
     // and no server-wide database grants.
@@ -90,6 +91,9 @@ try {
     portal_install($restricted, $database);
     hosting_expect((int) $restricted->query('SELECT COUNT(*) FROM users')->fetchColumn() === 1 && (int) $restricted->query('SELECT COUNT(*) FROM departments')->fetchColumn() === 5, 'Repeat upgrade preserves records and seed departments');
     hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM work_assignments LIKE 'time_spent_minutes'")->fetch(), 'Latest work time column exists');
+    hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM daily_work_entries LIKE 'work_type'")->fetch(), 'Creative task type column exists after hosting upgrade');
+    hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM employee_attendance_sessions LIKE 'active_attendance_date'")->fetch(), 'Attendance supports an unfinished record on each day');
+    hosting_expect((int) $restricted->query('SELECT COUNT(*) FROM portal_login_tokens')->fetchColumn()===0, 'Persistent login token table is ready');
     foreach (['employee_profiles','employee_salary_history'] as $table) {
         $benefitColumn=$restricted->query("SHOW COLUMNS FROM $table LIKE 'other_benefit_amount'")->fetch();
         hosting_expect($benefitColumn && (float)$benefitColumn['Default']===0.0, 'Hosted benefits amount column starts at zero: '.$table);

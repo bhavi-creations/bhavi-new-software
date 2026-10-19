@@ -1,6 +1,52 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
 
+function creative_work_department(string $code, string $name=''): bool
+{
+    foreach ([$code,$name] as $value) {
+        $normalized=trim(preg_replace('/[^a-z0-9]+/','_',strtolower($value)),'_');
+        if (in_array($normalized,['design_video','design_and_video'],true) || preg_match('/(?:^|_)(?:graphic_design(?:er|ing)?|video_edit(?:ing|or))(?:_|$)/',$normalized)) return true;
+    }
+    return false;
+}
+function creative_work_types(): array
+{
+    return ['poster'=>'Poster','video_editing'=>'Video Editing','carousel'=>'Carousel'];
+}
+function work_type_label(?string $type): string
+{
+    return creative_work_types()[$type??'']??'';
+}
+function work_type_input(array $source, bool $required=true): ?string
+{
+    $type=$source['work_type']??'';
+    if ($type==='' && !$required) return null;
+    if (!is_string($type) || !array_key_exists($type,creative_work_types())) throw new InvalidArgumentException('Choose Poster, Video Editing or Carousel.');
+    return $type;
+}
+function render_work_type(array $values=[], string $suffix='', bool $required=true): void
+{
+    ?><div class="field"><label for="work-type<?= h($suffix) ?>">Task type</label><select id="work-type<?= h($suffix) ?>" name="work_type" <?= $required?'required':'' ?>><option value="">Choose task type</option><?php foreach (creative_work_types() as $value=>$label): ?><option value="<?= h($value) ?>" <?= ($values['work_type']??'')===$value?'selected':'' ?>><?= h($label) ?></option><?php endforeach; ?></select></div><?php
+}
+function creative_task_data(array $task): array
+{
+    $common=['work_type'=>work_type_input($task)];
+    foreach (['task_title'=>255,'remark'=>5000] as $name=>$max) {
+        $value=$task[$name]??'';
+        if (!is_string($value) || ($name==='task_title' && trim($value)==='') || mb_strlen($value)>$max) throw new InvalidArgumentException('Enter a valid '.str_replace('_',' ',$name).' (up to '.$max.' characters).');
+        $common[$name]=trim($value);
+    }
+    $status=$task['task_status']??'';
+    if (!in_array($status,['pending','completed'],true)) throw new InvalidArgumentException('Choose Pending or Completed.');
+    $common['task_status']=$status;
+    $duration=$task['time_spent_hours']??null;
+    if (!is_string($duration) || trim($duration)==='') throw new InvalidArgumentException('Enter the time spent on each task, for example 45 min or 02:30.');
+    $common['time_spent_minutes']=parse_work_duration($duration);
+    $client=$task['client_id']??'';
+    $common['client_id']=$client===''?null:positive_id($client);
+    if ($common['client_id']!==null && !one('SELECT id FROM clients WHERE id=? AND is_active=1 AND deleted_at IS NULL',[$common['client_id']])) throw new InvalidArgumentException('Choose an active client.');
+    return $common;
+}
 function metric_definitions(string $department): array
 {
     return [
@@ -36,7 +82,7 @@ function render_metrics(string $department, array $values=[], string $suffix='')
 function work_sheet(array $employee,string $date): array
 {
     query('INSERT INTO daily_work_submissions (employee_id,department_id,work_date) VALUES (?,?,?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)',[$employee['id'],$employee['department_id'],$date]);
-    return one('SELECT s.*,d.code AS department_code FROM daily_work_submissions s JOIN departments d ON d.id=s.department_id WHERE s.employee_id=? AND s.work_date=? FOR UPDATE',[$employee['id'],$date]);
+    return one('SELECT s.*,d.code AS department_code,d.name AS department_name FROM daily_work_submissions s JOIN departments d ON d.id=s.department_id WHERE s.employee_id=? AND s.work_date=? FOR UPDATE',[$employee['id'],$date]);
 }
 function submit_sheet(array $sheet, bool $notify=true): void
 {
@@ -98,6 +144,7 @@ function format_work_duration($minutes): string
 function work_details(array $entry,string $department): array
 {
     $fields=['Task'=>$entry['task_title']?:($entry['website_page_task']?:($entry['seo_task']?:'Work entry')),'Status'=>$entry['task_status']];
+    if (!empty($entry['work_type'])) $fields=['Task type'=>work_type_label($entry['work_type'])]+$fields;
     if (array_key_exists('time_spent_minutes',$entry)) $fields['Time spent']=$entry['time_spent_minutes']===null?'—':format_work_duration($entry['time_spent_minutes']);
     $fields['Remark']=$entry['remark'];
     foreach (metric_definitions($department) as $name=>[$label]) $fields[$label]=$entry[$name];

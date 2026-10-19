@@ -1816,3 +1816,15 @@ img[src^="employee-photo.php"] {
 .client-report-calendar .selected-report-day { background: #e9f1ff; box-shadow: inset 0 0 0 2px #4773ce; }
 
 .calendar-work-detail{padding:18px 0;border-bottom:1px solid var(--border)}.calendar-work-detail:last-child{border-bottom:0}.calendar-work-detail h3{overflow-wrap:anywhere}.calendar-work-detail .details-list dd{white-space:pre-wrap}
+.daily-task-card{min-width:0;margin:20px 0;padding:20px;border:1px solid var(--border);border-radius:12px;background:#fafbfe}
+.daily-task-card legend{padding:0 8px;font-weight:700;color:#23345c}
+.daily-task-card .form-actions,.daily-work-actions{margin-top:20px;flex-wrap:wrap}
+.daily-task-card button:disabled{opacity:.5;cursor:default}
+.work-type-label{display:block;color:#56647b;font-size:12px;margin-bottom:4px}
+@media(max-width:700px){.daily-task-card{padding:14px}.daily-work-actions>*{flex:1;text-align:center}}
+.work-report-actions{margin-bottom:22px;flex-wrap:wrap}
+.work-report-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:18px 24px;margin:18px 0 0}
+.work-report-meta>div{min-width:0}.work-report-meta dt{color:var(--muted);font-size:13px}.work-report-meta dd{margin:5px 0 0;font-weight:600;overflow-wrap:anywhere}
+.work-report-entry h2{overflow-wrap:anywhere;margin-top:14px}.work-report-entry h3{font-size:15px;margin:22px 0 8px}
+.work-report-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0}.stat-card .work-report-duration{font-size:23px}
+@media(max-width:700px){.work-report-actions>*{flex:1;justify-content:center;text-align:center}.work-report-meta{grid-template-columns:1fr}}
