@@ -12,7 +12,7 @@ $user = one("SELECT u.*, d.code AS department_code FROM users u LEFT JOIN employ
 $valid = password_verify($password, $user['password_hash'] ?? '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.');
 if (!$user || !$valid || ($user['role']==='client' && !one('SELECT id FROM clients WHERE user_id=? AND deleted_at IS NULL AND is_active=1',[$user['id']])) || ($user['role'] === 'employee' && !$user['department_code'])) {
     query('INSERT INTO login_attempts (attempt_key) VALUES (?)', [$key]);
-    $_SESSION['login_error'] = 'Incorrect username or password. Please try again.';
+    $_SESSION['login_error'] = 'Incorrect username or password. Enter your username exactly as assigned, including spaces.';
     redirect('login.php');
 }
 query('DELETE FROM login_attempts WHERE attempt_key=? OR attempted_at < DATE_SUB(NOW(),INTERVAL 1 DAY)', [$key]);

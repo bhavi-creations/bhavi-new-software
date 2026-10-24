@@ -41,10 +41,11 @@ page_start('Client profile',$viewer['role']==='client'?'client-details.php':'add
         <section class="panel">
             <h2>Monthly work</h2>
             <div class="money-summary">
-                <?php foreach (['monthly_reels'=>'Reels','monthly_posters'=>'Posters','monthly_carousels'=>'Carousels'] as $key=>$label): ?>
+                <?php foreach (['monthly_reels'=>'Reels','monthly_posters'=>'Posters','monthly_carousels'=>'Carousels','monthly_blogs'=>'Blogs'] as $key=>$label): ?>
                     <div class="money-card"><span><?= h($label) ?></span><strong><?= h($client[$key]) ?></strong></div>
                 <?php endforeach; ?>
             </div>
+            <p><strong>Remark:</strong> <?= nl2br(h($client['monthly_work_remark']?:'No remark')) ?></p>
         </section>
         <section class="panel">
             <h2>Website &amp; social links</h2>

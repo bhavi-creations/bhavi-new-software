@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = text_input('email',254,false);
         $username = text_input('username',100);
         if ($email !== '' && !filter_var($email,FILTER_VALIDATE_EMAIL)) { throw new InvalidArgumentException('Enter a valid email address.'); }
-        if (!preg_match('/^[A-Za-z0-9._-]{3,100}$/D',$username)) { throw new InvalidArgumentException('Use at least 3 letters, numbers, dots, underscores or hyphens for the username.'); }
+        if (!preg_match('/^[A-Za-z0-9._ -]{3,100}$/D',$username)) { throw new InvalidArgumentException('Use 3-100 letters, numbers, spaces, dots, underscores or hyphens for the username.'); }
         $role = 'employee';
         $roleTitle=isset($_POST['role_title'])?text_input('role_title',150,false):'Employee';
         $saveStage='validate documents';
@@ -131,7 +131,7 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
 <details class="simple-details"><summary>How are PF & ESI calculated?</summary><p>Both use half of the monthly salary. PF: employee 12%, company 12%. ESI: employee 0.75%, company 3.25%.</p><p>Only the employee share is deducted from salary. The company pays its share separately. An unticked benefit has no deduction.</p><p>A new salary start date automatically ends the previous ongoing salary on the day before.</p></details>
 </section>
 <section class="panel form-section"><h2><span class="section-number">4</span> Login details</h2><div class="fields">
-<div class="field"><label for="username">Username *</label><input id="username" name="username" value="<?= h($value('username')) ?>" maxlength="100" pattern="[A-Za-z0-9._\-]{3,100}" autocomplete="off" required></div>
+<div class="field"><label for="username">Username *</label><input id="username" name="username" value="<?= h($value('username')) ?>" maxlength="100" pattern="[A-Za-z0-9._\- ]{3,100}" autocomplete="off" aria-describedby="employee-username-help" required><p class="help" id="employee-username-help">Spaces between words are allowed. Use the same spaces when signing in.</p></div>
 <div class="field"><label for="temporary_password"><?= $record ? 'New password (optional)' : 'Password *' ?></label><input type="password" id="temporary_password" name="temporary_password" minlength="8" maxlength="72" autocomplete="new-password" <?= !$record?'required':'' ?>><p class="help"><?= $record?'Leave empty to keep the current password.':'Use at least 8 characters.' ?></p></div>
 </div></section>
 <section class="panel form-section"><h2><span class="section-number">5</span> Documents</h2><div class="field"><label for="documents">Upload employee documents (optional)</label><input id="documents" name="documents[]" type="file" accept="image/*,application/pdf,.pdf" multiple><p class="help">Images or PDFs. Maximum 100 MB per file; up to 20 files. Saved documents will stay.</p></div></section>

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 15;
+const PORTAL_SCHEMA_VERSION = 16;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -225,8 +225,6 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('work_assignments','time_spent_minutes','INT UNSIGNED NOT NULL DEFAULT 0');
         $addColumn('daily_work_entries','time_spent_minutes','INT UNSIGNED NULL');
         $addColumn('daily_work_entries','work_type',"ENUM('poster','video_editing','carousel') NULL");
-        $pdo->exec("ALTER TABLE daily_work_entries MODIFY work_type ENUM('poster','video_editing','carousel','reel') NULL");
-        $addColumn('daily_work_entries','social_content_count','INT UNSIGNED NULL');
         if (!$hasAssignmentMinutes) $pdo->exec('UPDATE work_assignments SET time_spent_minutes=ROUND(time_spent_hours*60)');
         if (!$hasEntryMinutes) $pdo->exec('UPDATE daily_work_entries SET time_spent_minutes=ROUND(time_spent_hours*60) WHERE time_spent_hours IS NOT NULL');
         portal_install_view($pdo, "CREATE OR REPLACE VIEW v_employee_totals AS SELECT COUNT(*) AS total_employees, COALESCE(SUM(account_status='active'),0) AS active_employees, COALESCE(SUM(account_status='inactive'),0) AS inactive_employees FROM users WHERE role='employee' AND deleted_at IS NULL");
@@ -273,6 +271,9 @@ function portal_install(PDO $pdo, string $database): void
         if (!$pdo->query("SHOW INDEX FROM employee_attendance_sessions WHERE Key_name='uq_attendance_open_day'")->fetch()) $pdo->exec('ALTER TABLE employee_attendance_sessions ADD UNIQUE KEY uq_attendance_open_day (employee_id,active_attendance_date)');
         if ($pdo->query("SHOW INDEX FROM employee_attendance_sessions WHERE Key_name='uq_active_employee_session'")->fetch()) $pdo->exec('ALTER TABLE employee_attendance_sessions DROP INDEX uq_active_employee_session');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (15)');
+        $addColumn('clients','monthly_blogs','INT UNSIGNED NOT NULL DEFAULT 0');
+        $addColumn('clients','monthly_work_remark','TEXT NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (16)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);
