@@ -15,7 +15,7 @@ function creative_work_types(): array
 }
 function work_type_label(?string $type): string
 {
-    return creative_work_types()[$type??'']??'';
+    return (creative_work_types()+['reel'=>'Reel'])[$type??'']??'';
 }
 function work_type_input(array $source, bool $required=true): ?string
 {
@@ -46,6 +46,31 @@ function creative_task_data(array $task): array
     $common['client_id']=$client===''?null:positive_id($client);
     if ($common['client_id']!==null && !one('SELECT id FROM clients WHERE id=? AND is_active=1 AND deleted_at IS NULL',[$common['client_id']])) throw new InvalidArgumentException('Choose an active client.');
     return $common;
+}
+function social_media_task_data(array $task): array
+{
+    $type=$task['work_type']??'';
+    $labels=['poster'=>'Poster','reel'=>'Reel','carousel'=>'Carousel'];
+    if (!is_string($type) || !isset($labels[$type])) throw new InvalidArgumentException('Choose Poster, Reel or Carousel.');
+    $count=$task['item_count']??'';
+    if (!is_string($count) || !preg_match('/^[1-9]\d{0,5}$/D',$count)) throw new InvalidArgumentException('Enter a quantity between 1 and 999999.');
+    $client=positive_id($task['client_id']??null);
+    $clientRow=one('SELECT id FROM clients WHERE id=? AND is_active=1 AND deleted_at IS NULL',[$client]);
+    if (!$clientRow) throw new InvalidArgumentException('Choose an active client.');
+    $platforms=$task['platforms']??[];
+    if (!is_array($platforms) || !$platforms) throw new InvalidArgumentException('Select at least one social media platform for this client.');
+    $available=rows('SELECT id,platform_name FROM client_social_links WHERE client_id=? ORDER BY id',[$client]);
+    $availableById=[]; foreach($available as $link) $availableById[(int)$link['id']]=$link;
+    $selected=[];
+    foreach ($platforms as $platformId) {
+        $id=filter_var($platformId,FILTER_VALIDATE_INT);
+        if (!$id || !isset($availableById[(int)$id])) throw new InvalidArgumentException('Choose social platforms saved for this client.');
+        $selected[]=$availableById[(int)$id]['platform_name'];
+    }
+    $selected=array_values(array_unique($selected));
+    $remark=$task['remark']??'';
+    if (!is_string($remark) || mb_strlen($remark)>5000) throw new InvalidArgumentException('Remark must be up to 5000 characters.');
+    return ['client_id'=>$client,'work_type'=>$type,'item_count'=>(int)$count,'social_platform'=>implode(', ',$selected),'remark'=>trim($remark),'task_title'=>$labels[$type].' · '.$count,'task_status'=>'completed','platforms'=>$selected];
 }
 function metric_definitions(string $department): array
 {

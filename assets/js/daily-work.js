@@ -30,5 +30,26 @@
       next.querySelector('select').focus();
     }
   });
+  if (form.hasAttribute('data-social-work-form')) {
+    const accounts = window.socialClientPlatforms || {};
+    form.addEventListener('change', event => {
+      const select = event.target.closest('[data-social-client]');
+      if (!select) return;
+      const task = select.closest('[data-daily-task]');
+      const box = task.querySelector('[data-social-platforms]');
+      box.querySelectorAll('label').forEach(label => label.remove());
+      const links = accounts[select.value] || [];
+      links.forEach(link => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = select.name.replace('[client_id]', '[platforms][]');
+        checkbox.value = link.id;
+        label.append(checkbox, document.createTextNode(link.platform_name));
+        box.insertBefore(label, box.querySelector('[data-social-empty]'));
+      });
+      box.querySelector('[data-social-empty]').textContent = links.length ? '' : 'No social accounts are saved for this client.';
+    });
+  }
   refresh();
 })();

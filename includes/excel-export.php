@@ -23,10 +23,19 @@ function download_csv(array $headers, iterable $records, string $filename): void
 }
 
 // Minimal XLSX workbook: inline strings preserve employee-entered text as text.
-function download_excel(array $headers, iterable $records, string $filename): void
+function download_excel(array $headers, iterable $records, string $filename, array $options=[]): void
 {
     if (!class_exists('ZipArchive')) {
-        download_csv($headers,$records,$filename);
+        $csvHeaders=$headers;
+        $csvRecords=$records;
+        if (isset($options['grouped_headers']) && is_array($options['grouped_headers'])) {
+            $csvHeaders=$options['grouped_headers'];
+            $csvRecords=(static function() use($options,$records): Generator {
+                yield $options['grouped_headers'];
+                yield from $records;
+            })();
+        }
+        download_csv($csvHeaders,$csvRecords,$filename);
         return;
     }
     $escape=static fn($value)=>htmlspecialchars(preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u','',(string)($value??'')),ENT_XML1|ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
@@ -41,8 +50,20 @@ function download_excel(array $headers, iterable $records, string $filename): vo
         }
         fwrite($sheet,'</row>');
     };
-    $writeRow($headers); foreach ($records as $record) $writeRow($record);
-    fwrite($sheet,'</sheetData></worksheet>'); rewind($sheet);
+    $groupedHeaders=$options['grouped_headers']??null;
+    if (is_array($groupedHeaders)) {
+        $writeRow($groupedHeaders);
+        $writeRow($headers);
+    } else {
+        $writeRow($headers);
+    }
+    foreach ($records as $record) $writeRow($record);
+    fwrite($sheet,'</sheetData>');
+    if (is_array($groupedHeaders)) {
+        $merges=$options['merge_ranges']??[];
+        if ($merges) fwrite($sheet,'<mergeCells count="'.count($merges).'">'.implode('',array_map(static fn($range)=>'<mergeCell ref="'.htmlspecialchars($range,ENT_XML1|ENT_QUOTES,'UTF-8').'"/>',$merges)).'</mergeCells>');
+    }
+    fwrite($sheet,'</worksheet>'); rewind($sheet);
     $path=tempnam(sys_get_temp_dir(),'bhavi_excel_');
     try {
         $zip=new ZipArchive();

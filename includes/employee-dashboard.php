@@ -27,9 +27,28 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         } elseif ($action==='save_entry') {
             $title=text_input('task_title',255); $client=empty($_POST['client_id'])?null:positive_id($_POST['client_id']);
             if ($client!==null && !one('SELECT id FROM clients WHERE id=? AND is_active=1 AND deleted_at IS NULL',[$client])) throw new InvalidArgumentException('Choose an active client.');
-        } elseif (!in_array($action,['submit_day','save_tasks'],true)) throw new InvalidArgumentException('Invalid action.');
+        } elseif (!in_array($action,['submit_day','save_tasks','save_social_tasks'],true)) throw new InvalidArgumentException('Invalid action.');
         $sheet=work_sheet($user,$date);
-        if ($action==='save_tasks') {
+        if ($action==='save_social_tasks') {
+            if ($sheet['department_code']!=='social_media') throw new InvalidArgumentException('This task form is only for Social Media employees.');
+            $tasks=$_POST['tasks']??null;
+            if (!is_array($tasks) || !$tasks) throw new InvalidArgumentException('Add at least one client task before submitting.');
+            if (filter_var($_POST['task_count']??null,FILTER_VALIDATE_INT)!==count($tasks)) throw new InvalidArgumentException('The task form was incomplete. Please try again.');
+            $validated=[];
+            foreach (array_values($tasks) as $index=>$task) {
+                try { if (!is_array($task)) throw new InvalidArgumentException('Enter valid task details.'); $validated[]=social_media_task_data($task); }
+                catch (InvalidArgumentException $e) { throw new InvalidArgumentException('Task '.($index+1).': '.$e->getMessage()); }
+            }
+            foreach ($validated as $task) {
+                $count=$task['item_count']; unset($task['platforms'],$task['item_count']);
+                $task['social_content_count']=$count;
+                $metrics=['social_platform'=>$task['social_platform'],'posts_count'=>$task['work_type']==='poster'?$count:0,'reels_count'=>$task['work_type']==='reel'?$count:0,'replies_count'=>0];
+                if ($task['work_type']==='poster') $metrics['posts_count']=$count;
+                elseif ($task['work_type']==='reel') $metrics['reels_count']=$count;
+                save_work_entry($sheet,'social_media',$task,$metrics);
+            }
+            submit_sheet($sheet);
+        } elseif ($action==='save_tasks') {
             if (!creative_work_department($sheet['department_code'],$sheet['department_name'])) throw new InvalidArgumentException('This task form is for Graphic Designer and Video Editing departments.');
             $tasks=$_POST['tasks']??null;
             if (!is_array($tasks) || !$tasks) throw new InvalidArgumentException('Add at least one task before submitting.');
@@ -97,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 $sheet=one('SELECT s.*,d.code AS department_code,d.name AS department_name FROM daily_work_submissions s JOIN departments d ON d.id=s.department_id WHERE s.employee_id=? AND s.work_date=?',[$user['id'],$date]);
 $workDepartment=$sheet['department_code']??$user['department_code'];
 $creativeWork=creative_work_department($workDepartment,$sheet['department_name']??$user['department_name']??'');
+$socialWork=$workDepartment==='social_media';
 $entries=$sheet?rows('SELECT e.*,c.client_name FROM daily_work_entries e LEFT JOIN clients c ON c.id=e.client_id WHERE e.submission_id=? ORDER BY e.row_order',[$sheet['id']]):[];
 $assignmentEntries=[]; foreach ($entries as $entry) if ($entry['assignment_id']) $assignmentEntries[$entry['assignment_id']]=$entry;
 $assignmentDates=[];
