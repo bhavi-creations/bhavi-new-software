@@ -10,98 +10,192 @@ $employeeView = $employeeView ?? 'dashboard';
 
 
 $viewRoutes = [
-    'daily'    => 'employee-daily-work.php',
-    'history'  => 'employee-work-history.php',
-    'assigned' => 'employee-assigned-work.php'
+
+    'daily' =>
+        'employee-daily-work.php',
+
+    'history' =>
+        'employee-work-history.php',
+
+    'assigned' =>
+        'employee-assigned-work.php'
+
 ];
 
 
 $viewRoute =
     $viewRoutes[$employeeView]
-    ?? dashboard_path($user);
+    ??
+    dashboard_path($user);
+
+
+/* =========================================================
+   SECURE ASSIGNMENT FILE VIEW / DOWNLOAD
+========================================================= */
+
+if (!empty($_GET['task_file'])) {
+    $fileId = positive_id($_GET['task_file']);
+    $requestedMode = (($_GET['mode'] ?? 'view') === 'download') ? 'download' : 'view';
+
+    $attachment = one(
+        "SELECT f.*, a.employee_id
+         FROM work_assignment_attachments f
+         JOIN work_assignments a ON a.id=f.assignment_id
+         WHERE f.id=? AND a.employee_id=? AND a.deleted_at IS NULL",
+        [$fileId, $user['id']]
+    );
+
+    if (!$attachment) {
+        fail(404, 'Attachment not found.');
+    }
+
+    $relativePath = ltrim((string)($attachment['file_path'] ?? ''), "/\\");
+    if ($relativePath === '') {
+        fail(404, 'Attachment path is missing.');
+    }
+
+    $baseDirectory = realpath(__DIR__ . '/uploads/work-assignments');
+    $absolutePath = realpath(
+        __DIR__ . DIRECTORY_SEPARATOR .
+        str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativePath)
+    );
+
+    if (!$baseDirectory || !$absolutePath || !is_file($absolutePath) || !is_readable($absolutePath)) {
+        fail(404, 'Attachment file is missing from storage.');
+    }
+
+    $allowedBase = rtrim($baseDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+    if (strncmp($absolutePath, $allowedBase, strlen($allowedBase)) !== 0) {
+        fail(403, 'Invalid attachment path.');
+    }
+
+    $mimeType = trim((string)($attachment['mime_type'] ?? ''));
+    if ($mimeType === '' || $mimeType === 'application/octet-stream') {
+        if (class_exists('finfo')) {
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
+            $detected = $finfo->file($absolutePath);
+            if (is_string($detected) && $detected !== '') {
+                $mimeType = $detected;
+            }
+        }
+    }
+    if ($mimeType === '') {
+        $mimeType = 'application/octet-stream';
+    }
+
+    $originalName = trim((string)($attachment['original_name'] ?? 'attachment'));
+    if ($originalName === '') {
+        $originalName = 'attachment';
+    }
+
+    $fallbackName = preg_replace('/[^A-Za-z0-9._-]/', '_', $originalName);
+    if (!is_string($fallbackName) || $fallbackName === '') {
+        $fallbackName = 'attachment';
+    }
+
+    $lowerMime = strtolower($mimeType);
+    $isImage = strpos($lowerMime, 'image/') === 0;
+    $isVideo = strpos($lowerMime, 'video/') === 0;
+    $isPdf = $lowerMime === 'application/pdf';
+    $inlineAllowed = $isImage || $isVideo || $isPdf;
+    $disposition = ($requestedMode === 'download' || !$inlineAllowed) ? 'attachment' : 'inline';
+
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    $fileSize = filesize($absolutePath);
+
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: private, max-age=3600');
+    header('Accept-Ranges: bytes');
+    header('Content-Type: ' . $mimeType);
+    header(
+        'Content-Disposition: ' . $disposition .
+        '; filename="' . $fallbackName . '"; filename*=UTF-8\'\'' . rawurlencode($originalName)
+    );
+
+    $start = 0;
+    $end = max(0, $fileSize - 1);
+
+    if ($isVideo && !empty($_SERVER['HTTP_RANGE']) && preg_match('/bytes=(\d*)-(\d*)/', $_SERVER['HTTP_RANGE'], $matches)) {
+        if ($matches[1] !== '') {
+            $start = (int)$matches[1];
+        }
+        if ($matches[2] !== '') {
+            $end = (int)$matches[2];
+        }
+
+        $start = max(0, $start);
+        $end = min($fileSize - 1, $end);
+
+        if ($start > $end) {
+            http_response_code(416);
+            header('Content-Range: bytes */' . $fileSize);
+            exit;
+        }
+
+        http_response_code(206);
+        header('Content-Range: bytes ' . $start . '-' . $end . '/' . $fileSize);
+    }
+
+    $length = $end - $start + 1;
+    header('Content-Length: ' . $length);
+
+    $handle = fopen($absolutePath, 'rb');
+    if (!$handle) {
+        fail(500, 'Unable to open attachment.');
+    }
+
+    if ($start > 0) {
+        fseek($handle, $start);
+    }
+
+    $remaining = $length;
+    while ($remaining > 0 && !feof($handle)) {
+        $chunk = fread($handle, min(1024 * 1024, $remaining));
+        if ($chunk === false || $chunk === '') {
+            break;
+        }
+        echo $chunk;
+        $remaining -= strlen($chunk);
+        if (function_exists('flush')) {
+            flush();
+        }
+    }
+
+    fclose($handle);
+    exit;
+}
+
 
 
 if (
     isset($expectedDepartment)
     &&
-    $user['department_code'] !== $expectedDepartment
+    $user['department_code']
+    !==
+    $expectedDepartment
 ) {
+
     redirect(
         dashboard_path($user)
     );
-}
-
-
-/* =========================================================
-   DATABASE TIMER COLUMNS
-========================================================= */
-
-try {
-
-    if (
-        !one(
-            "SHOW COLUMNS
-             FROM work_assignments
-             LIKE 'started_at'"
-        )
-    ) {
-
-        query(
-            "ALTER TABLE work_assignments
-             ADD COLUMN started_at DATETIME NULL
-             AFTER status"
-        );
-    }
-
-
-    if (
-        !one(
-            "SHOW COLUMNS
-             FROM work_assignments
-             LIKE 'completed_at'"
-        )
-    ) {
-
-        query(
-            "ALTER TABLE work_assignments
-             ADD COLUMN completed_at DATETIME NULL
-             AFTER started_at"
-        );
-    }
-
-
-    if (
-        !one(
-            "SHOW COLUMNS
-             FROM work_assignments
-             LIKE 'time_spent_seconds'"
-        )
-    ) {
-
-        query(
-            "ALTER TABLE work_assignments
-             ADD COLUMN time_spent_seconds INT UNSIGNED NULL
-             AFTER completed_at"
-        );
-    }
-
-} catch (Throwable $schemaError) {
-
-    /*
-     * Hosting ALTER permission lekapothe
-     * manually DB lo columns create cheyyali.
-     */
 
 }
 
 
+
+/* Timer database columns already exist; schema changes are not run from this page. */
+
 /* =========================================================
-   EXACT TIME
+   EXACT TIME FORMAT
 ========================================================= */
 
-function assignment_exact_time(
+function employee_assignment_duration(
     int $seconds
 ): string {
+
 
     $seconds =
         max(
@@ -124,7 +218,7 @@ function assignment_exact_time(
         );
 
 
-    $remainingSeconds =
+    $secs =
         $seconds % 60;
 
 
@@ -132,20 +226,24 @@ function assignment_exact_time(
         '%02d:%02d:%02d',
         $hours,
         $minutes,
-        $remainingSeconds
+        $secs
     );
+
 }
+
 
 
 /* =========================================================
    ATTACHMENTS
 ========================================================= */
 
-function get_assignment_files(
+function employee_assignment_files(
     int $assignmentId
 ): array {
 
+
     try {
+
 
         return rows(
             "SELECT
@@ -169,485 +267,16 @@ function get_assignment_files(
             ]
         );
 
+
     } catch (Throwable $e) {
+
 
         return [];
 
     }
+
 }
 
-
-/* =========================================================
-   SECURE FILE VIEW / DOWNLOAD
-========================================================= */
-
-if (
-    !empty(
-        $_GET['task_file']
-    )
-) {
-
-    $fileId =
-        positive_id(
-            $_GET['task_file']
-        );
-
-
-    $fileMode =
-        (
-            $_GET['mode']
-            ?? 'view'
-        ) === 'download'
-
-            ? 'download'
-            : 'view';
-
-
-    try {
-
-        $file =
-            one(
-                "SELECT
-                    f.*,
-                    a.employee_id
-
-                 FROM work_assignment_attachments f
-
-                 JOIN work_assignments a
-                    ON a.id=f.assignment_id
-
-                 WHERE
-                    f.id=?
-                    AND a.employee_id=?
-                    AND a.deleted_at IS NULL",
-
-                [
-                    $fileId,
-                    $user['id']
-                ]
-            );
-
-    } catch (Throwable $e) {
-
-        fail(
-            404,
-            'Attachment not found.'
-        );
-    }
-
-
-    if (!$file) {
-
-        fail(
-            404,
-            'Attachment not found.'
-        );
-    }
-
-
-    $relativePath =
-        ltrim(
-            (string) $file['file_path'],
-            "/\\"
-        );
-
-
-    $storageBase =
-        realpath(
-            __DIR__
-            .
-            '/uploads/work-assignments'
-        );
-
-
-    $requestedFile =
-        realpath(
-            __DIR__
-            .
-            DIRECTORY_SEPARATOR
-            .
-            str_replace(
-                [
-                    '/',
-                    '\\'
-                ],
-                DIRECTORY_SEPARATOR,
-                $relativePath
-            )
-        );
-
-
-    if (
-        !$storageBase
-        ||
-        !$requestedFile
-        ||
-        !is_file($requestedFile)
-        ||
-        !is_readable($requestedFile)
-    ) {
-
-        fail(
-            404,
-            'File not found in storage.'
-        );
-    }
-
-
-    $storagePrefix =
-        rtrim(
-            $storageBase,
-            DIRECTORY_SEPARATOR
-        )
-        .
-        DIRECTORY_SEPARATOR;
-
-
-    if (
-        strncmp(
-            $requestedFile,
-            $storagePrefix,
-            strlen($storagePrefix)
-        ) !== 0
-    ) {
-
-        fail(
-            403,
-            'Invalid attachment path.'
-        );
-    }
-
-
-    $mimeType =
-        trim(
-            (string) (
-                $file['mime_type']
-                ?? ''
-            )
-        );
-
-
-    if ($mimeType === '') {
-
-        $finfo =
-            new finfo(
-                FILEINFO_MIME_TYPE
-            );
-
-
-        $mimeType =
-            $finfo->file(
-                $requestedFile
-            )
-            ?: 'application/octet-stream';
-    }
-
-
-    $originalName =
-        trim(
-            (string) (
-                $file['original_name']
-                ?? 'attachment'
-            )
-        );
-
-
-    if ($originalName === '') {
-
-        $originalName =
-            'attachment';
-    }
-
-
-    $safeName =
-        preg_replace(
-            '/[^A-Za-z0-9._ -]/',
-            '_',
-            $originalName
-        );
-
-
-    if (
-        !$safeName
-        ||
-        $safeName === ''
-    ) {
-
-        $safeName =
-            'attachment';
-    }
-
-
-    while (
-        ob_get_level() > 0
-    ) {
-
-        ob_end_clean();
-    }
-
-
-    $fileSize =
-        filesize(
-            $requestedFile
-        );
-
-
-    header(
-        'X-Content-Type-Options: nosniff'
-    );
-
-
-    header(
-        'Accept-Ranges: bytes'
-    );
-
-
-    header(
-        'Cache-Control: private, max-age=3600'
-    );
-
-
-    header(
-        'Content-Type: '
-        .
-        $mimeType
-    );
-
-
-    if (
-        $fileMode ===
-        'download'
-    ) {
-
-        header(
-            'Content-Disposition: attachment; filename="'
-            .
-            $safeName
-            .
-            '"; filename*=UTF-8\'\''
-            .
-            rawurlencode(
-                $originalName
-            )
-        );
-
-
-        header(
-            'Content-Length: '
-            .
-            $fileSize
-        );
-
-
-        readfile(
-            $requestedFile
-        );
-
-
-        exit;
-    }
-
-
-    /*
-     * INLINE VIEW.
-     * Range support makes video playback / seeking work.
-     */
-
-    header(
-        'Content-Disposition: inline; filename="'
-        .
-        $safeName
-        .
-        '"; filename*=UTF-8\'\''
-        .
-        rawurlencode(
-            $originalName
-        )
-    );
-
-
-    $start = 0;
-
-    $end =
-        $fileSize - 1;
-
-
-    if (
-        !empty(
-            $_SERVER['HTTP_RANGE']
-        )
-        &&
-        preg_match(
-            '/bytes=(\d*)-(\d*)/',
-            $_SERVER['HTTP_RANGE'],
-            $matches
-        )
-    ) {
-
-        if (
-            $matches[1] !== ''
-        ) {
-
-            $start =
-                (int) $matches[1];
-        }
-
-
-        if (
-            $matches[2] !== ''
-        ) {
-
-            $end =
-                (int) $matches[2];
-        }
-
-
-        $start =
-            max(
-                0,
-                $start
-            );
-
-
-        $end =
-            min(
-                $fileSize - 1,
-                $end
-            );
-
-
-        if (
-            $start > $end
-        ) {
-
-            http_response_code(
-                416
-            );
-
-
-            header(
-                'Content-Range: bytes */'
-                .
-                $fileSize
-            );
-
-
-            exit;
-        }
-
-
-        http_response_code(
-            206
-        );
-
-
-        header(
-            'Content-Range: bytes '
-            .
-            $start
-            .
-            '-'
-            .
-            $end
-            .
-            '/'
-            .
-            $fileSize
-        );
-    }
-
-
-    $length =
-        $end
-        -
-        $start
-        +
-        1;
-
-
-    header(
-        'Content-Length: '
-        .
-        $length
-    );
-
-
-    $handle =
-        fopen(
-            $requestedFile,
-            'rb'
-        );
-
-
-    if (!$handle) {
-
-        fail(
-            500,
-            'Unable to open attachment.'
-        );
-    }
-
-
-    fseek(
-        $handle,
-        $start
-    );
-
-
-    $remaining =
-        $length;
-
-
-    while (
-        $remaining > 0
-        &&
-        !feof($handle)
-    ) {
-
-        $readLength =
-            min(
-                8192,
-                $remaining
-            );
-
-
-        $buffer =
-            fread(
-                $handle,
-                $readLength
-            );
-
-
-        if (
-            $buffer === false
-            ||
-            $buffer === ''
-        ) {
-
-            break;
-        }
-
-
-        echo $buffer;
-
-
-        $remaining -=
-            strlen(
-                $buffer
-            );
-
-
-        flush();
-    }
-
-
-    fclose(
-        $handle
-    );
-
-
-    exit;
-}
 
 
 /* =========================================================
@@ -655,6 +284,7 @@ if (
 ========================================================= */
 
 try {
+
 
     $date =
         $employeeView === 'assigned'
@@ -670,13 +300,17 @@ try {
                 ]
             );
 
+
 } catch (InvalidArgumentException $e) {
+
 
     fail(
         422,
         $e->getMessage()
     );
+
 }
+
 
 
 /* =========================================================
@@ -694,28 +328,40 @@ if (
     )
 ) {
 
+
     try {
+
 
         $assignmentDate =
             date_input(
                 'assignment_date',
                 [
                     'assignment_date' =>
-                        $_GET['assignment_date']
+                        $_GET[
+                            'assignment_date'
+                        ]
                 ]
             );
 
-    } catch (InvalidArgumentException $e) {
+
+    } catch (
+        InvalidArgumentException $e
+    ) {
+
 
         fail(
             422,
             $e->getMessage()
         );
+
     }
+
 }
 
 
+
 $error = null;
+
 
 
 /* =========================================================
@@ -728,18 +374,21 @@ if (
     'POST'
 ) {
 
+
     check_csrf();
 
 
     try {
+
 
         $action =
             $_POST['action']
             ?? '';
 
 
+
         /* =====================================================
-           START WORK
+           START ASSIGNED TASK
         ===================================================== */
 
         if (
@@ -747,14 +396,18 @@ if (
             'start_assignment'
         ) {
 
+
             $assignmentId =
                 positive_id(
-                    $_POST['assignment_id']
+                    $_POST[
+                        'assignment_id'
+                    ]
                     ?? null
                 );
 
 
             db()->beginTransaction();
+
 
 
             $assignment =
@@ -777,37 +430,49 @@ if (
                 );
 
 
+
             if (!$assignment) {
+
 
                 fail(
                     403,
-                    'You can only start your own assigned task.'
+                    'You can only start your own assigned work.'
                 );
+
             }
+
 
 
             if (
                 !empty(
-                    $assignment['completed_at']
+                    $assignment[
+                        'completed_at'
+                    ]
                 )
             ) {
+
 
                 throw new InvalidArgumentException(
                     'This task is already finished.'
                 );
+
             }
 
 
+
             /*
-             * First click only.
-             * Refresh valla time reset avvadu.
+             * Start time only first click lo save avvali.
+             * Page refresh chesthe timer reset avvakudadhu.
              */
 
             if (
                 empty(
-                    $assignment['started_at']
+                    $assignment[
+                        'started_at'
+                    ]
                 )
             ) {
+
 
                 query(
                     "UPDATE work_assignments
@@ -825,10 +490,13 @@ if (
                         $assignmentId
                     ]
                 );
+
             }
 
 
+
             db()->commit();
+
 
 
             flash(
@@ -836,30 +504,39 @@ if (
             );
 
 
+
             redirect(
                 'employee-assigned-work.php?assignment_date='
                 .
                 urlencode(
-                    $assignment['work_date']
+                    $assignment[
+                        'work_date'
+                    ]
                 )
             );
+
         }
 
 
+
         /* =====================================================
-           FINISH WORK
+           END ASSIGNED TASK
         ===================================================== */
 
         elseif (
             $action ===
-            'finish_assignment'
+            'end_assignment'
         ) {
+
 
             $assignmentId =
                 positive_id(
-                    $_POST['assignment_id']
+                    $_POST[
+                        'assignment_id'
+                    ]
                     ?? null
                 );
+
 
 
             $remark =
@@ -871,6 +548,7 @@ if (
                 );
 
 
+
             if (
                 mb_strlen(
                     $remark
@@ -879,13 +557,17 @@ if (
                 5000
             ) {
 
+
                 throw new InvalidArgumentException(
                     'Remark must not exceed 5,000 characters.'
                 );
+
             }
 
 
+
             db()->beginTransaction();
+
 
 
             $assignment =
@@ -908,51 +590,68 @@ if (
                 );
 
 
+
             if (!$assignment) {
+
 
                 fail(
                     403,
-                    'You can only finish your own assigned task.'
+                    'You can only finish your own assigned work.'
                 );
+
             }
+
 
 
             if (
                 empty(
-                    $assignment['started_at']
+                    $assignment[
+                        'started_at'
+                    ]
                 )
             ) {
 
+
                 throw new InvalidArgumentException(
-                    'Please start the task before finishing it.'
+                    'Click Start Work before ending this task.'
                 );
+
             }
+
 
 
             if (
                 !empty(
-                    $assignment['completed_at']
+                    $assignment[
+                        'completed_at'
+                    ]
                 )
             ) {
+
 
                 throw new InvalidArgumentException(
                     'This task is already finished.'
                 );
+
             }
 
 
-            /* =============================================
-               EXACT TIME
-            ============================================= */
+
+            /* =================================================
+               EXACT START → END TIME
+            ================================================= */
 
             $startedTimestamp =
                 strtotime(
-                    $assignment['started_at']
+                    $assignment[
+                        'started_at'
+                    ]
                 );
 
 
             $completedTimestamp =
                 time();
+
 
 
             $timeSpentSeconds =
@@ -964,8 +663,9 @@ if (
                 );
 
 
+
             /*
-             * Existing admin reports work in minutes.
+             * Existing reports use minutes.
              */
 
             $timeSpentMinutes =
@@ -979,9 +679,10 @@ if (
                 );
 
 
-            /* =============================================
-               WORK ASSIGNMENT
-            ============================================= */
+
+            /* =================================================
+               SAVE TIMER + STATUS + REMARK
+            ================================================= */
 
             query(
                 "UPDATE work_assignments
@@ -1004,16 +705,24 @@ if (
             );
 
 
-            /* =============================================
-               DAILY WORK SHEET
-            ============================================= */
+
+            /* =================================================
+               CREATE EMPLOYEE WORK SHEET
+            ================================================= */
 
             $sheet =
                 work_sheet(
                     $user,
-                    $assignment['work_date']
+                    $assignment[
+                        'work_date'
+                    ]
                 );
 
+
+
+            /* =================================================
+               EXISTING ENTRY
+            ================================================= */
 
             $existingEntry =
                 one(
@@ -1041,26 +750,35 @@ if (
                     : null;
 
 
-            /* =============================================
-               SAVE EMPLOYEE SUBMISSION
-            ============================================= */
+
+            /* =================================================
+               SAVE INTO DAILY WORK ENTRIES
+            ================================================= */
 
             $common = [
 
+
                 'client_id' =>
 
-                    $assignment['client_id']
-                    === null
+                    $assignment[
+                        'client_id'
+                    ]
+                    ===
+                    null
 
                         ? null
 
                         : (int)
-                            $assignment['client_id'],
+                            $assignment[
+                                'client_id'
+                            ],
 
 
                 'task_title' =>
 
-                    $assignment['title'],
+                    $assignment[
+                        'title'
+                    ],
 
 
                 'task_status' =>
@@ -1085,19 +803,38 @@ if (
             ];
 
 
+
             save_work_entry(
+
                 $sheet,
-                $sheet['department_code'],
+
+                $sheet[
+                    'department_code'
+                ],
+
                 $common,
+
                 [],
+
                 $entryId
+
             );
 
+
+
+            /* =================================================
+               SYNC ASSIGNMENT
+            ================================================= */
 
             sync_assignment(
                 $assignmentId
             );
 
+
+
+            /* =================================================
+               SUBMIT TO MANAGER
+            ================================================= */
 
             submit_sheet(
                 $sheet,
@@ -1105,9 +842,10 @@ if (
             );
 
 
-            /* =============================================
+
+            /* =================================================
                ADMIN / MANAGER NOTIFICATION
-            ============================================= */
+            ================================================= */
 
             notify_staff(
 
@@ -1117,34 +855,39 @@ if (
                 .
                 ' finished an assigned task',
 
-                $assignment['work_date']
+                $assignment[
+                    'work_date'
+                ]
                 .
                 ' · '
                 .
-                $assignment['title']
+                $assignment[
+                    'title'
+                ]
                 .
                 ' · Time '
                 .
-                assignment_exact_time(
+                employee_assignment_duration(
                     $timeSpentSeconds
                 )
                 .
                 (
                     $remark !== ''
 
-                        ? ' · '
-                            .
-                            $remark
+                        ? ' · ' . $remark
 
                         : ''
                 ),
 
-                (int) $sheet['id']
+                (int)
+                    $sheet['id']
 
             );
 
 
+
             db()->commit();
+
 
 
             flash(
@@ -1152,31 +895,40 @@ if (
             );
 
 
+
             redirect(
                 'employee-assigned-work.php?assignment_date='
                 .
                 urlencode(
-                    $assignment['work_date']
+                    $assignment[
+                        'work_date'
+                    ]
                 )
             );
+
         }
 
 
+
         /* =====================================================
-           EXISTING DAILY / SOCIAL / CREATIVE SYSTEM
+           EXISTING SYSTEM
         ===================================================== */
 
         else {
+
 
             if (
                 $date >
                 today()
             ) {
 
+
                 throw new InvalidArgumentException(
                     'You can submit work for today or an earlier date.'
                 );
+
             }
+
 
 
             $title = '';
@@ -1186,17 +938,21 @@ if (
             $assignmentId = null;
 
 
+
             db()->beginTransaction();
 
 
-            /* =============================================
+
+            /* =================================================
                EXISTING ASSIGNMENT UPDATE
-            ============================================= */
+               Compatibility
+            ================================================= */
 
             if (
                 $action ===
                 'update_assignment'
             ) {
+
 
                 $assignment =
                     one(
@@ -1213,50 +969,70 @@ if (
 
                         [
                             positive_id(
-                                $_POST['assignment_id']
+                                $_POST[
+                                    'assignment_id'
+                                ]
                                 ?? null
                             ),
 
-                            $user['id']
+                            $user[
+                                'id'
+                            ]
                         ]
                     );
 
 
                 if (!$assignment) {
 
+
                     fail(
                         403,
                         'You can only update your own assigned work.'
                     );
+
                 }
 
 
                 $assignmentId =
-                    (int) $assignment['id'];
+                    (int)
+                        $assignment[
+                            'id'
+                        ];
 
 
                 $title =
-                    $assignment['title'];
+                    $assignment[
+                        'title'
+                    ];
 
 
                 $client =
-                    $assignment['client_id'] === null
+                    $assignment[
+                        'client_id'
+                    ]
+                    ===
+                    null
 
                         ? null
 
                         : (int)
-                            $assignment['client_id'];
+                            $assignment[
+                                'client_id'
+                            ];
+
             }
 
 
-            /* =============================================
-               NORMAL ENTRY
-            ============================================= */
+
+            /* =================================================
+               NORMAL DAILY ENTRY
+            ================================================= */
 
             elseif (
                 $action ===
                 'save_entry'
             ) {
+
 
                 $title =
                     text_input(
@@ -1267,18 +1043,24 @@ if (
 
                 $client =
                     empty(
-                        $_POST['client_id']
+                        $_POST[
+                            'client_id'
+                        ]
                     )
 
                         ? null
 
                         : positive_id(
-                            $_POST['client_id']
+                            $_POST[
+                                'client_id'
+                            ]
                         );
 
 
+
                 if (
-                    $client !== null
+                    $client !==
+                        null
                     &&
                     !one(
                         "SELECT id
@@ -1296,11 +1078,15 @@ if (
                     )
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'Choose an active client.'
                     );
+
                 }
+
             }
+
 
 
             elseif (
@@ -1315,10 +1101,13 @@ if (
                 )
             ) {
 
+
                 throw new InvalidArgumentException(
                     'Invalid action.'
                 );
+
             }
+
 
 
             $sheet =
@@ -1328,77 +1117,109 @@ if (
                 );
 
 
-            /* =============================================
-               SOCIAL MEDIA TASKS
-            ============================================= */
+
+            /* =================================================
+               SOCIAL MEDIA
+            ================================================= */
 
             if (
                 $action ===
                 'save_social_tasks'
             ) {
 
+
                 if (
-                    $sheet['department_code']
+                    $sheet[
+                        'department_code'
+                    ]
                     !==
                     'social_media'
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'This task form is only for Social Media employees.'
                     );
+
                 }
 
 
+
                 $tasks =
-                    $_POST['tasks']
+                    $_POST[
+                        'tasks'
+                    ]
                     ?? null;
 
 
+
                 if (
-                    !is_array($tasks)
+                    !is_array(
+                        $tasks
+                    )
                     ||
                     !$tasks
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'Add at least one client task before submitting.'
                     );
+
                 }
+
 
 
                 if (
                     filter_var(
-                        $_POST['task_count']
+                        $_POST[
+                            'task_count'
+                        ]
                         ?? null,
+
                         FILTER_VALIDATE_INT
                     )
                     !==
-                    count($tasks)
+                    count(
+                        $tasks
+                    )
                 ) {
+
 
                     throw new InvalidArgumentException(
                         'The task form was incomplete. Please try again.'
                     );
+
                 }
+
 
 
                 $validated = [];
 
 
+
                 foreach (
-                    array_values($tasks)
+                    array_values(
+                        $tasks
+                    )
                     as $index => $task
                 ) {
 
+
                     try {
 
+
                         if (
-                            !is_array($task)
+                            !is_array(
+                                $task
+                            )
                         ) {
+
 
                             throw new InvalidArgumentException(
                                 'Enter valid task details.'
                             );
+
                         }
 
 
@@ -1407,9 +1228,11 @@ if (
                                 $task
                             );
 
+
                     } catch (
                         InvalidArgumentException $e
                     ) {
+
 
                         throw new InvalidArgumentException(
                             'Task '
@@ -1420,8 +1243,11 @@ if (
                             .
                             $e->getMessage()
                         );
+
                     }
+
                 }
+
 
 
                 foreach (
@@ -1429,13 +1255,20 @@ if (
                     as $task
                 ) {
 
+
                     $count =
-                        $task['item_count'];
+                        $task[
+                            'item_count'
+                        ];
 
 
                     unset(
-                        $task['platforms'],
-                        $task['item_count']
+                        $task[
+                            'platforms'
+                        ],
+                        $task[
+                            'item_count'
+                        ]
                     );
 
 
@@ -1445,7 +1278,9 @@ if (
                         $count;
 
 
+
                     $metrics = [
+
 
                         'social_platform' =>
 
@@ -1456,7 +1291,9 @@ if (
 
                         'posts_count' =>
 
-                            $task['work_type']
+                            $task[
+                                'work_type'
+                            ]
                             ===
                             'poster'
 
@@ -1467,7 +1304,9 @@ if (
 
                         'reels_count' =>
 
-                            $task['work_type']
+                            $task[
+                                'work_type'
+                            ]
                             ===
                             'reel'
 
@@ -1482,29 +1321,40 @@ if (
                     ];
 
 
+
                     save_work_entry(
+
                         $sheet,
+
                         'social_media',
+
                         $task,
+
                         $metrics
+
                     );
+
                 }
+
 
 
                 submit_sheet(
                     $sheet
                 );
+
             }
 
 
-            /* =============================================
+
+            /* =================================================
                GRAPHIC / VIDEO TASKS
-            ============================================= */
+            ================================================= */
 
             elseif (
                 $action ===
                 'save_tasks'
             ) {
+
 
                 if (
                     !creative_work_department(
@@ -1517,62 +1367,90 @@ if (
                     )
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'This task form is for Graphic Designer and Video Editing departments.'
                     );
+
                 }
 
 
+
                 $tasks =
-                    $_POST['tasks']
+                    $_POST[
+                        'tasks'
+                    ]
                     ?? null;
 
 
+
                 if (
-                    !is_array($tasks)
+                    !is_array(
+                        $tasks
+                    )
                     ||
                     !$tasks
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'Add at least one task before submitting.'
                     );
+
                 }
+
 
 
                 if (
                     filter_var(
-                        $_POST['task_count']
+                        $_POST[
+                            'task_count'
+                        ]
                         ?? null,
+
                         FILTER_VALIDATE_INT
                     )
                     !==
-                    count($tasks)
+                    count(
+                        $tasks
+                    )
                 ) {
+
 
                     throw new InvalidArgumentException(
                         'The task form was incomplete. Submit fewer tasks at a time and try again.'
                     );
+
                 }
+
 
 
                 $validated = [];
 
 
+
                 foreach (
-                    array_values($tasks)
+                    array_values(
+                        $tasks
+                    )
                     as $index => $task
                 ) {
 
+
                     try {
 
+
                         if (
-                            !is_array($task)
+                            !is_array(
+                                $task
+                            )
                         ) {
+
 
                             throw new InvalidArgumentException(
                                 'Enter valid task details.'
                             );
+
                         }
 
 
@@ -1581,9 +1459,11 @@ if (
                                 $task
                             );
 
+
                     } catch (
                         InvalidArgumentException $e
                     ) {
+
 
                         throw new InvalidArgumentException(
                             'Task '
@@ -1594,14 +1474,18 @@ if (
                             .
                             $e->getMessage()
                         );
+
                     }
+
                 }
+
 
 
                 foreach (
                     $validated
                     as $common
                 ) {
+
 
                     $metrics =
                         $sheet[
@@ -1611,6 +1495,7 @@ if (
                         'design_video'
 
                             ? [
+
 
                                 'poster_count' =>
 
@@ -1651,38 +1536,49 @@ if (
                                         : 0,
 
 
-                                'design_changes_count'
-                                    => 0
+                                'design_changes_count' =>
+                                    0
+
                             ]
 
                             : [];
 
 
                     save_work_entry(
+
                         $sheet,
+
                         $sheet[
                             'department_code'
                         ],
+
                         $common,
+
                         $metrics
+
                     );
+
                 }
+
 
 
                 submit_sheet(
                     $sheet
                 );
+
             }
 
 
-            /* =============================================
+
+            /* =================================================
                SUBMIT DAY
-            ============================================= */
+            ================================================= */
 
             elseif (
                 $action ===
                 'submit_day'
             ) {
+
 
                 if (
                     !count_value(
@@ -1693,28 +1589,36 @@ if (
                          WHERE submission_id=?",
 
                         [
-                            $sheet['id']
+                            $sheet[
+                                'id'
+                            ]
                         ]
                     )
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'Add a work entry before submitting.'
                     );
+
                 }
+
 
 
                 submit_sheet(
                     $sheet
                 );
+
             }
 
 
-            /* =============================================
+
+            /* =================================================
                EXISTING SINGLE ENTRY
-            ============================================= */
+            ================================================= */
 
             else {
+
 
                 $status =
                     $_POST[
@@ -1734,10 +1638,13 @@ if (
                     )
                 ) {
 
+
                     throw new InvalidArgumentException(
                         'Choose Pending or Completed.'
                     );
+
                 }
+
 
 
                 $remark =
@@ -1746,6 +1653,7 @@ if (
                         5000,
                         false
                     );
+
 
 
                 $metrics =
@@ -1761,7 +1669,10 @@ if (
                         );
 
 
-                $timeSpent = null;
+
+                $timeSpent =
+                    null;
+
 
 
                 if (
@@ -1774,11 +1685,13 @@ if (
                     )
                 ) {
 
+
                     $duration =
                         $_POST[
                             'time_spent_hours'
                         ]
                         ?? null;
+
 
 
                     if (
@@ -1787,36 +1700,48 @@ if (
                         )
                     ) {
 
+
                         throw new InvalidArgumentException(
                             'Enter a duration up to 24 hours.'
                         );
+
                     }
+
 
 
                     if (
                         $action ===
                         'update_assignment'
                         ||
-                        trim($duration)
+                        trim(
+                            $duration
+                        )
                         !==
                         ''
                     ) {
+
 
                         $timeSpent =
                             parse_work_duration(
                                 $duration
                             );
+
                     }
+
                 }
 
 
-                $entryId = null;
+
+                $entryId =
+                    null;
+
 
 
                 if (
                     $action ===
                     'update_assignment'
                 ) {
+
 
                     $existing =
                         one(
@@ -1829,7 +1754,10 @@ if (
                                 AND assignment_id=?",
 
                             [
-                                $sheet['id'],
+                                $sheet[
+                                    'id'
+                                ],
+
                                 $assignmentId
                             ]
                         );
@@ -1839,22 +1767,32 @@ if (
                         $existing
 
                             ? (int)
-                                $existing['id']
+                                $existing[
+                                    'id'
+                                ]
 
                             : null;
+
                 }
+
 
 
                 elseif (
                     !empty(
-                        $_POST['entry_id']
+                        $_POST[
+                            'entry_id'
+                        ]
                     )
                 ) {
 
+
                     $entryId =
                         positive_id(
-                            $_POST['entry_id']
+                            $_POST[
+                                'entry_id'
+                            ]
                         );
+
 
 
                     if (
@@ -1870,33 +1808,45 @@ if (
 
                             [
                                 $entryId,
-                                $sheet['id']
+                                $sheet[
+                                    'id'
+                                ]
                             ]
                         )
                     ) {
+
 
                         fail(
                             403,
                             'You can only edit your own work entries.'
                         );
+
                     }
+
                 }
+
 
 
                 $common = [
 
+
                     'client_id' =>
                         $client,
+
 
                     'task_title' =>
                         $title,
 
+
                     'task_status' =>
                         $status,
 
+
                     'remark' =>
                         $remark
+
                 ];
+
 
 
                 if (
@@ -1913,6 +1863,7 @@ if (
                     )
                 ) {
 
+
                     $common[
                         'work_type'
                     ] =
@@ -1922,29 +1873,39 @@ if (
 
 
                     if (
-                        $timeSpent === null
+                        $timeSpent ===
+                        null
                     ) {
+
 
                         throw new InvalidArgumentException(
                             'Enter the time spent on this task.'
                         );
+
                     }
+
                 }
 
 
+
                 if (
-                    $assignmentId !== null
+                    $assignmentId !==
+                    null
                 ) {
+
 
                     $common[
                         'assignment_id'
                     ] =
                         $assignmentId;
+
                 }
 
 
+
                 if (
-                    $assignmentId !== null
+                    $assignmentId !==
+                    null
                     ||
                     array_key_exists(
                         'time_spent_hours',
@@ -1952,38 +1913,53 @@ if (
                     )
                 ) {
 
+
                     $common[
                         'time_spent_minutes'
                     ] =
                         $timeSpent;
+
                 }
 
 
+
                 save_work_entry(
+
                     $sheet,
+
                     $sheet[
                         'department_code'
                     ],
+
                     $common,
+
                     $metrics,
+
                     $entryId
+
                 );
 
 
+
                 if (
-                    $assignmentId !== null
+                    $assignmentId !==
+                    null
                 ) {
+
 
                     sync_assignment(
                         $assignmentId
                     );
+
                 }
+
 
 
                 if (
                     $action ===
                     'update_assignment'
                 ) {
+
 
                     submit_sheet(
                         $sheet,
@@ -2011,12 +1987,12 @@ if (
                         (
                             $remark !== ''
 
-                                ? ' · '
-                                    .
+                                ? ' · ' .
                                     $remark
 
                                 : ''
                         );
+
 
 
                     notify_staff(
@@ -2036,10 +2012,14 @@ if (
                         $taskMessage,
 
                         (int)
-                            $sheet['id']
+                            $sheet[
+                                'id'
+                            ]
 
                     );
+
                 }
+
 
 
                 elseif (
@@ -2054,13 +2034,17 @@ if (
                     'submitted'
                 ) {
 
+
                     submit_sheet(
                         $sheet
                     );
+
                 }
 
 
+
                 else {
+
 
                     query(
                         "UPDATE daily_work_submissions
@@ -2076,14 +2060,20 @@ if (
                          WHERE id=?",
 
                         [
-                            $sheet['id']
+                            $sheet[
+                                'id'
+                            ]
                         ]
                     );
+
                 }
+
             }
 
 
+
             db()->commit();
+
 
 
             flash(
@@ -2103,14 +2093,18 @@ if (
                     ? 'Work saved as draft. Submit the day when ready.'
 
                     : 'Work saved and submitted to your manager.'
+
             );
+
 
 
             $redirectQuery = [
 
                 'date' =>
                     $date
+
             ];
+
 
 
             if (
@@ -2120,11 +2114,14 @@ if (
                 $assignmentDate
             ) {
 
+
                 $redirectQuery[
                     'assignment_date'
                 ] =
                     $assignmentDate;
+
             }
+
 
 
             redirect(
@@ -2144,16 +2141,22 @@ if (
                 http_build_query(
                     $redirectQuery
                 )
+
             );
+
         }
 
+
     } catch (Throwable $e) {
+
 
         if (
             db()->inTransaction()
         ) {
 
+
             db()->rollBack();
+
         }
 
 
@@ -2161,12 +2164,15 @@ if (
             mutation_error(
                 $e
             );
+
     }
+
 }
 
 
+
 /* =========================================================
-   WORK SHEET
+   SHEET
 ========================================================= */
 
 $sheet =
@@ -2186,10 +2192,13 @@ $sheet =
             AND s.work_date=?",
 
         [
-            $user['id'],
+            $user[
+                'id'
+            ],
             $date
         ]
     );
+
 
 
 $workDepartment =
@@ -2200,6 +2209,7 @@ $workDepartment =
     $user[
         'department_code'
     ];
+
 
 
 $creativeWork =
@@ -2216,12 +2226,15 @@ $creativeWork =
         ]
         ??
         ''
+
     );
+
 
 
 $socialWork =
     $workDepartment ===
     'social_media';
+
 
 
 $entries =
@@ -2242,11 +2255,14 @@ $entries =
              ORDER BY e.row_order",
 
             [
-                $sheet['id']
+                $sheet[
+                    'id'
+                ]
             ]
         )
 
         : [];
+
 
 
 /* =========================================================
@@ -2261,11 +2277,13 @@ foreach (
     as $entry
 ) {
 
+
     if (
         $entry[
             'assignment_id'
         ]
     ) {
+
 
         $assignmentEntries[
             $entry[
@@ -2273,12 +2291,15 @@ foreach (
             ]
         ] =
             $entry;
+
     }
+
 }
 
 
+
 /* =========================================================
-   ASSIGNED WORK
+   ASSIGNMENTS
 ========================================================= */
 
 $assignmentDates = [];
@@ -2288,6 +2309,7 @@ if (
     $employeeView ===
     'assigned'
 ) {
+
 
     $assignmentDates =
         rows(
@@ -2299,7 +2321,8 @@ if (
                     title
                     ORDER BY id
                     SEPARATOR ' · '
-                ) AS task_titles
+                )
+                AS task_titles
 
              FROM work_assignments
 
@@ -2312,9 +2335,12 @@ if (
              ORDER BY work_date",
 
             [
-                $user['id']
+                $user[
+                    'id'
+                ]
             ]
         );
+
 
 
     $assignments =
@@ -2342,16 +2368,19 @@ if (
                  ORDER BY a.id",
 
                 [
-                    $user['id'],
+                    $user[
+                        'id'
+                    ],
                     $assignmentDate
                 ]
             )
 
             : [];
-}
 
 
-else {
+
+} else {
+
 
     $assignments =
         rows(
@@ -2397,19 +2426,23 @@ else {
                 a.id",
 
             [
-                $user['id'],
+                $user[
+                    'id'
+                ],
                 $date,
                 $date
             ]
         );
+
 }
 
 
+
 /* =========================================================
-   ASSIGNMENT FILE MAP
+   ATTACHMENT MAP
 ========================================================= */
 
-$assignmentFileMap = [];
+$assignmentAttachmentMap = [];
 
 
 foreach (
@@ -2417,13 +2450,21 @@ foreach (
     as $assignment
 ) {
 
-    $assignmentFileMap[
-        $assignment['id']
+
+    $assignmentAttachmentMap[
+        $assignment[
+            'id'
+        ]
     ] =
-        get_assignment_files(
-            (int) $assignment['id']
+        employee_assignment_files(
+            (int)
+                $assignment[
+                    'id'
+                ]
         );
+
 }
+
 
 
 /* =========================================================
@@ -2450,6 +2491,7 @@ $nextHoliday =
     );
 
 
+
 $latestLeave =
     one(
         "SELECT *
@@ -2465,9 +2507,12 @@ $latestLeave =
          LIMIT 1",
 
         [
-            $user['id']
+            $user[
+                'id'
+            ]
         ]
     );
+
 
 
 $todayAttendance =
@@ -2487,10 +2532,13 @@ $todayAttendance =
          LIMIT 1",
 
         [
-            $user['id'],
+            $user[
+                'id'
+            ],
             today()
         ]
     );
+
 
 
 $editEntry = null;
@@ -2498,46 +2546,69 @@ $editEntry = null;
 
 if (
     !empty(
-        $_GET['edit_entry']
+        $_GET[
+            'edit_entry'
+        ]
     )
 ) {
+
 
     foreach (
         $entries
         as $entry
     ) {
 
+
         if (
-            (int) $entry['id']
+            (int)
+                $entry[
+                    'id'
+                ]
             ===
-            (int) $_GET['edit_entry']
+            (int)
+                $_GET[
+                    'edit_entry'
+                ]
             &&
-            !$entry['assignment_id']
+            !$entry[
+                'assignment_id'
+            ]
         ) {
+
 
             $editEntry =
                 $entry;
+
         }
+
     }
 
 
-    if (!$editEntry) {
+
+    if (
+        !$editEntry
+    ) {
+
 
         fail(
             404,
             'Work entry not found.'
         );
+
     }
+
 }
 
 
+
 /* =========================================================
-   PAGE START
+   PAGE
 ========================================================= */
 
 page_start(
 
     [
+
         'daily' =>
             'Update daily work',
 
@@ -2558,12 +2629,14 @@ page_start(
     ' dashboard',
 
     $viewRoute
+
 );
 
 
 error_message(
     $error
 );
+
 
 
 /* =========================================================
@@ -2577,16 +2650,20 @@ if (
 
 ?>
 
+
 <p class="muted">
 
     Welcome,
     <?= h(
-        $user['full_name']
+        $user[
+            'full_name'
+        ]
     ) ?>.
 
     Update your assigned work and keep your manager informed.
 
 </p>
+
 
 
 <div class="stats-grid">
@@ -2597,23 +2674,36 @@ if (
         href="employee-profile.php"
     >
 
+
         <h2>
+
             My profile &amp; salary
+
         </h2>
 
-        <strong style="font-size:23px">
+
+        <strong
+            style="font-size:23px"
+        >
 
             <?= h(
-                $user['full_name']
+                $user[
+                    'full_name'
+                ]
             ) ?>
 
         </strong>
 
+
         <p>
+
             View your employee details, salary and benefits
+
         </p>
 
+
     </a>
+
 
 
     <a
@@ -2621,28 +2711,42 @@ if (
         href="payslips.php"
     >
 
+
         <h2>
+
             My payslips
+
         </h2>
+
 
         <strong>
 
             <?= count_value(
                 "SELECT COUNT(*)
+
                  FROM payslips
+
                  WHERE employee_id=?",
+
                 [
-                    $user['id']
+                    $user[
+                        'id'
+                    ]
                 ]
             ) ?>
 
         </strong>
 
+
         <p>
+
             View and download your salary slips
+
         </p>
 
+
     </a>
+
 
 
     <a
@@ -2650,17 +2754,30 @@ if (
         href="employee-daily-work.php"
     >
 
+
         <h2>
+
             Update daily work
+
         </h2>
 
-        <strong>+</strong>
+
+        <strong>
+
+            +
+
+        </strong>
+
 
         <p>
+
             Enter your daily work and submit to manager
+
         </p>
 
+
     </a>
+
 
 
     <a
@@ -2668,9 +2785,13 @@ if (
         href="employee-assigned-work.php"
     >
 
+
         <h2>
+
             Today's work
+
         </h2>
+
 
         <strong>
 
@@ -2680,11 +2801,16 @@ if (
 
         </strong>
 
+
         <p>
+
             Assigned and pending tasks
+
         </p>
 
+
     </a>
+
 
 
     <a
@@ -2692,9 +2818,13 @@ if (
         href="employee-work-history.php"
     >
 
+
         <h2>
+
             Work entries
+
         </h2>
+
 
         <strong>
 
@@ -2704,24 +2834,39 @@ if (
 
         </strong>
 
+
         <p>
-            <?= h($date) ?>
+
+            <?= h(
+                $date
+            ) ?>
+
         </p>
+
 
     </a>
 
 
+
     <a
         class="stat-card attendance-stat-card"
+
         href="employee-attendance.php"
+
         data-attendance-card
     >
 
+
         <h2>
+
             Attendance
+
         </h2>
 
-        <strong style="font-size:23px">
+
+        <strong
+            style="font-size:23px"
+        >
 
             <?=
 
@@ -2743,6 +2888,7 @@ if (
             ?>
 
         </strong>
+
 
         <p>
 
@@ -2778,7 +2924,10 @@ if (
             ]
         ): ?>
 
-            <p data-attendance-logout>
+
+            <p
+                data-attendance-logout
+            >
 
                 Logout time ·
 
@@ -2795,16 +2944,21 @@ if (
 
             </p>
 
+
         <?php endif; ?>
 
 
-        <span class="attendance-card-link">
+        <span
+            class="attendance-card-link"
+        >
 
             View day-wise attendance →
 
         </span>
 
+
     </a>
+
 
 
     <a
@@ -2812,11 +2966,17 @@ if (
         href="my-leave-requests.php"
     >
 
+
         <h2>
+
             Leave status
+
         </h2>
 
-        <strong style="font-size:23px">
+
+        <strong
+            style="font-size:23px"
+        >
 
             <?= h(
 
@@ -2829,9 +2989,11 @@ if (
                     )
 
                     : 'No requests'
+
             ) ?>
 
         </strong>
+
 
         <p>
 
@@ -2845,7 +3007,9 @@ if (
 
         </p>
 
+
     </a>
+
 
 
     <a
@@ -2853,11 +3017,17 @@ if (
         href="admin-holidays.php"
     >
 
+
         <h2>
+
             Next holiday
+
         </h2>
 
-        <strong style="font-size:23px">
+
+        <strong
+            style="font-size:23px"
+        >
 
             <?= h(
 
@@ -2873,9 +3043,11 @@ if (
                     )
 
                     : 'None scheduled'
+
             ) ?>
 
         </strong>
+
 
         <p>
 
@@ -2889,6 +3061,7 @@ if (
 
         </p>
 
+
     </a>
 
 
@@ -2898,9 +3071,10 @@ if (
 <?php endif; ?>
 
 
+
 <?php
 /* =========================================================
-   DATE FILTER
+   NORMAL DATE FILTER
 ========================================================= */
 
 if (
@@ -2913,24 +3087,38 @@ if (
 
 ?>
 
+
 <form
     method="get"
     class="filters"
 >
 
+
     <div class="field">
 
+
         <label for="date">
+
             Work date
+
         </label>
 
+
         <input
+
             id="date"
+
             name="date"
+
             type="date"
-            value="<?= h($date) ?>"
+
+            value="<?= h(
+                $date
+            ) ?>"
+
             required
         >
+
 
     </div>
 
@@ -2944,14 +3132,17 @@ if (
 
     </button>
 
+
 </form>
+
 
 <?php endif; ?>
 
 
+
 <?php
 /* =========================================================
-   ASSIGNED WORK PAGE
+   ASSIGNED WORK
 ========================================================= */
 
 if (
@@ -2964,115 +3155,68 @@ if (
 
 <style>
 
-/* =========================================================
-   ASSIGNED TASK CARD
-========================================================= */
+.employee-assigned-task {
 
-.assigned-task-card {
-
-    position: relative;
-
-    margin-bottom: 26px;
-
-    overflow: hidden;
+    margin-bottom: 24px;
 
 }
 
 
-.assigned-task-card::before {
-
-    content: '';
-
-    position: absolute;
-
-    left: 0;
-    top: 0;
-    bottom: 0;
-
-    width: 4px;
-
-    background:
-        currentColor;
-
-    opacity: .15;
-
-}
-
-
-.assigned-task-section {
+.employee-task-content {
 
     margin-top: 16px;
 
-    padding: 17px;
-
-    border-radius: 12px;
-
-    border: 1px solid
-        rgba(0,0,0,.07);
+    padding: 16px;
 
     background:
-        rgba(0,0,0,.018);
+        rgba(0,0,0,.025);
+
+    border-radius: 10px;
 
 }
 
 
-.assigned-task-section-title {
+.employee-task-content-title {
 
     display: block;
 
-    margin-bottom: 9px;
+    margin-bottom: 8px;
 
-    font-size: 12px;
-
-    font-weight: 800;
-
-    letter-spacing: .35px;
-
-    text-transform: uppercase;
-
-    opacity: .62;
-
-}
-
-
-.assigned-task-message {
-
-    line-height: 1.75;
-
-}
-
-
-/* =========================================================
-   REFERENCE LINK
-========================================================= */
-
-.assigned-reference-link {
-
-    display: inline-flex;
-
-    align-items: center;
-
-    gap: 8px;
-
-    padding: 9px 14px;
-
-    border-radius: 8px;
-
-    border: 1px solid
-        rgba(0,0,0,.10);
-
-    text-decoration: none;
+    font-size: 13px;
 
     font-weight: 700;
 
 }
 
 
-/* =========================================================
-   FILES
-========================================================= */
+.employee-task-message {
 
-.assigned-file-list {
+    line-height: 1.7;
+
+}
+
+
+.employee-reference-link {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    padding: 9px 14px;
+
+    border-radius: 7px;
+
+    text-decoration: none;
+
+    font-weight: 600;
+
+    border: 1px solid
+        rgba(0,0,0,.10);
+
+}
+
+
+.employee-file-list {
 
     display: flex;
 
@@ -3083,7 +3227,7 @@ if (
 }
 
 
-.assigned-file-row {
+.employee-file-row {
 
     display: flex;
 
@@ -3091,30 +3235,26 @@ if (
 
     justify-content: space-between;
 
-    gap: 14px;
+    gap: 15px;
 
-    padding: 12px 13px;
-
-    border-radius: 9px;
+    padding: 11px 13px;
 
     border: 1px solid
-        rgba(0,0,0,.09);
+        rgba(0,0,0,.10);
+
+    border-radius: 8px;
 
 }
 
 
-.assigned-file-name {
-
-    min-width: 0;
+.employee-file-name {
 
     overflow-wrap: anywhere;
 
-    font-weight: 600;
-
 }
 
 
-.assigned-file-actions {
+.employee-file-buttons {
 
     display: flex;
 
@@ -3125,7 +3265,7 @@ if (
 }
 
 
-.assigned-file-button {
+.employee-file-button {
 
     display: inline-flex;
 
@@ -3133,29 +3273,23 @@ if (
 
     justify-content: center;
 
-    min-width: 78px;
-
     padding: 7px 11px;
-
-    border-radius: 7px;
 
     border: 1px solid
         rgba(0,0,0,.12);
+
+    border-radius: 6px;
 
     text-decoration: none;
 
     font-size: 12px;
 
-    font-weight: 700;
+    font-weight: 600;
 
 }
 
 
-/* =========================================================
-   IMAGE PREVIEW
-========================================================= */
-
-.assigned-image-grid {
+.employee-image-grid {
 
     display: grid;
 
@@ -3163,231 +3297,87 @@ if (
         repeat(
             auto-fill,
             minmax(
-                145px,
+                140px,
                 1fr
             )
         );
 
     gap: 10px;
 
-    margin-top: 14px;
+    margin-top: 12px;
 
 }
 
 
-.assigned-image-grid img {
-
-    display: block;
+.employee-image-grid img {
 
     width: 100%;
 
-    height: 155px;
+    height: 150px;
 
     object-fit: cover;
 
-    border-radius: 10px;
-
-    border: 1px solid
-        rgba(0,0,0,.08);
+    border-radius: 8px;
 
 }
 
 
-/* =========================================================
-   VIDEO
-========================================================= */
-
-.assigned-video {
-
-    display: block;
+.employee-video-preview {
 
     width: 100%;
 
     max-width: 600px;
 
-    margin-top: 14px;
+    margin-top: 12px;
 
-    border-radius: 10px;
-
-    background: #000;
+    border-radius: 8px;
 
 }
 
 
-/* =========================================================
-   START / FINISH CONTROL
-========================================================= */
+.employee-work-control {
 
-.work-timer-panel {
+    margin-top: 20px;
 
-    margin-top: 22px;
-
-    padding: 23px;
-
-    border-radius: 15px;
+    padding: 20px;
 
     border: 1px solid
-        rgba(0,0,0,.08);
+        rgba(0,0,0,.09);
 
-    background:
-        rgba(0,0,0,.012);
-
-}
-
-
-/* =========================================================
-   3 STEP PROGRESS
-========================================================= */
-
-.work-progress {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(
-            3,
-            minmax(0,1fr)
-        );
-
-    gap: 8px;
-
-    margin-bottom: 25px;
+    border-radius: 12px;
 
 }
 
 
-.work-progress-step {
+.employee-time-label {
 
-    padding: 11px 8px;
+    display: block;
 
-    border-radius: 9px;
-
-    background:
-        rgba(0,0,0,.045);
-
-    text-align: center;
-
-    font-size: 11px;
-
-    font-weight: 800;
-
-    letter-spacing: .3px;
-
-    opacity: .4;
-
-}
-
-
-.work-progress-step.active {
-
-    background:
-        rgba(37,99,235,.10);
-
-    color: #2563eb;
-
-    opacity: 1;
-
-}
-
-
-.work-progress-step.done {
-
-    background:
-        rgba(21,128,61,.10);
-
-    color: #15803d;
-
-    opacity: 1;
-
-}
-
-
-/* =========================================================
-   STATUS BADGE
-========================================================= */
-
-.work-state {
-
-    display: inline-flex;
-
-    align-items: center;
-
-    gap: 7px;
-
-    padding: 7px 12px;
-
-    margin-bottom: 17px;
-
-    border-radius: 40px;
-
-    font-size: 12px;
-
-    font-weight: 800;
-
-}
-
-
-.work-state.ready {
-
-    background:
-        rgba(107,114,128,.12);
-
-}
-
-
-.work-state.running {
-
-    background:
-        rgba(37,99,235,.11);
-
-    color: #2563eb;
-
-}
-
-
-.work-state.finished {
-
-    background:
-        rgba(21,128,61,.11);
-
-    color: #15803d;
-
-}
-
-
-/* =========================================================
-   TIMER
-========================================================= */
-
-.work-time-label {
-
-    margin-bottom: 6px;
+    margin-bottom: 5px;
 
     font-size: 12px;
 
     font-weight: 700;
 
-    opacity: .55;
+    opacity: .65;
 
 }
 
 
-.work-time {
+.employee-live-timer {
 
-    margin-bottom: 22px;
+    margin-bottom: 18px;
 
     font-size:
         clamp(
-            34px,
-            6vw,
-            52px
+            30px,
+            5vw,
+            44px
         );
 
-    line-height: 1;
+    font-weight: 700;
 
-    font-weight: 800;
-
-    letter-spacing: 3px;
+    letter-spacing: 2px;
 
     font-variant-numeric:
         tabular-nums;
@@ -3395,99 +3385,185 @@ if (
 }
 
 
-/* =========================================================
-   START BUTTON
-========================================================= */
-
-.start-work-button {
+.employee-task-status {
 
     display: inline-flex;
 
     align-items: center;
 
-    justify-content: center;
+    padding: 6px 11px;
 
-    min-width: 180px;
+    margin-bottom: 12px;
 
-    min-height: 50px;
+    border-radius: 30px;
 
-    font-size: 14px;
+    font-size: 12px;
 
-    font-weight: 800;
+    font-weight: 700;
 
 }
 
 
-/* =========================================================
-   FINISH BUTTON
-========================================================= */
+.employee-task-status.not-started {
 
-.finish-work-button {
+    background:
+        rgba(107,114,128,.12);
 
-    display: inline-flex;
+}
 
+
+.employee-task-status.running {
+
+    background:
+        rgba(37,99,235,.10);
+
+    color: #2563eb;
+
+}
+
+
+.employee-task-status.finished {
+
+    background:
+        rgba(21,128,61,.10);
+
+    color: #15803d;
+
+}
+
+
+.employee-remark-box {
+
+    margin-top: 16px;
+
+}
+
+
+.employee-task-action-row {
+
+    margin-top: 15px;
+
+    display: flex;
+
+    gap: 10px;
+
+    flex-wrap: wrap;
+
+}
+
+
+
+.employee-assigned-task {
+    padding: 0;
+    overflow: hidden;
+}
+
+.employee-task-summary {
+    width: 100%;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 18px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
 
-    justify-content: center;
+.employee-task-summary:hover {
+    background: rgba(0,0,0,.025);
+}
 
-    min-width: 190px;
+.employee-task-summary-main {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
 
-    min-height: 50px;
-
-    font-size: 14px;
-
+.employee-task-number {
+    font-size: 15px;
     font-weight: 800;
-
+    white-space: nowrap;
 }
 
-
-.work-remark {
-
-    margin: 19px 0;
-
+.employee-task-summary-title {
+    font-size: 14px;
+    font-weight: 600;
+    opacity: .82;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(52vw, 520px);
 }
 
+.employee-task-summary-side {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
 
-/* =========================================================
-   MOBILE
-========================================================= */
+.employee-task-summary .employee-task-status {
+    margin-bottom: 0;
+}
 
-@media (max-width:700px) {
+.employee-task-chevron {
+    font-size: 18px;
+    line-height: 1;
+    transition: transform .2s ease;
+}
 
-    .assigned-file-row {
+.employee-assigned-task.is-open .employee-task-chevron {
+    transform: rotate(180deg);
+}
 
-        flex-direction:
-            column;
+.employee-task-details {
+    display: none;
+    padding: 0 18px 18px;
+    border-top: 1px solid rgba(0,0,0,.07);
+}
 
-        align-items:
-            flex-start;
+.employee-assigned-task.is-open .employee-task-details {
+    display: block;
+}
+
+@media
+(max-width:767px) {
+
+
+    .employee-file-row {
+
+        align-items: flex-start;
+
+        flex-direction: column;
+
     }
 
 
-    .assigned-file-actions {
+    .employee-file-buttons {
 
         width: 100%;
+
+        flex-wrap: wrap;
+
     }
 
-
-    .assigned-file-button {
-
-        flex: 1;
+    .employee-task-summary {
+        align-items: flex-start;
+        padding: 14px;
     }
 
-
-    .work-progress {
-
-        gap: 4px;
+    .employee-task-summary-title {
+        max-width: 58vw;
     }
 
-
-    .work-progress-step {
-
-        font-size: 9px;
-
-        padding:
-            9px 4px;
+    .employee-task-details {
+        padding: 0 14px 14px;
     }
 
 }
@@ -3495,9 +3571,12 @@ if (
 </style>
 
 
+
 <p>
 
+
     <a
+
         class="button secondary"
 
         href="download-assignments.php<?=
@@ -3519,7 +3598,9 @@ if (
 
     </a>
 
+
 </p>
+
 
 
 <?php if (
@@ -3532,16 +3613,23 @@ if (
     id="assigned-work"
 >
 
+
     <h2>
+
         Assigned work by date
+
     </h2>
+
 
 
     <div class="table-scroll">
 
+
         <table>
 
+
             <thead>
+
 
                 <tr>
 
@@ -3561,7 +3649,9 @@ if (
 
                 </tr>
 
+
             </thead>
+
 
 
             <tbody>
@@ -3574,11 +3664,14 @@ if (
                     !$assignmentDates
                 ) {
 
+
                     empty_row(
                         4,
                         'No assigned work yet.'
                     );
+
                 }
+
 
 
                 foreach (
@@ -3603,6 +3696,7 @@ if (
                         </td>
 
 
+
                         <td>
 
                             <?= h(
@@ -3612,6 +3706,7 @@ if (
                             ) ?>
 
                         </td>
+
 
 
                         <td class="wrap">
@@ -3625,7 +3720,9 @@ if (
                         </td>
 
 
+
                         <td>
+
 
                             <a
                                 class="button secondary"
@@ -3637,9 +3734,10 @@ if (
                                 ) ?>"
                             >
 
-                                View Work
+                                View work
 
                             </a>
+
 
                         </td>
 
@@ -3652,11 +3750,15 @@ if (
 
             </tbody>
 
+
         </table>
+
 
     </div>
 
+
 </section>
+
 
 
 <?php else: ?>
@@ -3673,7 +3775,7 @@ if (
 
         <h2>
 
-            Assigned Work ·
+            Assigned work ·
 
             <?= h(
                 $assignmentDate
@@ -3682,17 +3784,21 @@ if (
         </h2>
 
 
+
         <a
+
             class="button secondary"
+
             href="employee-assigned-work.php"
         >
 
-            All Dates
+            All dates
 
         </a>
 
 
     </div>
+
 
 
     <?php if (
@@ -3710,6 +3816,7 @@ if (
     <?php endif; ?>
 
 
+
     <?php
 
 
@@ -3720,7 +3827,7 @@ if (
 
 
         $attachments =
-            $assignmentFileMap[
+            $assignmentAttachmentMap[
                 $assignment[
                     'id'
                 ]
@@ -3764,7 +3871,7 @@ if (
             );
 
 
-        $startedTimestamp =
+        $startTimestamp =
             $started
 
                 ? strtotime(
@@ -3780,51 +3887,84 @@ if (
 
 
         <article
-            class="work-card assigned-task-card"
+            class="work-card employee-assigned-task"
+            data-assignment-accordion
         >
 
 
-            <!-- =============================================
-                 TASK TITLE
-            ============================================== -->
+            <button
+                type="button"
+                class="employee-task-summary"
+                data-assignment-toggle
+                aria-expanded="false"
+                aria-controls="assignment-task-details-<?= (int) $assignment['id'] ?>"
+            >
 
-            <div class="panel-heading">
+                <span class="employee-task-summary-main">
+
+                    <span class="employee-task-number">
+                        Task <?= $taskIndex + 1 ?>
+                    </span>
+
+                    <span class="employee-task-summary-title">
+                        <?= h($assignment['title']) ?>
+                    </span>
+
+                </span>
+
+                <span class="employee-task-summary-side">
+
+                    <?php if ($finished): ?>
+
+                        <span class="employee-task-status finished">
+                            FINISHED
+                        </span>
+
+                    <?php elseif ($started): ?>
+
+                        <span class="employee-task-status running">
+                            WORKING
+                        </span>
+
+                    <?php else: ?>
+
+                        <span class="employee-task-status not-started">
+                            READY
+                        </span>
+
+                    <?php endif; ?>
+
+                    <span class="employee-task-chevron" aria-hidden="true">⌄</span>
+
+                </span>
+
+            </button>
 
 
-                <h3>
-
-                    Task
-                    <?= $taskIndex + 1 ?>
-
-                    ·
-
-                    <?= h(
-                        $assignment[
-                            'title'
-                        ]
-                    ) ?>
-
-                </h3>
+            <div
+                class="employee-task-details"
+                id="assignment-task-details-<?= (int) $assignment['id'] ?>"
+                data-assignment-details
+            >
 
 
-            </div>
-
-
-            <!-- =============================================
+            <!-- =================================================
                  MESSAGE / TASK BRIEF
-            ============================================== -->
+            ================================================== -->
 
-            <div class="assigned-task-section">
+            <div class="employee-task-content">
 
 
-                <span class="assigned-task-section-title">
+                <span
+                    class="employee-task-content-title"
+                >
 
                     Message / Task Brief
 
                 </span>
 
 
-                <div class="assigned-task-message">
+                <div class="employee-task-message">
 
                     <?= nl2br(
                         h(
@@ -3840,14 +3980,17 @@ if (
             </div>
 
 
-            <!-- =============================================
-                 REFERENCE
-            ============================================== -->
 
-            <div class="assigned-task-section">
+            <!-- =================================================
+                 REFERENCE LINK
+            ================================================== -->
+
+            <div class="employee-task-content">
 
 
-                <span class="assigned-task-section-title">
+                <span
+                    class="employee-task-content-title"
+                >
 
                     Reference / Drive Link
 
@@ -3855,12 +3998,14 @@ if (
 
 
                 <?php if (
-                    $referenceLink !== ''
+                    $referenceLink !==
+                    ''
                 ): ?>
 
 
                     <a
-                        class="assigned-reference-link"
+
+                        class="employee-reference-link"
 
                         href="<?= h(
                             $referenceLink
@@ -3871,7 +4016,7 @@ if (
                         rel="noopener noreferrer"
                     >
 
-                        ↗ Open Reference / Drive Link
+                        Open Reference / Drive Link ↗
 
                     </a>
 
@@ -3892,14 +4037,17 @@ if (
             </div>
 
 
-            <!-- =============================================
+
+            <!-- =================================================
                  ATTACHED FILES
-            ============================================== -->
+            ================================================== -->
 
-            <div class="assigned-task-section">
+            <div class="employee-task-content">
 
 
-                <span class="assigned-task-section-title">
+                <span
+                    class="employee-task-content-title"
+                >
 
                     Attached Files
 
@@ -3911,7 +4059,7 @@ if (
                 ): ?>
 
 
-                    <div class="assigned-file-list">
+                    <div class="employee-file-list">
 
 
                         <?php
@@ -3919,14 +4067,14 @@ if (
 
                         foreach (
                             $attachments
-                            as $file
+                            as $attachment
                         ):
 
 
                             $mime =
                                 strtolower(
                                     (string) (
-                                        $file[
+                                        $attachment[
                                             'mime_type'
                                         ]
                                         ?? ''
@@ -3934,21 +4082,12 @@ if (
                                 );
 
 
-                            $fileName =
-                                $file[
-                                    'original_name'
-                                ];
-
-
                             $openUrl =
                                 'employee-assigned-work.php'
                                 .
                                 '?task_file='
                                 .
-                                (int)
-                                    $file[
-                                        'id'
-                                    ]
+                                (int) $attachment['id']
                                 .
                                 '&mode=view';
 
@@ -3958,56 +4097,75 @@ if (
                                 .
                                 '?task_file='
                                 .
-                                (int)
-                                    $file[
-                                        'id'
-                                    ]
+                                (int) $attachment['id']
                                 .
                                 '&mode=download';
 
 
+                            $fileName =
+                                $attachment[
+                                    'original_name'
+                                ];
+
+
+
                             if (
-                                str_starts_with(
-                                    $mime,
-                                    'image/'
-                                )
+                                strpos($mime, 'image/') === 0
                             ) {
+
 
                                 $icon =
                                     '🖼️';
 
-                            } elseif (
-                                str_starts_with(
-                                    $mime,
-                                    'video/'
-                                )
+                            }
+
+
+
+                            elseif (
+                                strpos($mime, 'video/') === 0
                             ) {
+
 
                                 $icon =
                                     '🎬';
 
-                            } elseif (
+                            }
+
+
+
+                            elseif (
                                 $mime ===
                                 'application/pdf'
                             ) {
 
+
                                 $icon =
                                     '📄';
 
-                            } else {
+                            }
+
+
+
+                            else {
+
 
                                 $icon =
                                     '📎';
+
                             }
 
 
                         ?>
 
 
-                            <div class="assigned-file-row">
+                            <div
+                                class="employee-file-row"
+                            >
 
 
-                                <div class="assigned-file-name">
+                                <div
+                                    class="employee-file-name"
+                                >
 
                                     <?= $icon ?>
 
@@ -4018,11 +4176,17 @@ if (
                                 </div>
 
 
-                                <div class="assigned-file-actions">
 
+                                <div
+                                    class="employee-file-buttons"
+                                >
+
+
+                                    <!-- OPEN -->
 
                                     <a
-                                        class="assigned-file-button"
+
+                                        class="employee-file-button"
 
                                         href="<?= h(
                                             $openUrl
@@ -4030,7 +4194,7 @@ if (
 
                                         target="_blank"
 
-                                        rel="noopener"
+                                        rel="noopener noreferrer"
                                     >
 
                                         Open
@@ -4038,8 +4202,12 @@ if (
                                     </a>
 
 
+
+                                    <!-- DOWNLOAD -->
+
                                     <a
-                                        class="assigned-file-button"
+
+                                        class="employee-file-button"
 
                                         href="<?= h(
                                             $downloadUrl
@@ -4063,11 +4231,14 @@ if (
                     </div>
 
 
-                    <!-- =====================================
-                         IMAGE PREVIEWS
-                    ====================================== -->
 
-                    <div class="assigned-image-grid">
+                    <!-- =============================================
+                         IMAGE PREVIEWS
+                    ============================================== -->
+
+                    <div
+                        class="employee-image-grid"
+                    >
 
 
                         <?php
@@ -4075,14 +4246,14 @@ if (
 
                         foreach (
                             $attachments
-                            as $file
+                            as $attachment
                         ):
 
 
                             $mime =
                                 strtolower(
                                     (string) (
-                                        $file[
+                                        $attachment[
                                             'mime_type'
                                         ]
                                         ?? ''
@@ -4091,13 +4262,12 @@ if (
 
 
                             if (
-                                !str_starts_with(
-                                    $mime,
-                                    'image/'
-                                )
+                                strpos($mime, 'image/') !== 0
                             ) {
 
+
                                 continue;
+
                             }
 
 
@@ -4106,10 +4276,7 @@ if (
                                 .
                                 '?task_file='
                                 .
-                                (int)
-                                    $file[
-                                        'id'
-                                    ]
+                                (int) $attachment['id']
                                 .
                                 '&mode=view';
 
@@ -4118,23 +4285,25 @@ if (
 
 
                             <a
+
                                 href="<?= h(
                                     $imageUrl
                                 ) ?>"
 
                                 target="_blank"
 
-                                rel="noopener"
+                                rel="noopener noreferrer"
                             >
 
 
                                 <img
+
                                     src="<?= h(
                                         $imageUrl
                                     ) ?>"
 
                                     alt="<?= h(
-                                        $file[
+                                        $attachment[
                                             'original_name'
                                         ]
                                     ) ?>"
@@ -4152,23 +4321,24 @@ if (
                     </div>
 
 
-                    <!-- =====================================
-                         VIDEO PLAYERS
-                    ====================================== -->
+
+                    <!-- =============================================
+                         VIDEO PREVIEWS
+                    ============================================== -->
 
                     <?php
 
 
                     foreach (
                         $attachments
-                        as $file
+                        as $attachment
                     ):
 
 
                         $mime =
                             strtolower(
                                 (string) (
-                                    $file[
+                                    $attachment[
                                         'mime_type'
                                     ]
                                     ?? ''
@@ -4177,13 +4347,12 @@ if (
 
 
                         if (
-                            !str_starts_with(
-                                $mime,
-                                'video/'
-                            )
+                            strpos($mime, 'video/') !== 0
                         ) {
 
+
                             continue;
+
                         }
 
 
@@ -4192,10 +4361,7 @@ if (
                             .
                             '?task_file='
                             .
-                            (int)
-                                $file[
-                                    'id'
-                                ]
+                            (int) $attachment['id']
                             .
                             '&mode=view';
 
@@ -4204,15 +4370,19 @@ if (
 
 
                         <video
-                            class="assigned-video"
+
+                            class="employee-video-preview"
 
                             controls
+
+                            playsinline
 
                             preload="metadata"
                         >
 
 
                             <source
+
                                 src="<?= h(
                                     $videoUrl
                                 ) ?>"
@@ -4248,109 +4418,52 @@ if (
             </div>
 
 
-            <!-- =============================================
-                 WORK TIMER
-            ============================================== -->
 
-            <div class="work-timer-panel">
+            <!-- =================================================
+                 START / END / TIMER / REMARK
+            ================================================== -->
 
-
-                <!-- 3 STEP STATUS -->
-
-                <div class="work-progress">
+            <div
+                class="employee-work-control"
+            >
 
 
-                    <div
-                        class="work-progress-step
-                        <?=
 
-                            !$started
-
-                                ? 'active'
-
-                                : 'done'
-
-                        ?>"
-                    >
-
-                        1 · READY
-
-                    </div>
-
-
-                    <div
-                        class="work-progress-step
-                        <?=
-
-                            $started
-                            &&
-                            !$finished
-
-                                ? 'active'
-
-                                : (
-                                    $finished
-                                        ? 'done'
-                                        : ''
-                                )
-
-                        ?>"
-                    >
-
-                        2 · WORKING
-
-                    </div>
-
-
-                    <div
-                        class="work-progress-step
-                        <?=
-
-                            $finished
-
-                                ? 'done'
-
-                                : ''
-
-                        ?>"
-                    >
-
-                        3 · FINISHED
-
-                    </div>
-
-
-                </div>
-
-
-                <!-- =====================================
-                     READY
-                ====================================== -->
+                <!-- =================================================
+                     NOT STARTED
+                ================================================== -->
 
                 <?php if (
                     !$started
                 ): ?>
 
 
-                    <span class="work-state ready">
+                    <span
+                        class="employee-task-status not-started"
+                    >
 
-                        ○ READY TO START
+                        NOT STARTED
 
                     </span>
 
 
-                    <div class="work-time-label">
+                    <span
+                        class="employee-time-label"
+                    >
 
-                        Work Time
+                        Time
 
-                    </div>
+                    </span>
 
 
-                    <div class="work-time">
+                    <div
+                        class="employee-live-timer"
+                    >
 
                         00:00:00
 
                     </div>
+
 
 
                     <form method="post">
@@ -4361,13 +4474,16 @@ if (
 
                         <input
                             type="hidden"
+
                             name="action"
+
                             value="start_assignment"
                         >
 
 
                         <input
                             type="hidden"
+
                             name="assignment_id"
 
                             value="<?= (int)
@@ -4378,14 +4494,23 @@ if (
                         >
 
 
-                        <button
-                            class="primary start-work-button"
-                            type="submit"
+                        <div
+                            class="employee-task-action-row"
                         >
 
-                            ▶ START WORK
 
-                        </button>
+                            <button
+                                class="primary"
+
+                                type="submit"
+                            >
+
+                                Start Work
+
+                            </button>
+
+
+                        </div>
 
 
                     </form>
@@ -4394,9 +4519,10 @@ if (
                 <?php endif; ?>
 
 
-                <!-- =====================================
+
+                <!-- =================================================
                      WORKING
-                ====================================== -->
+                ================================================== -->
 
                 <?php if (
                     $started
@@ -4405,33 +4531,41 @@ if (
                 ): ?>
 
 
-                    <span class="work-state running">
+                    <span
+                        class="employee-task-status running"
+                    >
 
-                        ● WORK IN PROGRESS
+                        WORKING
 
                     </span>
 
 
-                    <div class="work-time-label">
 
-                        Live Work Time
+                    <span
+                        class="employee-time-label"
+                    >
 
-                    </div>
+                        Time
+
+                    </span>
+
 
 
                     <div
-                        class="work-time"
 
-                        data-assignment-live-timer
+                        class="employee-live-timer"
+
+                        data-running-assignment-timer
 
                         data-start="<?= (int)
-                            $startedTimestamp
+                            $startTimestamp
                         ?>"
                     >
 
                         00:00:00
 
                     </div>
+
 
 
                     <form method="post">
@@ -4442,13 +4576,16 @@ if (
 
                         <input
                             type="hidden"
+
                             name="action"
-                            value="finish_assignment"
+
+                            value="end_assignment"
                         >
 
 
                         <input
                             type="hidden"
+
                             name="assignment_id"
 
                             value="<?= (int)
@@ -4459,9 +4596,12 @@ if (
                         >
 
 
+
                         <!-- REMARK -->
 
-                        <div class="field full work-remark">
+                        <div
+                            class="field full employee-remark-box"
+                        >
 
 
                             <label
@@ -4478,6 +4618,7 @@ if (
 
 
                             <textarea
+
                                 id="remark-<?= (int)
                                     $assignment[
                                         'id'
@@ -4488,7 +4629,8 @@ if (
 
                                 maxlength="5000"
 
-                                placeholder="Completed work details, final link, issue or remark"
+                                placeholder="Enter completed work details, output link, issue or remark"
+
                             ><?= h(
                                 $assignment[
                                     'employee_remark'
@@ -4500,14 +4642,24 @@ if (
                         </div>
 
 
-                        <button
-                            class="primary finish-work-button"
-                            type="submit"
+
+                        <div
+                            class="employee-task-action-row"
                         >
 
-                            ✓ FINISH WORK
 
-                        </button>
+                            <button
+                                class="primary"
+
+                                type="submit"
+                            >
+
+                                End Work
+
+                            </button>
+
+
+                        </div>
 
 
                     </form>
@@ -4516,33 +4668,42 @@ if (
                 <?php endif; ?>
 
 
-                <!-- =====================================
+
+                <!-- =================================================
                      FINISHED
-                ====================================== -->
+                ================================================== -->
 
                 <?php if (
                     $finished
                 ): ?>
 
 
-                    <span class="work-state finished">
+                    <span
+                        class="employee-task-status finished"
+                    >
 
-                        ✓ TASK FINISHED
+                        FINISHED
 
                     </span>
 
 
-                    <div class="work-time-label">
 
-                        Total Time Taken
+                    <span
+                        class="employee-time-label"
+                    >
 
-                    </div>
+                        Time Taken
+
+                    </span>
 
 
-                    <div class="work-time">
+
+                    <div
+                        class="employee-live-timer"
+                    >
 
                         <?= h(
-                            assignment_exact_time(
+                            employee_assignment_duration(
                                 $timeSpentSeconds
                             )
                         ) ?>
@@ -4550,48 +4711,79 @@ if (
                     </div>
 
 
-                    <p class="muted">
 
-                        Started ·
+                    <?php if (
+                        !empty(
+                            $assignment[
+                                'started_at'
+                            ]
+                        )
+                    ): ?>
 
-                        <?= h(
-                            date(
-                                'd M Y, h:i:s A',
 
-                                strtotime(
-                                    $assignment[
-                                        'started_at'
-                                    ]
+                        <p class="muted">
+
+                            Started:
+
+                            <?= h(
+                                date(
+                                    'd M Y, h:i A',
+
+                                    strtotime(
+                                        $assignment[
+                                            'started_at'
+                                        ]
+                                    )
                                 )
-                            )
-                        ) ?>
+                            ) ?>
 
-                    </p>
+                        </p>
 
 
-                    <p class="muted">
+                    <?php endif; ?>
 
-                        Finished ·
 
-                        <?= h(
-                            date(
-                                'd M Y, h:i:s A',
 
-                                strtotime(
-                                    $assignment[
-                                        'completed_at'
-                                    ]
+                    <?php if (
+                        !empty(
+                            $assignment[
+                                'completed_at'
+                            ]
+                        )
+                    ): ?>
+
+
+                        <p class="muted">
+
+                            Finished:
+
+                            <?= h(
+                                date(
+                                    'd M Y, h:i A',
+
+                                    strtotime(
+                                        $assignment[
+                                            'completed_at'
+                                        ]
+                                    )
                                 )
-                            )
-                        ) ?>
+                            ) ?>
 
-                    </p>
-
-
-                    <div class="assigned-task-section">
+                        </p>
 
 
-                        <span class="assigned-task-section-title">
+                    <?php endif; ?>
+
+
+
+                    <div
+                        class="employee-task-content"
+                    >
+
+
+                        <span
+                            class="employee-task-content-title"
+                        >
 
                             Remark
 
@@ -4638,6 +4830,9 @@ if (
             </div>
 
 
+            </div>
+
+
         </article>
 
 
@@ -4651,6 +4846,7 @@ if (
 
 
 <?php endif; ?>
+
 
 
 <?php
@@ -4667,6 +4863,7 @@ if (
 
 
 <p>
+
 
     <a
         class="button secondary"
@@ -4691,7 +4888,9 @@ if (
 
     </a>
 
+
 </p>
+
 
 
 <section
@@ -4706,6 +4905,7 @@ if (
         <h2>
 
             Daily work sheet ·
+
             <?= h(
                 $date
             ) ?>
@@ -4731,6 +4931,7 @@ if (
     </div>
 
 
+
     <?php if (
         $sheet
         &&
@@ -4742,8 +4943,11 @@ if (
 
         <p>
 
+
             <strong>
+
                 Manager feedback:
+
             </strong>
 
 
@@ -4763,10 +4967,12 @@ if (
                 ]
             ) ?>
 
+
         </p>
 
 
     <?php endif; ?>
+
 
 
     <div class="table-scroll">
@@ -4818,6 +5024,7 @@ if (
             </thead>
 
 
+
             <tbody>
 
 
@@ -4828,10 +5035,13 @@ if (
                     !$entries
                 ) {
 
+
                     empty_row(
                         8
                     );
+
                 }
+
 
 
                 foreach (
@@ -4852,6 +5062,7 @@ if (
                         </td>
 
 
+
                         <td>
 
                             <?= h(
@@ -4859,6 +5070,7 @@ if (
                             ) ?>
 
                         </td>
+
 
 
                         <td>
@@ -4870,6 +5082,7 @@ if (
                             ) ?>
 
                         </td>
+
 
 
                         <td class="wrap">
@@ -4884,7 +5097,9 @@ if (
                             ): ?>
 
 
-                                <span class="work-type-label">
+                                <span
+                                    class="work-type-label"
+                                >
 
                                     <?= h(
                                         work_type_label(
@@ -4910,7 +5125,9 @@ if (
                         </td>
 
 
+
                         <td>
+
 
                             <?= h(
 
@@ -4927,9 +5144,12 @@ if (
                                             'time_spent_minutes'
                                         ]
                                     )
+
                             ) ?>
 
+
                         </td>
+
 
 
                         <td>
@@ -4943,6 +5163,7 @@ if (
                         </td>
 
 
+
                         <td class="wrap">
 
                             <?= h(
@@ -4952,6 +5173,7 @@ if (
                             ) ?>
 
                         </td>
+
 
 
                         <td>
@@ -4981,6 +5203,7 @@ if (
 
 
                                     <a
+
                                         class="icon-button"
 
                                         href="employee-daily-work.php?date=<?= h(
@@ -5027,6 +5250,7 @@ if (
     </div>
 
 
+
     <?php if (
         $entries
     ): ?>
@@ -5034,6 +5258,7 @@ if (
 
         <form
             method="post"
+
             style="margin-top:20px"
         >
 
@@ -5042,14 +5267,19 @@ if (
 
 
             <input
+
                 type="hidden"
+
                 name="action"
+
                 value="submit_day"
             >
 
 
             <button
+
                 class="primary"
+
                 type="submit"
             >
 
@@ -5070,9 +5300,10 @@ if (
 <?php endif; ?>
 
 
+
 <?php
 /* =========================================================
-   DAILY WORK FORM
+   DAILY WORK
 ========================================================= */
 
 if (
@@ -5080,14 +5311,17 @@ if (
     'daily'
 ) {
 
+
     require __DIR__
         .
         '/daily-work-form.php';
+
 }
 
 
+
 /* =========================================================
-   DETAIL DIALOGS
+   DETAIL DIALOG
 ========================================================= */
 
 foreach (
@@ -5095,17 +5329,21 @@ foreach (
     as $entry
 ) {
 
+
     detail_dialog(
 
         'entry-'
         .
-        $entry['id'],
+        $entry[
+            'id'
+        ],
 
         'Work details',
 
         array_merge(
 
             [
+
                 'Date' =>
                     $date,
 
@@ -5113,17 +5351,65 @@ foreach (
                     $entry[
                         'client_name'
                     ]
+
             ],
 
             work_details(
                 $entry,
                 $workDepartment
             )
+
         )
+
     );
+
 }
 
+
+
 ?>
+
+
+<!-- =========================================================
+     ASSIGNED TASK ACCORDION
+========================================================= -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const taskCards = Array.from(
+        document.querySelectorAll('[data-assignment-accordion]')
+    );
+
+    taskCards.forEach(function (card) {
+        const toggle = card.querySelector('[data-assignment-toggle]');
+        const details = card.querySelector('[data-assignment-details]');
+
+        if (!toggle || !details) {
+            return;
+        }
+
+        toggle.addEventListener('click', function () {
+            const willOpen = !card.classList.contains('is-open');
+
+            taskCards.forEach(function (otherCard) {
+                otherCard.classList.remove('is-open');
+
+                const otherToggle = otherCard.querySelector(
+                    '[data-assignment-toggle]'
+                );
+
+                if (otherToggle) {
+                    otherToggle.setAttribute('aria-expanded', 'false');
+                }
+            });
+
+            if (willOpen) {
+                card.classList.add('is-open');
+                toggle.setAttribute('aria-expanded', 'true');
+            }
+        });
+    });
+});
+</script>
 
 
 <!-- =========================================================
@@ -5139,7 +5425,7 @@ document.addEventListener(
 
         const timers =
             document.querySelectorAll(
-                '[data-assignment-live-timer]'
+                '[data-running-assignment-timer]'
             );
 
 
@@ -5147,62 +5433,69 @@ document.addEventListener(
             function (timer) {
 
 
-                const startedAt =
+                const startTimestamp =
                     Number(
                         timer.dataset.start
                     );
 
 
-                if (!startedAt) {
+                if (
+                    !startTimestamp
+                ) {
 
                     return;
+
                 }
+
 
 
                 function updateTimer() {
 
 
-                    let totalSeconds =
+                    const currentTimestamp =
+                        Math.floor(
+                            Date.now()
+                            /
+                            1000
+                        );
+
+
+                    let seconds =
                         Math.max(
-
                             0,
-
-                            Math.floor(
-                                Date.now()
-                                /
-                                1000
-                            )
+                            currentTimestamp
                             -
-                            startedAt
+                            startTimestamp
                         );
 
 
                     const hours =
                         Math.floor(
-                            totalSeconds
+                            seconds
                             /
                             3600
                         );
 
 
-                    totalSeconds =
-                        totalSeconds
+                    seconds =
+                        seconds
                         %
                         3600;
 
 
                     const minutes =
                         Math.floor(
-                            totalSeconds
+                            seconds
                             /
                             60
                         );
 
 
-                    const seconds =
-                        totalSeconds
+                    const remainingSeconds =
+                        seconds
                         %
                         60;
+
 
 
                     timer.textContent =
@@ -5236,7 +5529,7 @@ document.addEventListener(
                         +
 
                         String(
-                            seconds
+                            remainingSeconds
                         )
                         .padStart(
                             2,
@@ -5246,13 +5539,17 @@ document.addEventListener(
                 }
 
 
+
                 updateTimer();
+
 
 
                 window.setInterval(
                     updateTimer,
                     1000
                 );
+
+
             }
         );
 

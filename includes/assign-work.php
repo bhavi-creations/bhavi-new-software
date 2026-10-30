@@ -13,88 +13,85 @@ $assignmentView = $assignmentView ?? 'new';
 $editId = (int) ($_GET['edit'] ?? 0);
 
 
-
 /* =========================================================
-   AUTO CREATE REQUIRED DATABASE FIELDS
-   Runs safely even if fields/table already exist
+   LIVE SERVER HELPERS
 ========================================================= */
 
-try {
+function assignment_ini_bytes($value): int
+{
+    $value = trim((string) $value);
 
-    $editingTypeColumn = one(
-        "SHOW COLUMNS
-         FROM work_assignments
-         LIKE 'editing_type'"
-    );
-
-    if (!$editingTypeColumn) {
-
-        query(
-            "ALTER TABLE work_assignments
-             ADD COLUMN editing_type VARCHAR(50) NULL
-             AFTER description"
-        );
-
+    if ($value === '') {
+        return 0;
     }
 
+    $last = strtolower(substr($value, -1));
+    $number = (float) $value;
 
-    $referenceLinkColumn = one(
-        "SHOW COLUMNS
-         FROM work_assignments
-         LIKE 'reference_link'"
-    );
-
-    if (!$referenceLinkColumn) {
-
-        query(
-            "ALTER TABLE work_assignments
-             ADD COLUMN reference_link VARCHAR(2048) NULL
-             AFTER editing_type"
-        );
-
+    if ($last === 'g') {
+        $number *= 1024;
+        $last = 'm';
     }
 
+    if ($last === 'm') {
+        $number *= 1024;
+        $last = 'k';
+    }
 
-    query(
-        "CREATE TABLE IF NOT EXISTS work_assignment_attachments
-        (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    if ($last === 'k') {
+        $number *= 1024;
+    }
 
-            assignment_id INT NOT NULL,
-
-            original_name VARCHAR(255) NOT NULL,
-
-            stored_name VARCHAR(255) NOT NULL,
-
-            file_path VARCHAR(1000) NOT NULL,
-
-            mime_type VARCHAR(150) DEFAULT NULL,
-
-            file_size BIGINT UNSIGNED DEFAULT 0,
-
-            uploaded_by INT DEFAULT NULL,
-
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-            PRIMARY KEY (id),
-
-            KEY idx_work_assignment_attachment_assignment
-                (assignment_id)
-
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-
-
-} catch (Throwable $schemaError) {
-
-    /*
-     * Do not break whole page if hosting
-     * does not permit ALTER TABLE automatically.
-     */
-
+    return (int) round($number);
 }
 
 
+function assignment_required_schema_check(): void
+{
+    $rows = rows("SHOW COLUMNS FROM work_assignments");
+
+    $columns = [];
+
+    foreach ($rows as $row) {
+        if (!empty($row['Field'])) {
+            $columns[(string) $row['Field']] = true;
+        }
+    }
+
+    $required = [
+        'id',
+        'employee_id',
+        'department_id',
+        'client_id',
+        'title',
+        'description',
+        'editing_type',
+        'reference_link',
+        'work_date',
+        'status',
+        'assigned_by',
+        'deleted_at'
+    ];
+
+    $missing = [];
+
+    foreach ($required as $column) {
+        if (!isset($columns[$column])) {
+            $missing[] = $column;
+        }
+    }
+
+    if ($missing) {
+        throw new RuntimeException(
+            'Live database is missing required work_assignments columns: '
+            .
+            implode(', ', $missing)
+        );
+    }
+}
+
+
+/* Database schema is managed separately. Required columns/tables already exist. */
 
 /* =========================================================
    EXISTING RECORD
@@ -287,8 +284,21 @@ function save_assignment_attachments(
      * should also permit required sizes.
      */
 
-    $maxFileSize =
+    $configuredMaxFileSize =
         100 * 1024 * 1024;
+
+    $serverUploadLimit =
+        assignment_ini_bytes(
+            ini_get('upload_max_filesize')
+        );
+
+    $maxFileSize =
+        $serverUploadLimit > 0
+            ? min(
+                $configuredMaxFileSize,
+                $serverUploadLimit
+            )
+            : $configuredMaxFileSize;
 
 
 
@@ -380,7 +390,7 @@ function save_assignment_attachments(
         if (
             !mkdir(
                 $absoluteDirectory,
-                0755,
+                0775,
                 true
             )
             &&
@@ -399,10 +409,20 @@ function save_assignment_attachments(
 
 
 
-    $fileInfo =
-        new finfo(
-            FILEINFO_MIME_TYPE
+    if (!is_writable($absoluteDirectory)) {
+        throw new RuntimeException(
+            'Live upload folder is not writable: '
+            .
+            $absoluteDirectory
+            .
+            '. Give the PHP/web-server user write permission to this folder.'
         );
+    }
+
+    $fileInfo =
+        class_exists('finfo')
+            ? new finfo(FILEINFO_MIME_TYPE)
+            : null;
 
 
 
@@ -417,8 +437,35 @@ function save_assignment_attachments(
             UPLOAD_ERR_OK
         ) {
 
-            throw new InvalidArgumentException(
-                'One of the files could not be uploaded.'
+            $uploadErrors = [
+                UPLOAD_ERR_INI_SIZE =>
+                    'File is larger than the live server upload_max_filesize setting.',
+                UPLOAD_ERR_FORM_SIZE =>
+                    'File is larger than the form upload limit.',
+                UPLOAD_ERR_PARTIAL =>
+                    'File upload was interrupted before completion.',
+                UPLOAD_ERR_NO_FILE =>
+                    'No file was received.',
+                UPLOAD_ERR_NO_TMP_DIR =>
+                    'Live server temporary upload folder is missing.',
+                UPLOAD_ERR_CANT_WRITE =>
+                    'Live server could not write the uploaded file to disk.',
+                UPLOAD_ERR_EXTENSION =>
+                    'A live server PHP extension stopped the file upload.'
+            ];
+
+            throw new RuntimeException(
+                'Upload failed for "'
+                .
+                (string) ($file['name'] ?? 'attachment')
+                .
+                '": '
+                .
+                (
+                    $uploadErrors[$file['error']]
+                    ??
+                    ('PHP upload error code ' . (int) $file['error'])
+                )
             );
 
         }
@@ -441,7 +488,15 @@ function save_assignment_attachments(
         ) {
 
             throw new InvalidArgumentException(
-                'Each attachment must be 100 MB or smaller.'
+                'Attachment "'
+                .
+                (string) ($file['name'] ?? 'file')
+                .
+                '" is too large for this live server. Maximum allowed per file is '
+                .
+                round($maxFileSize / 1024 / 1024, 1)
+                .
+                ' MB.'
             );
 
         }
@@ -463,11 +518,19 @@ function save_assignment_attachments(
             );
 
 
-        $mimeType =
-            $fileInfo->file(
-                $file['tmp_name']
-            )
-            ?: 'application/octet-stream';
+        $mimeType = 'application/octet-stream';
+
+        if ($fileInfo) {
+            $detectedMime = $fileInfo->file($file['tmp_name']);
+            if (is_string($detectedMime) && $detectedMime !== '') {
+                $mimeType = $detectedMime;
+            }
+        } elseif (function_exists('mime_content_type')) {
+            $detectedMime = mime_content_type($file['tmp_name']);
+            if (is_string($detectedMime) && $detectedMime !== '') {
+                $mimeType = $detectedMime;
+            }
+        }
 
 
 
@@ -476,64 +539,36 @@ function save_assignment_attachments(
 
 
         /* IMAGE */
-
         if (
-            str_starts_with(
-                $mimeType,
-                'image/'
-            )
+            in_array($extension, $allowedImageExtensions, true)
             &&
-            in_array(
-                $extension,
-                $allowedImageExtensions,
-                true
-            )
+            (strpos($mimeType, 'image/') === 0 || $mimeType === 'application/octet-stream')
         ) {
-
             $allowed = true;
-
         }
-
-
 
         /* VIDEO */
-
         elseif (
-            str_starts_with(
-                $mimeType,
-                'video/'
-            )
+            in_array($extension, $allowedVideoExtensions, true)
             &&
-            in_array(
-                $extension,
-                $allowedVideoExtensions,
-                true
-            )
+            (strpos($mimeType, 'video/') === 0 || $mimeType === 'application/octet-stream')
         ) {
-
             $allowed = true;
-
         }
 
-
-
         /* DOCUMENT */
-
-        elseif (
-            isset(
-                $documentMimeTypes[
-                    $mimeType
-                ]
-            )
-        ) {
-
+        elseif (isset($documentMimeTypes[$mimeType])) {
             $allowed = true;
+            $extension = $documentMimeTypes[$mimeType];
+        }
 
-            $extension =
-                $documentMimeTypes[
-                    $mimeType
-                ];
-
+        /* Some hosts report Office/ZIP files as generic binary MIME. */
+        elseif (
+            $mimeType === 'application/octet-stream'
+            &&
+            in_array($extension, ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','zip'], true)
+        ) {
+            $allowed = true;
         }
 
 
@@ -663,10 +698,43 @@ if (
 ) {
 
 
-    check_csrf();
-
-
     try {
+
+        /*
+         * On many live hosts, when post_max_size is exceeded,
+         * PHP silently empties both $_POST and $_FILES.
+         */
+        $contentLength =
+            isset($_SERVER['CONTENT_LENGTH'])
+                ? (int) $_SERVER['CONTENT_LENGTH']
+                : 0;
+
+        $postLimit =
+            assignment_ini_bytes(
+                ini_get('post_max_size')
+            );
+
+        if (
+            $contentLength > 0
+            &&
+            $postLimit > 0
+            &&
+            $contentLength > $postLimit
+        ) {
+            throw new RuntimeException(
+                'Request is larger than the live server post_max_size limit. '
+                .
+                'Current server limit: '
+                .
+                round($postLimit / 1024 / 1024, 1)
+                .
+                ' MB. Reduce attachment size or increase post_max_size in hosting PHP settings.'
+            );
+        }
+
+        check_csrf();
+
+        assignment_required_schema_check();
 
 
         /* =====================================================
@@ -1306,44 +1374,23 @@ if (
 
 
 
-            /* Notify employee */
-
-            query(
-                "INSERT INTO notifications
-                (
-                    recipient_id,
-                    sender_id,
-                    notification_type,
-                    title,
-                    message
-                )
-
-                VALUES
-                (
-                    ?,
-                    ?,
-                    'general',
-                    ?,
-                    ?
-                )",
-
-                [
-                    $task['employee_id'],
-                    $user['id'],
-                    'Work assignment updated',
-
-                    $task['work_date']
-                    .
-                    ' · '
-                    .
-                    $task['title']
-                ]
-            );
-
-
+            /* Notification is sent after the assignment is committed. */
 
             db()->commit();
 
+            try {
+                query(
+                    "INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",
+                    [
+                        $task['employee_id'],
+                        $user['id'],
+                        'Work assignment updated',
+                        $task['work_date'] . ' · ' . $task['title']
+                    ]
+                );
+            } catch (Throwable $notificationError) {
+                error_log('Assignment saved; notification failed: ' . $notificationError->getMessage());
+            }
 
             flash(
                 'Assignment updated.'
@@ -1384,12 +1431,13 @@ if (
                         editing_type,
                         reference_link,
                         work_date,
+                        status,
                         assigned_by
                     )
 
                     VALUES
                     (
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?
                     )",
 
                     [
@@ -1463,80 +1511,30 @@ if (
 
 
 
-            /* =================================================
-               NOTIFICATION PER EMPLOYEE
-            ================================================= */
-
-            foreach (
-                $employeeNotifications
-                as $employeeId => $notifications
-            ) {
-
-
-                $titles = [];
-
-
-                foreach (
-                    $notifications as $notification
-                ) {
-
-                    $titles[] =
-                        $notification['title'];
-
-                }
-
-
-                $count =
-                    count(
-                        $notifications
-                    );
-
-
-                query(
-                    "INSERT INTO notifications
-                    (
-                        recipient_id,
-                        sender_id,
-                        notification_type,
-                        title,
-                        message
-                    )
-
-                    VALUES
-                    (
-                        ?,
-                        ?,
-                        'general',
-                        ?,
-                        ?
-                    )",
-
-                    [
-                        $employeeId,
-
-                        $user['id'],
-
-                        $count
-                        .
-                        (
-                            $count === 1
-                                ? ' task assigned'
-                                : ' tasks assigned'
-                        ),
-
-                        implode(
-                            ' · ',
-                            $titles
-                        )
-                    ]
-                );
-
-            }
-
-
+            /* Notifications are sent after commit so notification errors never cancel saved assignments. */
 
             db()->commit();
 
+            foreach ($employeeNotifications as $employeeId => $notifications) {
+                try {
+                    $titles = [];
+                    foreach ($notifications as $notification) {
+                        $titles[] = $notification['title'];
+                    }
+                    $count = count($notifications);
+                    query(
+                        "INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",
+                        [
+                            $employeeId,
+                            $user['id'],
+                            $count . ($count === 1 ? ' task assigned' : ' tasks assigned'),
+                            implode(' · ', $titles)
+                        ]
+                    );
+                } catch (Throwable $notificationError) {
+                    error_log('Assignments saved; notification failed for employee ' . $employeeId . ': ' . $notificationError->getMessage());
+                }
+            }
 
             flash(
                 count($taskItems)
@@ -1565,10 +1563,38 @@ if (
         }
 
 
-        $error =
-            mutation_error(
-                $e
-            );
+        error_log(
+            'manager-assign-work save error: ' .
+            get_class($e) . ': ' .
+            $e->getMessage() .
+            ' in ' . $e->getFile() . ':' . $e->getLine()
+        );
+
+        /*
+         * Admin/manager page: show the real error so live-only
+         * hosting/database problems can be fixed instead of hiding
+         * them behind a generic mutation_error() message.
+         */
+        if ($e instanceof PDOException) {
+            $error =
+                'Database save failed: '
+                .
+                $e->getMessage();
+        } else {
+            $message =
+                trim(
+                    (string) $e->getMessage()
+                );
+
+            $error =
+                $message !== ''
+                    ? $message
+                    : (
+                        'Unable to save assignment. '
+                        .
+                        get_class($e)
+                    );
+        }
 
     }
 
