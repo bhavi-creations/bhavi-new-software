@@ -305,7 +305,7 @@ $pretty = static fn($date) => (new DateTimeImmutable($date))->format('d-m-Y');
             <div class="field"><label for="from_date">From date</label><input type="date" id="from_date" name="from_date" value="<?= h($report['from']) ?>" required></div>
             <div class="field"><label for="to_date">To date</label><input type="date" id="to_date" name="to_date" value="<?= h($report['to']) ?>" required></div>
             <div class="field"><label for="department">Department</label><select id="department" name="department" data-filter-department>
-                    <option value="">All design departments</option><?= options($report['departments'], 'name', $report['department'] ?: null) ?>
+                    <option value="">All departments</option><?= options($report['departments'], 'name', $report['department'] ?: null) ?>
                 </select></div>
             <div class="field"><label for="employee">Employee</label><select id="employee" name="employee">
                     <option value="">All employees</option><?= options($report['employees'], 'full_name', $report['employee'] ?: null) ?>
@@ -315,7 +315,7 @@ $pretty = static fn($date) => (new DateTimeImmutable($date))->format('d-m-Y');
         <p class="help">Choose an employee and an inclusive date range, then use your browser’s Save as PDF option. Totals include completed submitted work only.</p>
     </section>
 <?php else: ?><button class="report-print-button" onclick="window.print()">Print / Save as PDF</button><?php endif; ?>
-<?php if (!$report['people']): ?><p class="report-empty">No design employees found for these filters.</p><?php endif; ?>
+<?php if (!$report['people']): ?><p class="report-empty">No employees found for these filters.</p><?php endif; ?>
 <?php foreach ($report['people'] as $person):
     $days = [];
     foreach ($person['entries'] as $entry) $days[$entry['work_date']][] = $entry;

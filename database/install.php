@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 20;
+const PORTAL_SCHEMA_VERSION = 21;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -320,6 +320,20 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (sender_id) REFERENCES users(id)
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (20)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_attachments (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            message_id BIGINT UNSIGNED NOT NULL,
+            original_file_name VARCHAR(255) NOT NULL,
+            storage_path VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            file_size_bytes BIGINT UNSIGNED NOT NULL,
+            uploaded_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_chat_attachment_message (message_id),
+            FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+            FOREIGN KEY (uploaded_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (21)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

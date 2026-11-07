@@ -13,9 +13,9 @@ function monthly_design_report(): array
     $department=($_GET['department']??'')===''?0:filter_var($_GET['department'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     $employee=($_GET['employee']??'')===''?0:filter_var($_GET['employee'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     if ($department===false || $employee===false) throw new InvalidArgumentException('Choose a valid department and employee.');
-    $departments=array_values(array_filter(rows('SELECT * FROM departments ORDER BY name'),static fn($row)=>creative_work_department($row['code'],$row['name'])));
+    $departments=rows('SELECT * FROM departments WHERE is_active=1 ORDER BY name');
     $departmentIds=array_column($departments,'id');
-    if ($department && !in_array($department,array_map('intval',$departmentIds),true)) throw new InvalidArgumentException('Choose a Graphic Designer, Video Editing or Design & video department.');
+    if ($department && !in_array($department,array_map('intval',$departmentIds),true)) throw new InvalidArgumentException('Choose an active department.');
     $selectedDepartments=$department?[$department]:($departmentIds?:[0]);
     $placeholders=implode(',',array_fill(0,count($selectedDepartments),'?'));
     $roster=rows("SELECT u.id,u.full_name,ep.joining_date,ep.designation,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.deleted_at IS NULL AND d.id IN ($placeholders) ORDER BY u.full_name",$selectedDepartments);
@@ -24,7 +24,7 @@ function monthly_design_report(): array
     foreach ($roster as $person) $people[$person['id']]=$person;
     foreach ($entries as $entry) if (!isset($people[$entry['employee_id']])) $people[$entry['employee_id']]=['id'=>$entry['employee_id'],'full_name'=>$entry['full_name'],'department_name'=>$entry['department_name']];
     uasort($people,static fn($a,$b)=>strcasecmp($a['full_name'],$b['full_name']));
-    if ($employee && !isset($people[$employee])) throw new InvalidArgumentException('Choose an employee from the selected design departments.');
+    if ($employee && !isset($people[$employee])) throw new InvalidArgumentException('Choose an employee from the selected departments.');
     $employees=array_values($people);
     if ($employee) $people=[$employee=>$people[$employee]];
     foreach ($people as &$person) $person+=['poster'=>0,'video_editing'=>0,'carousel'=>0,'pending'=>0,'unclassified'=>0,'entries'=>[]];
