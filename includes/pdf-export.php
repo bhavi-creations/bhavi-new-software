@@ -13,24 +13,55 @@ function download_pdf(array $headers, iterable $records, string $filename, array
         $groups=$options['grouped_headers']; $columns=[];
         foreach ($headers as $index=>$header) {
             $group=(string)($groups[$index]??'');
-            $columns[]=$group!==''?($group.' — '.$header):($header!==''?$header:(string)($groups[$index]??'Column '.($index+1)));
+            $columns[]=$group!==''?($group.' - '.$header):($header!==''?$header:(string)($groups[$index]??'Column '.($index+1)));
         }
     }
-    $lines=['Report: '.$toAscii(str_replace(['-','_'],' ',$filename)),'Generated: '.date('d-m-Y H:i')];
+    $pages=[]; $commands=[]; $y=0; $rowNumber=0;
+    $text=static fn(string $value,float $x,float $baseline,int $size=9,string $color='0 0 0'): string=>sprintf("%s rg BT /F1 %d Tf %.2f %.2f Td (%s) Tj ET",$color,$size,$x,$baseline,$escape($toAscii($value)));
+    $reportTitle='Report: '.$toAscii(str_replace(['-','_'],' ',$filename));
+    $startPage=static function() use (&$pages,&$commands,&$y,$text,$reportTitle): void {
+        if ($commands) $pages[]=$commands;
+        $commands=[];
+        $commands[]=$text($reportTitle,32,815,13,'0 0 0');
+        $commands[]=$text('Generated: '.date('d-m-Y H:i'),32,798,8,'0.35 0.42 0.38');
+        $x=32; $top=778; $height=24; $width=531; $split=170;
+        $commands[]='0 0.42 0.29 rg'; $commands[]=$x.' '.($top-$height).' '.$width.' '.$height.' re f';
+        $commands[]='0.45 0.60 0.52 RG 0.7 w'; $commands[]=$x.' '.($top-$height).' '.$width.' '.$height.' re S';
+        $commands[]=$text('Field',$x+7,$top-16,9,'1 1 1'); $commands[]=$text('Details',$x+$split+7,$top-16,9,'1 1 1');
+        $commands[]=($x+$split).' '.($top-$height).' m '.($x+$split).' '.$top.' l S';
+        $y=$top-$height;
+    };
+    $drawRow=static function(string $label,string $value) use (&$commands,&$y,$startPage,$text): void {
+        $labelLines=explode("\n",wordwrap($label,26,"\n",true));
+        $valueLines=explode("\n",wordwrap($value,72,"\n",true));
+        $chunks=array_chunk($valueLines,54); if (!$chunks) $chunks=[['']];
+        foreach ($chunks as $chunkIndex=>$chunk) {
+            $shownLabel=$chunkIndex===0?$labelLines:['(continued)'];
+            $lineCount=max(count($shownLabel),count($chunk));
+            $height=max(22,$lineCount*11+8);
+            if ($y-$height<42) $startPage();
+            $x=32; $width=531; $split=170; $bottom=$y-$height;
+            $commands[]=$chunkIndex%2===0?'0.97 0.985 0.975 rg':'1 1 1 rg';
+            $commands[]=$x.' '.$bottom.' '.$width.' '.$height.' re f';
+            $commands[]='0.72 0.79 0.74 RG 0.55 w '.$x.' '.$bottom.' '.$width.' '.$height.' re S';
+            $commands[]=($x+$split).' '.$bottom.' m '.($x+$split).' '.$y.' l S';
+            foreach ($shownLabel as $lineIndex=>$line) $commands[]=$text($line,$x+7,$y-13-($lineIndex*11),8,'0.12 0.23 0.18');
+            foreach ($chunk as $lineIndex=>$line) $commands[]=$text($line,$x+$split+7,$y-13-($lineIndex*11),8,'0.10 0.16 0.13');
+            $y=$bottom;
+        }
+    };
+    $startPage();
     foreach ($records as $record) {
-        $lines[]='';
-        foreach (array_values($record) as $index=>$value) {
-            $text=$toAscii((string)($columns[$index]??('Column '.($index+1))).': '.$toAscii($value));
-            foreach (explode("\n",wordwrap($text,92,"\n",true)) as $line) $lines[]=$line;
-        }
+        $rowNumber++;
+        $drawRow('Report item '.$rowNumber,'');
+        foreach (array_values($record) as $index=>$value) $drawRow((string)($columns[$index]??('Column '.($index+1))),$toAscii($value));
     }
-    $pages=array_chunk($lines,48); if (!$pages) $pages=[[]];
+    if ($rowNumber===0) $drawRow('Status','No records in this report period.');
+    if ($commands) $pages[]=$commands;
     $objects=[1=>'<< /Type /Catalog /Pages 2 0 R >>']; $pageRefs=[];
-    foreach ($pages as $index=>$pageLines) {
+    foreach ($pages as $index=>$pageCommands) {
         $pageObject=4+($index*2); $contentObject=$pageObject+1; $pageRefs[]=$pageObject.' 0 R';
-        $content="BT\n/F1 9 Tf\n48 790 Td\n13 TL\n".'(Bhavi report | Page '.($index+1).' of '.count($pages).") Tj\nT*\n";
-        foreach ($pageLines as $line) $content.='('.$escape($toAscii($line)).") Tj\nT*\n";
-        $content.='ET';
+        $content="q\n".implode("\n",$pageCommands)."\n".$text('Page '.($index+1).' of '.count($pages),510,24,8,'0.35 0.42 0.38')."\nQ";
         $objects[$pageObject]='<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents '.$contentObject.' 0 R >>';
         $objects[$contentObject]='<< /Length '.strlen($content)." >>\nstream\n".$content."\nendstream";
     }

@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $placeholders=implode(',',array_fill(0,count($participantIds),'?'));
             $validUsers=rows("SELECT id FROM users WHERE id IN ($placeholders) AND role IN ('admin','manager','employee') AND account_status='active' AND deleted_at IS NULL",$participantIds);
             if (count($validUsers)!==count($participantIds)) throw new InvalidArgumentException('One or more selected users are unavailable.');
-            $title=$type==='group'?optional_text('title',120):'';
+            $title=$type==='group'?(isset($_POST['title'])?text_input('title',120,false):''):'';
             db()->beginTransaction();
             query('INSERT INTO chat_conversations (conversation_type,title,created_by) VALUES (?,?,?)',[$type,$title?:null,$user['id']]);
             $conversationId=(int)db()->lastInsertId();
