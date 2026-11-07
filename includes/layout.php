@@ -30,9 +30,10 @@ function page_start(string $title, string $active = ''): void
     }
     if ($user['role']==='employee') { unset($nav['add-client.php']); $nav['add-client.php#brand-assets']='Brand assets'; }
     if (is_staff()) {
-        $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'client-reuirement.php' => 'Client requests', 'manager-monthly-design-report.php' => 'Monthly design report', 'manager-assigned-status.php' => 'Assigned work status'];
+        $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'client-reuirement.php' => 'Client requests', 'manager-assigned-status.php' => 'Assigned work status'];
+        if ($user['role']==='manager') $nav['manager-monthly-design-report.php']='Monthly report';
     } else {
-        $nav += ['manager-monthly-design-report.php' => 'Monthly design report', 'add-client.php#brand-assets' => 'Brand assets'];
+        $nav += ['add-client.php#brand-assets' => 'Brand assets'];
     }
     if (!is_staff()) {
         $nav['employee-daily-work.php'] = 'Update daily work';

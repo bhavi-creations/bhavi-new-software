@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/work.php';
-require_once __DIR__ . '/includes/excel-export.php';
+require_once __DIR__ . '/includes/pdf-export.php';
 $user=require_roles(['admin','manager','employee']);
 if ($user['role']==='employee') { $_GET['employee']=$user['id']; unset($_GET['department']); }
 try { $filter=report_filter(); } catch (InvalidArgumentException $e) { fail(422,$e->getMessage()); }
@@ -16,4 +16,4 @@ $records=(static function() use ($stmt,$metrics): Generator {
     }
 })();
 $filename=$filter['allDates']?'bhavi-work-all-dates':'bhavi-work-'.$filter['from'].'-to-'.$filter['to'];
-download_excel(['S.no','Date','Employee','Username','Department','Client','Task type','Task','Status','Time spent','Remark',...array_values($metrics),'Submitted at','Review','Manager remark'],$records,$filename);
+download_pdf(['S.no','Date','Employee','Username','Department','Client','Task type','Task','Status','Time spent','Remark',...array_values($metrics),'Submitted at','Review','Manager remark'],$records,$filename);

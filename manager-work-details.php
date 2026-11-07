@@ -18,7 +18,7 @@ page_start('Daily work details','manager-dailywork.php');
 <div class="form-actions work-report-actions">
     <a class="button secondary" href="manager-dailywork.php?<?= h($backQuery) ?>" data-back-to-reports>Back to reports</a>
     <a class="button primary" href="manager-review-work.php?id=<?= $id ?>"><?= icon('edit') ?> Edit / review work</a>
-    <a class="button secondary" href="download-work.php?<?= h($downloadQuery) ?>"><?= icon('download') ?> Download Excel</a>
+    <a class="button secondary" href="download-work.php?<?= h($downloadQuery) ?>"><?= icon('download') ?> Download PDF</a>
 </div>
 <section class="panel" aria-labelledby="report-employee">
     <div class="panel-heading"><h2 id="report-employee"><?= h($sheet['full_name']) ?></h2><?= status_badge(report_work_status($summary)) ?></div>

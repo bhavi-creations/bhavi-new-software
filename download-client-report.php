@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__.'/includes/client-portal.php';
-require_once __DIR__.'/includes/excel-export.php';
+require_once __DIR__.'/includes/pdf-export.php';
 $user=require_roles(['client','admin','manager']);
 if ($user['role']==='client') $client=own_client();
 else {
@@ -15,7 +15,7 @@ if (!$id) fail(400,'Choose a valid report.');
 $report=one('SELECT * FROM client_work_reports WHERE id=? AND client_id=?',[$id,$client['id']]);
 if (!$report) fail(404,'Report not found.');
 $fields=['Client'=>$client['client_name'],'Report date'=>$report['report_date']]+client_report_fields($report);
-download_excel(array_keys($fields),[array_values($fields)],'work-report-'.$report['report_date'].'-'.$id);
+download_pdf(array_keys($fields),[array_values($fields)],'work-report-'.$report['report_date'].'-'.$id);
 exit;
 }
 $period=$_GET['period']??'day';
@@ -44,5 +44,5 @@ for ($day=$start;$day<$end;$day=$day->modify('+1 day')) {
     foreach ($items as $report) yield array_merge([$client['client_name'],$key,'Report added'],array_values(client_report_fields($report)));
 }
 })();
-download_excel($headers,$records,'work-reports-'.$start->format('Y-m-d').'-'.$end->modify('-1 day')->format('Y-m-d'));
+download_pdf($headers,$records,'work-reports-'.$start->format('Y-m-d').'-'.$end->modify('-1 day')->format('Y-m-d'));
 exit;

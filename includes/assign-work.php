@@ -2970,7 +2970,7 @@ $finishedEmployees =
         formaction="download-assignments.php"
     >
 
-        Download Excel
+        Download PDF
 
     </button>
 

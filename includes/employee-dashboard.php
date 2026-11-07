@@ -3562,7 +3562,7 @@ if (
         ?>"
     >
 
-        Download Excel
+        Download PDF
 
     </a>
 

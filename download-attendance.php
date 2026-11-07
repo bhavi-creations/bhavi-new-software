@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__.'/includes/layout.php';
-require_once __DIR__.'/includes/excel-export.php';
+require_once __DIR__.'/includes/pdf-export.php';
 require_roles(['admin']);
 
 $month=(new DateTimeImmutable('today'))->format('Y-m');
@@ -34,4 +34,4 @@ foreach($employees as $index=>$employee) {
     $headers[]='Login';
     $headers[]='Logout';
 }
-download_excel($headers,$records,'bhavi-attendance-'.$month,['grouped_headers'=>$groupedHeaders,'merge_ranges'=>$mergeRanges]);
+download_pdf($headers,$records,'bhavi-attendance-'.$month,['grouped_headers'=>$groupedHeaders]);
