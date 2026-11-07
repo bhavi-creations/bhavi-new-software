@@ -2465,6 +2465,11 @@ foreach (
 
 }
 
+$departmentRequirements=[];
+if ($employeeView==='assigned') {
+    $departmentRequirements=rows("SELECT r.*,c.client_name,d.name AS department_name FROM client_requirements r JOIN clients c ON c.id=r.client_id LEFT JOIN departments d ON d.id=r.department_id WHERE c.deleted_at IS NULL AND c.is_active=1 AND (r.department_id=? OR EXISTS (SELECT 1 FROM requirement_assignments ra WHERE ra.requirement_id=r.id AND ra.employee_id=?)) ORDER BY r.due_date,r.created_at DESC",[$user['department_id'],$user['id']]);
+}
+
 
 
 /* =========================================================
@@ -3575,6 +3580,7 @@ if (
 
 </style>
 
+<section class="panel department-client-requests" id="client-requests"><div class="panel-heading"><h2>Client requests for <?= h($user['department_name']) ?></h2><span class="badge"><?= count($departmentRequirements) ?> requests</span></div><?php if (!$departmentRequirements): ?><p class="muted">No client requests for your department yet.</p><?php endif; foreach ($departmentRequirements as $request): $requestFiles=rows('SELECT id,original_file_name FROM requirement_files WHERE requirement_id=? ORDER BY id',[$request['id']]); ?><article class="requirement-card"><div class="panel-heading"><div><h3><?= h($request['client_name']) ?></h3><span class="muted">Due <?= $request['due_date']?h(date('d-m-Y',strtotime($request['due_date']))):'No deadline' ?></span></div><?= status_badge($request['status']) ?></div><p class="requirement-remark"><?= nl2br(h($request['brief'])) ?></p><?php if ($request['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($request['approved_text'])) ?></p><?php endif; ?><?php if ($requestFiles): ?><ul class="requirement-file-list"><?php foreach ($requestFiles as $requestFile): ?><li><a href="download-requirement-file.php?id=<?= (int)$requestFile['id'] ?>"><?= h($requestFile['original_file_name']) ?></a></li><?php endforeach; ?></ul><?php endif; ?></article><?php endforeach; ?></section>
 
 
 <p>

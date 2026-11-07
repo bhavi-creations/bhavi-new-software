@@ -30,7 +30,7 @@ function page_start(string $title, string $active = ''): void
     }
     if ($user['role']==='employee') { unset($nav['add-client.php']); $nav['add-client.php#brand-assets']='Brand assets'; }
     if (is_staff()) {
-        $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-monthly-design-report.php' => 'Monthly design report', 'manager-assigned-status.php' => 'Assigned work status'];
+        $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'client-reuirement.php' => 'Client requests', 'manager-monthly-design-report.php' => 'Monthly design report', 'manager-assigned-status.php' => 'Assigned work status'];
     } else {
         $nav += ['manager-monthly-design-report.php' => 'Monthly design report', 'add-client.php#brand-assets' => 'Brand assets'];
     }
@@ -48,7 +48,7 @@ function page_start(string $title, string $active = ''): void
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
     $nav['change-password.php'] = 'Change password';
     if (!is_staff() && $user['role']==='employee') $nav['apply-leaves.php']='Apply leave';
-    if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
+    if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
     $attendance = null;
     if ($user['role'] === 'employee') {
         $attendance = one('SELECT id,login_at FROM employee_attendance_sessions WHERE employee_id=? AND logout_at IS NULL AND login_at>=CURDATE() AND login_at<CURDATE()+INTERVAL 1 DAY ORDER BY login_at DESC LIMIT 1',[$user['id']]);

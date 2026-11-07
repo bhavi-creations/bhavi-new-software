@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 18;
+const PORTAL_SCHEMA_VERSION = 19;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -285,6 +285,9 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('clients','domain_name','VARCHAR(255) NULL');
         $pdo->exec("INSERT IGNORE INTO leave_types (name) VALUES ('Permission')");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (18)');
+        $addColumn('client_requirements','department_id','BIGINT UNSIGNED NULL');
+        if (!$pdo->query("SHOW INDEX FROM client_requirements WHERE Key_name='idx_requirement_department' ")->fetch()) $pdo->exec('ALTER TABLE client_requirements ADD INDEX idx_requirement_department (department_id,due_date)');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (19)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

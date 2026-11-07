@@ -1829,38 +1829,40 @@ img[src^="employee-photo.php"] {
 .work-report-text{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0}.stat-card .work-report-duration{font-size:23px}
 @media(max-width:700px){.work-report-actions>*{flex:1;justify-content:center;text-align:center}.work-report-meta{grid-template-columns:1fr}}
 
-/* Bhavi green theme */
-:root{--navy:#006b4a;--blue:#006b4a;--background:#006b4a;--border:#238365;--muted:#d8eee6;--ink:#fff;--heading:#fff}
-body{background:#006b4a;color:#fff}
-.portal-sidebar{background:#006b4a;color:#fff}
-.portal-sidebar nav a,.portal-sidebar nav a:hover,.portal-sidebar nav a.active,.portal-brand,.portal-brand small,.signout button{color:#fff}
-.portal-sidebar nav a:hover,.portal-sidebar nav a.active{background:#087c59}
-.portal-topbar,.panel,.stat-card,.detail-dialog,.calendar-day,.login-card,.setup-card,.work-card,.daily-task-card,.record-form .repeat-row,.notification-day-messages>.panel{background:#005a40;color:#fff;border-color:#258466}
-.portal-topbar .muted,.panel .muted,.stat-card h2,.stat-card p,.account-name small,.topbar-account time,.help,.muted,.calendar-head{color:#e0f2eb}
-h1,h2,h3,p,label,strong,td,dd,summary,.empty{color:#fff}
-a{color:#fff}
-th{background:#004c36;color:#fff}
-td,th{border-color:#218063}
-tr:hover td{background:#087552}
-.field input,.field select,.field textarea,.table-input{background:#004c36;color:#fff;border-color:#48a187}
-.field input::placeholder,.field textarea::placeholder{color:#c0ded3}
-.button,button.primary{background:#00835c;border-color:#43a78a;color:#fff}
-.button:hover,button.primary:hover{background:#09966b}
-.button.secondary,button.secondary,.icon-button{background:#087653;color:#fff;border-color:#4ba287}
-.badge{background:#087653;color:#fff}
-.status-approved,.status-completed,.status-active,.status-reviewed,.holiday-event{background:#07845c;color:#fff}
-.status-rejected,.status-inactive,.status-changes_requested{background:#a34343;color:#fff}
-.status-pending,.status-draft{background:#8a6725;color:#fff}
-.alert,.alert.error{background:#087653;color:#fff;border-color:#53aa8d}
-.portal-footer{color:#e0f2eb;border-color:#258466}
-.attendance-button{background:#00835c;border-color:#75c4a8;color:#fff}
-.attendance-control{border-color:#ffffff55}.attendance-control p{color:#e0f2eb}
-.calendar-day{min-height:112px;border-radius:10px}.calendar-day.current{background:#087653;border:2px solid #8cd9bb}.calendar-day .holiday-event{display:inline-block;padding:4px 8px;border-radius:6px;font-weight:700}
+/* Professional Bhavi green and white theme. */
+:root{--navy:#006b4a;--blue:#006b4a;--background:#f7f9f6;--border:#e2e9e4;--muted:#708078;--ink:#173b30;--heading:#123d30}
+body{background:#f7f9f6;color:#173b30}
+.portal-sidebar{background:#006b4a;color:#e8f4ee}
+.portal-sidebar nav a,.portal-brand,.portal-brand small,.signout button{color:#e8f4ee}
+.portal-brand strong{color:#fff}
+.portal-sidebar nav a:hover,.portal-sidebar nav a.active{background:#fff;color:#07563f}
+.portal-topbar,.panel,.stat-card,.detail-dialog,.calendar-day,.login-card,.setup-card,.work-card,.daily-task-card,.record-form .repeat-row,.notification-day-messages>.panel{background:#fff;color:#173b30;border-color:#e2e9e4}
+.portal-topbar .muted,.panel .muted,.stat-card h2,.stat-card p,.account-name small,.topbar-account time,.help,.muted,.calendar-head{color:#708078}
+h1,h2,h3,p,label,strong,td,dd,summary,.empty{color:#173b30}
+a{color:#006b4a}
+th{background:#006b4a;color:#fff}
+td,th{border-color:#e5ebe6}
+tr:hover td{background:#f3f8f4}
+.field input,.field select,.field textarea,.table-input{background:#fff;color:#173b30;border-color:#cdd9d1}
+.field input::placeholder,.field textarea::placeholder{color:#84928a}
+.button,button.primary{background:#006b4a;border-color:#006b4a;color:#fff}
+.button:hover,button.primary:hover{background:#00573d}
+.button.secondary,button.secondary,.icon-button{background:#fff;color:#006b4a;border-color:#cbd9d0}
+.badge{background:#e9f3ed;color:#07563f}
+.status-approved,.status-completed,.status-active,.status-reviewed,.holiday-event{background:#e4f2e9;color:#07563f}
+.status-rejected,.status-inactive,.status-changes_requested{background:#fbe9e9;color:#9b3030}
+.status-pending,.status-draft{background:#fbf2df;color:#80601e}
+.alert{background:#e4f2e9;color:#07563f;border-color:#c6dfce}.alert.error{background:#fbe9e9;color:#9b3030;border-color:#efc5c5}
+.portal-footer{color:#708078;border-color:#e2e9e4}
+.attendance-button{background:#006b4a;border-color:#006b4a;color:#fff}
+.attendance-control{border-color:#e2e9e4}.attendance-control p{color:#708078}
+.calendar-day{min-height:112px;border-radius:10px}.calendar-day.current{background:#f0f7f2;border:2px solid #006b4a}.calendar-day .holiday-event{display:inline-block;padding:4px 8px;border-radius:6px;font-weight:700}
 .notification-day-messages>.panel{box-shadow:none}
-.sidebar-messages{margin:16px 4px 20px;padding:12px;border:1px solid #ffffff50;border-radius:10px;color:#fff;max-height:260px;overflow-y:auto;scrollbar-color:#9ad6bf #005a40}
-.sidebar-messages h2{font-size:14px;margin:0 0 10px;color:#fff}.sidebar-messages article{padding:10px 0;border-top:1px solid #ffffff42}.sidebar-messages article p{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;color:#f0faf6}.sidebar-messages small,.sidebar-messages>p{font-size:11px;color:#d8eee6}
+.sidebar-messages{margin:16px 4px 20px;padding:12px;border:1px solid #ffffff42;border-radius:10px;color:#fff;max-height:260px;overflow-y:auto;scrollbar-color:#8fc6ad #00573d}
+.sidebar-messages h2{font-size:14px;margin:0 0 10px;color:#fff}.sidebar-messages article{padding:10px 0;border-top:1px solid #ffffff30}.sidebar-messages article p{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;color:#f0faf5}.sidebar-messages small,.sidebar-messages>p{font-size:11px;color:#d8eee4}
 .topbar-attendance{display:flex;align-items:center;gap:8px;margin:0;padding:0;border:0}.topbar-attendance .attendance-button{width:auto;white-space:nowrap;margin:0;padding:9px 14px}
-.brand-logo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:14px}.brand-logo-grid article{display:grid;gap:8px;justify-items:start;padding:14px;border:1px solid var(--border);border-radius:10px;background:#004f39}.brand-logo-grid img{width:64px;height:64px;object-fit:contain;background:#fff;border-radius:8px}.brand-logo-grid span{font-size:12px;overflow-wrap:anywhere}
-.work-progress-legend{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}.work-progress-legend span{display:flex;align-items:center;gap:7px;color:#fff}.work-progress-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}.completed-key{background:#6ee7b7}.pending-key{background:#fbbf24}.work-progress-chart{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;align-items:end}.work-progress-day{display:grid;justify-items:center;gap:6px;min-width:0}.work-progress-day strong{font-size:13px}.work-progress-day>span,.work-progress-day small{font-size:11px;color:#e0f2eb;text-align:center}.work-progress-track{width:min(48px,80%);height:110px;display:flex;flex-direction:column;justify-content:flex-end;background:#004d38;border-radius:8px 8px 3px 3px;overflow:hidden}.work-progress-completed,.work-progress-pending{display:block;width:100%;min-height:0}.work-progress-completed{background:#6ee7b7}.work-progress-pending{background:#fbbf24}
-.login-page{background:#006b4a}.login-page .login-card{background:#005a40;border-color:#258466;border-top-color:#6ee7b7}.login-page .brand-icon{background:#00835c}.login-page .login-card h1,.login-page .login-card p,.login-page .login-card label,.login-page .login-card .help{color:#fff}.login-page .login-card .help{border-color:#258466}
+.brand-logo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:14px}.brand-logo-grid article{display:grid;gap:8px;justify-items:start;padding:14px;border:1px solid var(--border);border-radius:10px;background:#f8fbf8}.brand-logo-grid img{width:64px;height:64px;object-fit:contain;background:#fff;border-radius:8px}.brand-logo-grid span{font-size:12px;overflow-wrap:anywhere}
+.work-progress-legend{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px}.work-progress-legend span{display:flex;align-items:center;gap:7px;color:#40554b}.work-progress-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}.completed-key{background:#168a62}.pending-key{background:#e3b244}.work-progress-chart{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;align-items:end}.work-progress-day{display:grid;justify-items:center;gap:6px;min-width:0}.work-progress-day strong{font-size:13px}.work-progress-day>span,.work-progress-day small{font-size:11px;color:#708078;text-align:center}.work-progress-track{width:min(48px,80%);height:110px;display:flex;flex-direction:column;justify-content:flex-end;background:#edf3ef;border-radius:8px 8px 3px 3px;overflow:hidden}.work-progress-completed,.work-progress-pending{display:block;width:100%;min-height:0}.work-progress-completed{background:#168a62}.work-progress-pending{background:#e3b244}
+.login-page{background:#f7f9f6}.login-page .login-card{background:#fff;border-color:#e2e9e4;border-top-color:#006b4a}.login-page .brand-icon{background:#006b4a}.login-page .login-card h1,.login-page .login-card p,.login-page .login-card label,.login-page .login-card .help{color:#173b30}.login-page .login-card .help{border-color:#e2e9e4}
 @media(max-width:800px){.portal-topbar{flex-wrap:wrap}.topbar-attendance{order:3}.topbar-account{margin-left:auto}.work-progress-chart{gap:5px}.work-progress-track{width:32px}}
+.requirement-card{padding:18px 0;border-top:1px solid var(--border)}.requirement-card:first-of-type{border-top:0}.requirement-card .panel-heading{margin-bottom:10px}.requirement-card h3{margin:0}.requirement-remark{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}.requirement-file-list{display:grid;gap:8px;padding-left:20px}.requirement-file-list li{padding:8px 10px;border-radius:8px;background:#f1f7f3}.requirement-file-list li span{margin-left:10px;color:var(--muted);font-size:12px}.client-request-form{border-top:3px solid #006b4a}
