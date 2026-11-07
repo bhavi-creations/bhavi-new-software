@@ -1,14 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 check_csrf();
-$challenge = is_string($_POST['captcha_challenge'] ?? null) ? $_POST['captcha_challenge'] : '';
-$solution = is_string($_POST['captcha_solution'] ?? null) ? $_POST['captcha_solution'] : '';
-$issuedAt = $_SESSION['login_captcha_challenges'][$challenge] ?? null;
-unset($_SESSION['login_captcha_challenges'][$challenge]);
-if (!is_numeric($issuedAt) || (time() - (int)$issuedAt) > 15 || !ctype_digit($solution) || !hash_equals('000', substr(hash('sha256', $challenge . ':' . $solution), 0, 3))) {
-    $_SESSION['login_error'] = 'Sign-in check expired. Please try again.';
-    redirect('login.php');
-}
 $username = is_string($_POST['username'] ?? null) ? trim($_POST['username']) : '';
 $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
 $key = hash('sha256', strtolower($username) . '|' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
