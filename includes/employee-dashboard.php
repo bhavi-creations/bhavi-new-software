@@ -2717,49 +2717,6 @@ $workTrend=[]; $workTrendMax=1; for ($offset=6;$offset>=0;$offset--) { $trendDat
 
     <a
         class="stat-card"
-        href="employee-profile.php#payslips"
-    >
-
-
-        <h2>
-
-            My payslips
-
-        </h2>
-
-
-        <strong>
-
-            <?= count_value(
-                "SELECT COUNT(*)
-
-                 FROM payslips
-
-                 WHERE employee_id=?",
-
-                [
-                    $user[
-                        'id'
-                    ]
-                ]
-            ) ?>
-
-        </strong>
-
-
-        <p>
-
-            View and download your salary slips
-
-        </p>
-
-
-    </a>
-
-
-
-    <a
-        class="stat-card"
         href="employee-daily-work.php"
     >
 

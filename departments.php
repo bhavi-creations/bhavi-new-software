@@ -16,8 +16,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             db()->commit(); flash('Department deleted. Historical reports are retained.');
         } else {
             $name=text_input('name',100);
-            if (one('SELECT id FROM departments WHERE name=? AND id<>?',[$name,$editId])) throw new InvalidArgumentException('This department name is already in use.');
+            $existing=one('SELECT id,is_active FROM departments WHERE name=? AND id<>? LIMIT 1',[$name,$editId]);
+            if ($existing && (int)$existing['is_active']===1) throw new InvalidArgumentException('This department name is already in use.');
             if ($record) query('UPDATE departments SET name=? WHERE id=?',[$name,$editId]);
+            elseif ($existing) query('UPDATE departments SET is_active=1 WHERE id=?',[$existing['id']]);
             else query('INSERT INTO departments (code,name) VALUES (?,?)',['dept_'.bin2hex(random_bytes(8)),$name]);
             flash($record?'Department updated.':'Department added. You can now select it when adding employees.');
         }
