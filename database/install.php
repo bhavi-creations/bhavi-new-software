@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 19;
+const PORTAL_SCHEMA_VERSION = 20;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -288,6 +288,38 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('client_requirements','department_id','BIGINT UNSIGNED NULL');
         if (!$pdo->query("SHOW INDEX FROM client_requirements WHERE Key_name='idx_requirement_department' ")->fetch()) $pdo->exec('ALTER TABLE client_requirements ADD INDEX idx_requirement_department (department_id,due_date)');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (19)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_conversations (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            conversation_type ENUM('group','private') NOT NULL,
+            title VARCHAR(120) NULL,
+            created_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_chat_conversation_updated (updated_at),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_participants (
+            conversation_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            added_by BIGINT UNSIGNED NOT NULL,
+            joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (conversation_id,user_id),
+            INDEX idx_chat_participant_user (user_id,conversation_id),
+            FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (added_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_messages (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            conversation_id BIGINT UNSIGNED NOT NULL,
+            sender_id BIGINT UNSIGNED NOT NULL,
+            body TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_chat_message_conversation (conversation_id,id),
+            FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (sender_id) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (20)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

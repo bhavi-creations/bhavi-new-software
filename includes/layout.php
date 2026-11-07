@@ -47,6 +47,7 @@ function page_start(string $title, string $active = ''): void
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
+    if (in_array($user['role'],['admin','manager','employee'],true)) $nav['chat.php']='Chat';
     $nav['change-password.php'] = 'Change password';
     if (!is_staff() && $user['role']==='employee') $nav['apply-leaves.php']='Apply leave';
     if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
