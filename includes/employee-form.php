@@ -20,7 +20,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($email !== '' && !filter_var($email,FILTER_VALIDATE_EMAIL)) { throw new InvalidArgumentException('Enter a valid email address.'); }
         if (!preg_match('/^[A-Za-z0-9._ -]{3,100}$/D',$username)) { throw new InvalidArgumentException('Use 3-100 letters, numbers, spaces, dots, underscores or hyphens for the username.'); }
         $role = 'employee';
-        $roleTitle=isset($_POST['role_title'])?text_input('role_title',150,false):'Employee';
         $saveStage='validate documents';
         $documents=employee_document_uploads();
         $saveStage='validate employee details';
@@ -72,7 +71,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($role==='employee') {
             query('INSERT INTO employee_profiles (user_id,department_id,designation,joining_date,manager_id) VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE department_id=VALUES(department_id),designation=VALUES(designation),joining_date=VALUES(joining_date),manager_id=VALUES(manager_id)',[$id,$department,$designation,$joiningDate,$manager]);
         }
-        query('UPDATE employee_profiles SET role_title=? WHERE user_id=?',[$roleTitle?:'Employee',$id]);
         query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,other_benefit_amount=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
         query('UPDATE employee_profiles SET pf_number=?,esi_number=? WHERE user_id=?',[optional_text('pf_number',100),optional_text('esi_number',100),$id]);
         if ($password!=='') query('UPDATE users SET credential_cipher=? WHERE id=?',[$encryptedPassword,$id]);
@@ -120,7 +118,7 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
 <div class="field"><label for="joining_date">Joining date *</label><input type="date" id="joining_date" name="joining_date" required value="<?= h($value('joining_date',today())) ?>"></div>
 <div class="field"><label for="account_status">Status</label><select id="account_status" name="account_status"><?= options([['id'=>'active','name'=>'Active'],['id'=>'inactive','name'=>'Inactive']],'name',$value('account_status','active')) ?></select><p class="help">Inactive employees cannot log in.</p></div>
 <div class="field"><label for="relieving_date">Relieving date (if leaving)</label><input type="date" id="relieving_date" name="relieving_date" value="<?= h($value('relieving_date')) ?>"></div>
-</div><details class="simple-details"><summary>Additional job title (optional)</summary><div class="field"><label for="role_title">Job title</label><input id="role_title" name="role_title" value="<?= h($value('role_title','Employee')) ?>" maxlength="150"></div></details></section>
+</div></section>
 <section class="panel form-section"><h2><span class="section-number">3</span> Salary & benefits</h2>
 <div class="fields"><?php foreach (['pf_number'=>'PF number','esi_number'=>'ESI number'] as $key=>$label): ?><div class="field"><label><?= $label ?><input name="<?= $key ?>" maxlength="100" value="<?= h($value($key)) ?>"></label></div><?php endforeach; ?></div>
 <p class="help">Tick the benefits that apply to this employee.</p><div class="benefit-options"><?php foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label): ?><label><input type="checkbox" name="benefit_<?= $key ?>" value="1" <?= ($_SERVER['REQUEST_METHOD']==='POST'?isset($_POST['benefit_'.$key]):!empty($record['benefit_'.$key]))?'checked':'' ?>><?= $label ?></label><?php endforeach; ?></div>

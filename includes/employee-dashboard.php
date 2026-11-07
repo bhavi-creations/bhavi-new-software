@@ -2648,6 +2648,10 @@ if (
     'dashboard'
 ):
 
+$workTrendRows=rows("SELECT s.work_date,COUNT(e.id) AS task_count,SUM(e.task_status='completed') AS completed_count FROM daily_work_submissions s LEFT JOIN daily_work_entries e ON e.submission_id=s.id WHERE s.employee_id=? AND s.submission_status='submitted' AND s.work_date BETWEEN DATE_SUB(CURDATE(),INTERVAL 6 DAY) AND CURDATE() GROUP BY s.work_date ORDER BY s.work_date",[$user['id']]);
+$workTrendByDate=[]; foreach ($workTrendRows as $trendRow) $workTrendByDate[$trendRow['work_date']]=$trendRow;
+$workTrend=[]; $workTrendMax=1; for ($offset=6;$offset>=0;$offset--) { $trendDate=(new DateTimeImmutable('today'))->modify('-'.$offset.' days')->format('Y-m-d'); $trend=$workTrendByDate[$trendDate]??['task_count'=>0,'completed_count'=>0]; $trend['date']=$trendDate; $trend['task_count']=(int)$trend['task_count']; $trend['completed_count']=(int)$trend['completed_count']; $trend['pending_count']=max(0,$trend['task_count']-$trend['completed_count']); $workTrend[]=$trend; $workTrendMax=max($workTrendMax,$trend['task_count']); }
+
 ?>
 
 
@@ -2708,7 +2712,7 @@ if (
 
     <a
         class="stat-card"
-        href="payslips.php"
+        href="employee-profile.php#payslips"
     >
 
 
@@ -2963,7 +2967,7 @@ if (
 
     <a
         class="stat-card"
-        href="my-leave-requests.php"
+        href="apply-leaves.php#leave-requests"
     >
 
 
@@ -3067,6 +3071,7 @@ if (
 
 </div>
 
+<section class="panel work-progress-panel"><div class="panel-heading"><h2>Work progress · Last 7 days</h2><span class="muted">Submitted tasks completed vs pending</span></div><div class="work-progress-legend"><span><i class="completed-key"></i>Completed</span><span><i class="pending-key"></i>Pending</span></div><div class="work-progress-chart" role="img" aria-label="Daily submitted task progress for the last seven days"><?php foreach ($workTrend as $trend): $doneHeight=(int)round(110*$trend['completed_count']/$workTrendMax); $pendingHeight=(int)round(110*$trend['pending_count']/$workTrendMax); ?><article class="work-progress-day"><strong><?= $trend['task_count'] ?></strong><div class="work-progress-track" aria-hidden="true"><span class="work-progress-completed" style="height:<?= $doneHeight ?>px" title="<?= $trend['completed_count'] ?> completed"></span><span class="work-progress-pending" style="height:<?= $pendingHeight ?>px" title="<?= $trend['pending_count'] ?> pending"></span></div><span><?= h(date('d-m',strtotime($trend['date']))) ?></span><small><?= $trend['completed_count'] ?>/<?= $trend['task_count'] ?> done</small></article><?php endforeach; ?></div></section>
 
 <?php endif; ?>
 
@@ -4860,37 +4865,6 @@ if (
 ):
 
 ?>
-
-
-<p>
-
-
-    <a
-        class="button secondary"
-
-        href="download-work.php?date=<?= h(
-            $date
-        ) ?>"
-    >
-
-        Download this day
-
-    </a>
-
-
-    <a
-        class="button secondary"
-
-        href="download-work.php?all_dates=1"
-    >
-
-        Download all submitted work
-
-    </a>
-
-
-</p>
-
 
 
 <section

@@ -117,17 +117,18 @@
     const index = Math.max(-1, ...indices) + 1;
     const row = document.createElement('div'); row.className = 'fields repeat-row';
     if (social) row.classList.add('social-link-row');
-    const fields = salary ? [['amount','Monthly salary (₹)','number'],['from','Salary starts on','date'],['to','Ends on (optional)','date']] : social ? [['platform','Platform name','text'],['url','Social media URL','url'],['username','Username','text'],['password','Password','password']] : [['date','Date received','date'],['amount','Amount received (₹)','number']];
+    const fields = salary ? [['amount','Monthly salary (₹)','number'],['from','Salary starts on','date'],['to','Ends on (optional)','date']] : social ? [['platform','Platform','select'],['url','Social media URL','url'],['username','Username','text'],['password','Password','password']] : [['date','Date received','date'],['amount','Amount received (₹)','number']];
     fields.forEach(([key,label,type]) => {
       const field = document.createElement('div'); field.className = 'field';
       const wrapper = document.createElement('label'); wrapper.textContent = label;
-      const input = document.createElement('input'); input.type = type; input.name = (salary ? 'salary' : social ? 'social_links' : 'payments') + '[' + index + '][' + (social && key === 'platform' ? 'platform' : social && key === 'url' ? 'url' : key) + ']';
-      if (social && key === 'platform') { input.maxLength = 100; input.placeholder = 'e.g. Instagram'; }
+      const input = document.createElement(type === 'select' ? 'select' : 'input'); if (type !== 'select') input.type = type; input.name = (salary ? 'salary' : social ? 'social_links' : 'payments') + '[' + index + '][' + key + ']';
+      if (social && key === 'platform') { [['','Choose platform'],['Instagram','Instagram'],['Facebook','Facebook'],['YouTube','YouTube'],['LinkedIn','LinkedIn'],['Quora','Quora'],['Other','Other']].forEach(([value,label]) => { const option=document.createElement('option'); option.value=value; option.textContent=label; input.append(option); }); }
       if (social && key === 'username') input.maxLength = 255;
       if (social && key === 'password') { input.maxLength = 1000; input.autocomplete = 'new-password'; }
       if (social && key === 'url') { input.maxLength = 2048; input.placeholder = 'https://'; }
       if (type === 'number') { input.min = '0.01'; input.max = '9999999999.99'; input.step = '0.01'; }
-      wrapper.append(input); field.append(wrapper); row.append(field);
+      if (social && key === 'password') { input.id='social-password-new-'+index; const holder=document.createElement('div'); holder.className='password-wrapper'; holder.append(input); const eye=document.createElement('button'); eye.type='button'; eye.className='password-eye'; eye.dataset.passwordToggle=input.id; eye.setAttribute('aria-controls',input.id); eye.setAttribute('aria-pressed','false'); eye.setAttribute('aria-label','Show password'); eye.title='Show password'; eye.textContent='◉'; holder.append(eye); wrapper.append(holder); } else wrapper.append(input);
+      field.append(wrapper); row.append(field);
     });
     const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary'; button.dataset.removeRow = ''; button.textContent = 'Remove'; row.append(button);
     container.append(row); row.querySelector('input').focus(); refresh();

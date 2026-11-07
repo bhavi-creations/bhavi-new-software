@@ -12,13 +12,17 @@ document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('c
 document.querySelectorAll('form[data-confirm]').forEach(form => form.addEventListener('submit', event => {
   if (!window.confirm(form.dataset.confirm)) event.preventDefault();
 }));
-document.querySelectorAll('[data-password-toggle]').forEach(button => button.addEventListener('click', () => {
+document.addEventListener('click', event => {
+  const button = event.target.closest('[data-password-toggle]');
+  if (!button) return;
   const input = document.getElementById(button.dataset.passwordToggle);
+  if (!input) return;
   const show = input.type === 'password';
   input.type = show ? 'text' : 'password';
-  button.textContent = show ? 'Hide' : 'Show';
   button.setAttribute('aria-pressed', String(show));
-}));
+  button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  button.title = show ? 'Hide password' : 'Show password';
+});
 const menu = document.querySelector('.menu-toggle');
 if (menu) menu.addEventListener('click', () => {
   const open = document.getElementById('portalSidebar').classList.toggle('open');
@@ -80,7 +84,7 @@ document.querySelectorAll('[data-filter-department]').forEach(select => select.a
     if (attendance.dataset.attendanceDate === day) return;
     attendance.dataset.attendanceDate = day;
     attendance.querySelector('[name="action"]').value = 'login';
-    attendance.querySelector('p')?.remove();
+    attendance.querySelector('[data-attendance-time]')?.remove();
     attendance.querySelector('button').textContent = 'Login';
     const card = document.querySelector('[data-attendance-card]');
     if (card) {

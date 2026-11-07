@@ -493,3 +493,10 @@ body[data-role=client] .portal-main {
         display:none
     }
 }
+
+/* Keep client pages in the shared Bhavi green theme. */
+body[data-role=client]{background:#006b4a;color:#fff}
+body[data-role=client] .portal-topbar,body[data-role=client] .panel,body[data-role=client] .cp-card,body[data-role=client] .cp-table-wrap{background:#005a40;color:#fff;border-color:#258466}
+body[data-role=client] .cp-section-heading>span,body[data-role=client] .cp-intro,body[data-role=client] .muted{color:#e0f2eb}
+body[data-role=client] .cp-hero{background:linear-gradient(120deg,#004c36,#00835c);color:#fff}
+body[data-role=client] .cp-hero h2,body[data-role=client] .cp-hero p,body[data-role=client] .cp-section-heading h2,body[data-role=client] .panel h2,body[data-role=client] td,body[data-role=client] th{color:#fff}

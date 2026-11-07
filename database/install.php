@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 16;
+const PORTAL_SCHEMA_VERSION = 18;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -274,6 +274,17 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('clients','monthly_blogs','INT UNSIGNED NOT NULL DEFAULT 0');
         $addColumn('clients','monthly_work_remark','TEXT NULL');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (16)');
+        $addColumn('clients','domain_provider','VARCHAR(100) NULL');
+        $addColumn('clients','domain_username','VARCHAR(255) NULL');
+        $addColumn('clients','domain_password_cipher','TEXT NULL');
+        $addColumn('clients','domain_expiry','DATE NULL');
+        $addColumn('clients','gmb_username','VARCHAR(255) NULL');
+        $addColumn('clients','gmb_password_cipher','TEXT NULL');
+        $addColumn('clients','gmb_access_granted','TINYINT(1) NOT NULL DEFAULT 0');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (17)');
+        $addColumn('clients','domain_name','VARCHAR(255) NULL');
+        $pdo->exec("INSERT IGNORE INTO leave_types (name) VALUES ('Permission')");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (18)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

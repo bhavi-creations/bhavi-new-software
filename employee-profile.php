@@ -7,6 +7,7 @@ if (!is_staff() && $id!==(int)$user['id']) fail(403,'You can only view your own 
 $employee=one("SELECT u.full_name,u.email,u.username,u.avatar_path,u.account_status,u.created_at,ep.*,d.name AS department_name,manager.full_name AS manager_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id LEFT JOIN users manager ON manager.id=ep.manager_id WHERE u.id=? AND u.role='employee' AND u.deleted_at IS NULL",[$id]);
 if (!$employee) fail(404,'Employee not found.');
 $current=one('SELECT * FROM employee_salary_history WHERE employee_id=? AND effective_from<=? AND (effective_to IS NULL OR effective_to>=?) ORDER BY effective_from DESC LIMIT 1',[$id,today(),today()]);
+$profilePayslips=rows('SELECT id,pay_month,created_at FROM payslips WHERE employee_id=? ORDER BY pay_month DESC,id DESC',[$id]);
 $error=null;
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     if (!is_staff()) fail(403,'Only management can change salary benefits.');
@@ -51,4 +52,5 @@ error_message($error);
 <?php endif; ?>
 <details class="simple-details"><summary>View PF & ESI breakdown</summary><?php salary_details($current); ?></details>
 <?php endif; ?></section>
-<section class="panel"><details class="simple-details"><summary>View salary & increment history</summary><?php salary_table(rows('SELECT * FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from',[$id])); ?></details></section></div></div><?php if (is_staff()): ?><script src="assets/js/records.js?v=<?= filemtime(__DIR__.'/assets/js/records.js') ?>" defer></script><?php endif; page_end(); ?>
+<section class="panel"><details class="simple-details"><summary>View salary & increment history</summary><?php salary_table(rows('SELECT * FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from',[$id])); ?></details></section>
+<section class="panel" id="payslips"><h2><?= is_staff()?'Employee payslips':'My payslips' ?></h2><div class="table-scroll"><table><thead><tr><th>Salary month</th><th>Added on</th><th>Download</th></tr></thead><tbody><?php if (!$profilePayslips) empty_row(3,'No payslips added yet.'); foreach ($profilePayslips as $payslip): ?><tr><td><?= h(date('F Y',strtotime($payslip['pay_month']))) ?></td><td><?= h(date('d-m-Y',strtotime($payslip['created_at']))) ?></td><td><a class="button secondary" href="download-payslip.php?id=<?= (int)$payslip['id'] ?>">Download PDF</a></td></tr><?php endforeach; ?></tbody></table></div><?php if (is_staff()): ?><p><a class="button secondary" href="payslips.php?employee=<?= $id ?>">Manage payslips</a></p><?php endif; ?></section></div></div><?php if (is_staff()): ?><script src="assets/js/records.js?v=<?= filemtime(__DIR__.'/assets/js/records.js') ?>" defer></script><?php endif; page_end(); ?>

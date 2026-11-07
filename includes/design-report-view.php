@@ -310,9 +310,9 @@ $pretty = static fn($date) => (new DateTimeImmutable($date))->format('d-m-Y');
             <div class="field"><label for="employee">Employee</label><select id="employee" name="employee">
                     <option value="">All employees</option><?= options($report['employees'], 'full_name', $report['employee'] ?: null) ?>
                 </select></div>
-            <div class="report-actions"><button class="primary" type="submit">Apply filters</button><button class="button secondary" name="format" value="html">Download designed report</button><button class="button secondary" name="format" value="print" formtarget="_blank">Print / Save as PDF</button><button class="button secondary" name="format" value="xlsx">Download Excel</button></div>
+            <div class="report-actions"><button class="primary" type="submit">Apply filters</button><button class="button secondary" name="format" value="print" formtarget="_blank">Download / Save as PDF</button></div>
         </form>
-        <p class="help">Choose an employee and an inclusive date range. The designed HTML download opens offline with this same layout. Use Print / Save as PDF for a PDF copy. Totals include completed submitted work only.</p>
+        <p class="help">Choose an employee and an inclusive date range, then use your browser’s Save as PDF option. Totals include completed submitted work only.</p>
     </section>
 <?php else: ?><button class="report-print-button" onclick="window.print()">Print / Save as PDF</button><?php endif; ?>
 <?php if (!$report['people']): ?><p class="report-empty">No design employees found for these filters.</p><?php endif; ?>

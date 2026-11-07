@@ -23,40 +23,45 @@ function page_start(string $title, string $active = ''): void
 {
     $user = require_roles(['admin','manager','employee','client']);
     $dashboard = dashboard_path($user);
-    $nav = [$dashboard => 'Dashboard', 'admin-employees.php' => is_staff()?'Employees':'My details', 'add-client.php' => 'Clients'];
-    if ($user['role'] === 'admin') { $nav['admin-add-employee.php'] = 'Add employee'; }
+    if ($user['role'] === 'admin') {
+        $nav = [$dashboard => 'Dashboard', 'departments.php' => 'Department', 'admin-add-employee.php' => 'Add employee', 'manager-assign-work.php' => 'Assign work', 'add-client.php' => 'Client'];
+    } else {
+        $nav = [$dashboard => 'Dashboard', 'admin-employees.php' => is_staff()?'Employees':'My details', 'add-client.php' => 'Clients'];
+    }
+    if ($user['role']==='employee') { unset($nav['add-client.php']); $nav['add-client.php#brand-assets']='Brand assets'; }
     if (is_staff()) {
         $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-monthly-design-report.php' => 'Monthly design report', 'manager-assigned-status.php' => 'Assigned work status'];
     } else {
-        $nav += ['employee-brands-assets.php' => 'Brand assets', 'client-reuirement.php' => 'Client requirements', 'apply-leaves.php' => 'Apply leave', 'my-leave-requests.php' => 'My leave requests', 'check-leave.php' => 'My leave calendar'];
+        $nav += ['manager-monthly-design-report.php' => 'Monthly design report', 'add-client.php#brand-assets' => 'Brand assets'];
     }
     if (!is_staff()) {
         $nav['employee-daily-work.php'] = 'Update daily work';
         $nav['employee-assigned-work.php'] = 'My assigned work';
     }
-    if ($user['role']==='admin') $nav['departments.php']='Departments';
     if ($user['role']==='admin') $nav['employee-attendance.php']='Employee attendance';
     if (is_staff()) $nav['manager-leave-requist.php']='Leave requests';
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
     if (!is_staff()) $nav['employee-profile.php']='My profile & salary';
-    $nav['payslips.php'] = is_staff() ? 'Employee payslips' : 'My payslips';
+    $nav[is_staff()?'payslips.php':'employee-profile.php#payslips'] = is_staff() ? 'Employee payslips' : 'My payslips';
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
     $nav['change-password.php'] = 'Change password';
+    if (!is_staff() && $user['role']==='employee') $nav['apply-leaves.php']='Apply leave';
     if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
     $attendance = null;
     if ($user['role'] === 'employee') {
         $attendance = one('SELECT id,login_at FROM employee_attendance_sessions WHERE employee_id=? AND logout_at IS NULL AND login_at>=CURDATE() AND login_at<CURDATE()+INTERVAL 1 DAY ORDER BY login_at DESC LIMIT 1',[$user['id']]);
+        $staffMessages=rows("SELECT n.title,n.message,n.created_at FROM notifications n JOIN users s ON s.id=n.sender_id WHERE n.recipient_id=? AND s.role IN ('admin','manager') ORDER BY n.created_at DESC,n.id DESC LIMIT 10",[$user['id']]);
     }
     ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= h($title) ?> | Bhavi</title><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/../assets/css/portal.css') ?>"><?php if ($user['role']==='client'): ?><link rel="stylesheet" href="assets/css/client-portal.css?v=<?= filemtime(__DIR__.'/../assets/css/client-portal.css') ?>"><?php endif; ?></head>
 <body data-role="<?= h($user['role']) ?>"><div class="portal-layout">
 <aside class="portal-sidebar" id="portalSidebar"><a class="portal-brand" href="<?= h($dashboard) ?>"><span class="brand-icon">B</span><span><strong>bhavi</strong><small>TEAM WORKSPACE</small></span></a>
-<nav aria-label="Main navigation"><?php foreach ($nav as $href => $label): ?><a href="<?= h($href) ?>" class="<?= $active === $href ? 'active' : '' ?>" <?= $active === $href ? 'aria-current="page"' : '' ?>><?= icon(str_contains($href,'dashboard')?'dashboard':(str_contains($href,'employee') && !str_contains($href,'work') && !str_contains($href,'brands')?'people':(str_contains($href,'notification')?'bell':(str_contains($href,'password')?'lock':(str_contains($href,'leave') || str_contains($href,'holiday')?'calendar':(str_contains($href,'client') || str_contains($href,'department')?'briefcase':'document')))))) ?><span><?= h($label) ?></span></a><?php endforeach; ?></nav>
-<?php if ($user['role']==='employee'): ?><form class="attendance-control" data-attendance-date="<?= today() ?>" method="post" action="attendance.php"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $attendance?'logout':'login' ?>"><?php if ($attendance): ?><p>Login saved at <time><?= h(date('g:i A',strtotime($attendance['login_at']))) ?></time></p><button class="attendance-button" type="submit"><?= icon('logout') ?>Logout</button><?php else: ?><button class="attendance-button" type="submit"><?= icon('document') ?>Login</button><?php endif; ?></form><?php endif; ?>
+<nav aria-label="Main navigation"><?php foreach ($nav as $href => $label): ?><a href="<?= h($href) ?>" class="<?= $active === $href || str_starts_with($active,explode('#',$href)[0]) && str_contains($href,'#') ? 'active' : '' ?>" <?= $active === $href ? 'aria-current="page"' : '' ?>><?= icon(str_contains($href,'dashboard')?'dashboard':(str_contains($href,'employee') && !str_contains($href,'work') && !str_contains($href,'brands')?'people':(str_contains($href,'notification')?'bell':(str_contains($href,'password')?'lock':(str_contains($href,'leave') || str_contains($href,'holiday')?'calendar':(str_contains($href,'client') || str_contains($href,'department')?'briefcase':'document')))))) ?><span><?= h($label) ?></span></a><?php endforeach; ?></nav>
+<?php if ($user['role']==='employee'): ?><section class="sidebar-messages" aria-label="Messages from management"><h2>Messages</h2><?php if (!$staffMessages): ?><p>No messages yet.</p><?php endif; foreach ($staffMessages as $staffMessage): ?><article><strong><?= h($staffMessage['title']) ?></strong><p><?= h($staffMessage['message']) ?></p><small><?= h(date('d-m-Y g:i A',strtotime($staffMessage['created_at']))) ?></small></article><?php endforeach; ?></section><?php endif; ?>
 <form class="signout" method="post" action="logout.php"><?= csrf_field() ?><button type="submit"><?= icon('logout') ?>Sign out</button></form></aside>
-<div class="portal-main"><header class="portal-topbar"><div class="topbar-left"><button type="button" class="menu-toggle" aria-label="Toggle menu" aria-controls="portalSidebar" aria-expanded="false">☰</button><span>Workspace <span class="muted">/ <?= h($title) ?></span></span></div><div class="topbar-account"><time datetime="<?= today() ?>"><?= date('d M Y') ?></time><div class="account-name"><strong><?= h($user['full_name']) ?></strong><small><?= h($user['department_name'] ?? 'Team workspace') ?></small></div><span class="badge role-badge"><?= h(ucfirst($user['role'])) ?></span></div></header>
+<div class="portal-main"><header class="portal-topbar"><div class="topbar-left"><button type="button" class="menu-toggle" aria-label="Toggle menu" aria-controls="portalSidebar" aria-expanded="false">☰</button><span>Workspace <span class="muted">/ <?= h($title) ?></span></span></div><?php if ($user['role']==='employee'): ?><form class="attendance-control topbar-attendance" data-attendance-date="<?= today() ?>" method="post" action="attendance.php"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $attendance?'logout':'login' ?>"><?php if ($attendance): ?><span data-attendance-time>Login saved at <?= h(date('g:i A',strtotime($attendance['login_at']))) ?></span><button class="attendance-button" type="submit"><?= icon('logout') ?>Logout</button><?php else: ?><button class="attendance-button" type="submit"><?= icon('document') ?>Login</button><?php endif; ?></form><?php endif; ?><div class="topbar-account"><time datetime="<?= today() ?>"><?= date('d M Y') ?></time><div class="account-name"><strong><?= h($user['full_name']) ?></strong><small><?= h($user['department_name'] ?? 'Team workspace') ?></small></div><span class="badge role-badge"><?= h(ucfirst($user['role'])) ?></span></div></header>
 <main class="portal-content"><div class="page-heading"><h1><?= h($title) ?></h1></div>
 <?php foreach ($_SESSION['flash'] ?? [] as $message): ?><div class="alert <?= h($message['type']) ?>" role="status"><?= h($message['message']) ?></div><?php endforeach; unset($_SESSION['flash']);
 }
