@@ -73,12 +73,12 @@ $pretty = static fn($date) => (new DateTimeImmutable($date))->format('d-m-Y');
 
     .report-meta div:nth-child(3n+2),
     .report-stat:nth-child(2) {
-        background: #f4edff
+        background: #eef4ff
     }
 
     .report-meta div:nth-child(3n),
     .report-stat:nth-child(3) {
-        background: #e6f8f2
+        background: #e6f1ff
     }
 
     .report-meta small {

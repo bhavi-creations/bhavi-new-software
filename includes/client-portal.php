@@ -26,6 +26,8 @@ function client_payment_summary(array $client): void {
 }
 function client_report_fields(array $report): array {
     $fields=['Work'=>$report['title']?:'Untitled work','Type'=>ucfirst($report['work_type']),'Content source'=>$report['content_source']==='client'?'Client sent footage':($report['content_source']==='own'?'Own content':'Not updated')];
+    $fields['Reviews received']=(string)($report['reviews_received']??0);
+    $fields['Replies sent']=(string)($report['replies_sent']??0);
     foreach (['received_at'=>'Content received / collected','started_at'=>'Work started','sent_at'=>'Sent on WhatsApp','approved_at'=>'Client approval','uploaded_at'=>'Social media upload'] as $key=>$label) $fields[$label]=$report[$key]?(new DateTimeImmutable($report[$key]))->format('d M Y, h:i A'):'Not updated';
     $fields['Social media / uploaded by']=$report['platform']?:'Not updated'; $fields['Remarks / changes']=$report['remarks']?:'No remarks';
     return $fields;

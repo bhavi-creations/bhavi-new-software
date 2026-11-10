@@ -30,7 +30,7 @@ function page_start(string $title, string $active = ''): void
     }
     if ($user['role']==='employee') { unset($nav['add-client.php']); $nav['add-client.php#brand-assets']='Brand assets'; }
     if (is_staff()) {
-        $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-monthly-design-report.php' => 'Design work report', 'client-reuirement.php' => 'Client requests', 'manager-assigned-status.php' => 'Assigned work status'];
+        $nav += ['admin-client-work-report.php' => 'Client work report', 'manager-assign-work.php' => 'Assign work', 'manager-dailywork.php' => 'Daily work reports', 'manager-monthly-design-report.php' => 'Work report', 'client-reuirement.php' => 'Client requests', 'manager-assigned-status.php' => 'Assigned work status'];
     } else {
         $nav += ['add-client.php#brand-assets' => 'Brand assets'];
     }
@@ -44,7 +44,7 @@ function page_start(string $title, string $active = ''): void
     if (!is_staff()) $nav['employee-profile.php']='My profile & salary';
     if (is_staff()) $nav['payslips.php'] = 'Employee payslips';
     $nav['admin-holidays.php'] = 'Holidays';
-    $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL',[$user['id']]);
+    $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
     if (in_array($user['role'],['admin','manager','employee'],true)) $nav['chat.php']='Chat';
     $nav['change-password.php'] = 'Change password';

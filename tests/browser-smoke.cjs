@@ -183,7 +183,7 @@ async function screenshot(filename, width, height) {
     await waitFor("location.pathname.endsWith('manager-dailywork.php') && document.readyState==='complete'");
     assert.deepEqual(await evaluate("['department','employee','from_date','to_date'].map(id=>document.getElementById(id).value)"),reportFilters);
     await navigate('manager-monthly-design-report.php');
-    assert.equal(await evaluate("document.querySelector('h1').textContent==='Monthly design report' && document.body.textContent.includes('Posters') && document.body.textContent.includes('Reels / Videos') && document.body.textContent.includes('Campaign video')"),true);
+    assert.equal(await evaluate("document.querySelector('h1').textContent==='Work report' && document.body.textContent.includes('Posters') && document.body.textContent.includes('Reels / Videos') && document.body.textContent.includes('Campaign video')"),true);
     await screenshot('monthly-design-report.png',1440,1100);
     await screenshot('monthly-design-report-mobile.png',390,844);
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);

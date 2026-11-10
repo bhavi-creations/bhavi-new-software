@@ -84,13 +84,14 @@ try {
     portal_ensure_schema($restricted, $database);
     hosting_expect((int) $restricted->query('SELECT MAX(version) FROM portal_schema_versions')->fetchColumn() === PORTAL_SCHEMA_VERSION, 'Original imported database automatically reaches the latest schema with hosting table permissions');
     hosting_expect($restricted->query("SELECT password_hash FROM users WHERE username='legacy.fixture'")->fetchColumn() === $passwordHash, 'Existing login and password hash survive migration');
-    foreach (['payslips', 'employee_documents', 'employee_salary_history', 'client_payments', 'client_social_links', 'employee_attendance_sessions', 'employee_attendance_days', 'work_assignments'] as $table) {
+    foreach (['payslips', 'employee_documents', 'employee_salary_history', 'client_payments', 'client_social_links', 'employee_attendance_sessions', 'employee_attendance_days', 'work_assignments', 'work_assignment_attachments'] as $table) {
         hosting_expect((int) $restricted->query('SELECT COUNT(*) FROM ' . $table)->fetchColumn() === 0, 'New table is ready: ' . $table);
     }
     hosting_expect((int) $pdo->query("SELECT COUNT(*) FROM information_schema.VIEWS WHERE TABLE_SCHEMA=DATABASE()")->fetchColumn() === 0, 'Unavailable optional view permission does not prevent table migrations');
     portal_install($restricted, $database);
     hosting_expect((int) $restricted->query('SELECT COUNT(*) FROM users')->fetchColumn() === 1 && (int) $restricted->query('SELECT COUNT(*) FROM departments')->fetchColumn() === 5, 'Repeat upgrade preserves records and seed departments');
     hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM work_assignments LIKE 'time_spent_minutes'")->fetch(), 'Latest work time column exists');
+    foreach (['reviews_received','replies_sent'] as $column) hosting_expect((bool)$restricted->query("SHOW COLUMNS FROM client_work_reports LIKE '$column'")->fetch(), 'Client work report count column exists: '.$column);
     hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM daily_work_entries LIKE 'work_type'")->fetch(), 'Creative task type column exists after hosting upgrade');
     hosting_expect((bool) $restricted->query("SHOW COLUMNS FROM employee_attendance_sessions LIKE 'active_attendance_date'")->fetch(), 'Attendance supports an unfinished record on each day');
     hosting_expect((int) $restricted->query('SELECT COUNT(*) FROM portal_login_tokens')->fetchColumn()===0, 'Persistent login token table is ready');

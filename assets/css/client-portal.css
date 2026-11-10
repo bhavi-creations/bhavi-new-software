@@ -494,24 +494,24 @@ body[data-role=client] .portal-main {
     }
 }
 
-/* Keep client pages in the shared Bhavi green and white theme. */
-body[data-role=client]{background:#f7f9f6;color:#173b30}
-body[data-role=client] .portal-topbar,body[data-role=client] .panel,body[data-role=client] .cp-card,body[data-role=client] .cp-table-wrap{background:#fff;color:#173b30;border-color:#e2e9e4}
-body[data-role=client] .cp-section-heading>span,body[data-role=client] .cp-intro,body[data-role=client] .muted{color:#708078}
-body[data-role=client] .cp-hero{background:linear-gradient(120deg,#006b4a,#07845c);color:#fff}
+/* Keep client pages aligned with the portal's shared blue theme. */
+body[data-role=client]{background:#f3f6ff;color:#172b49}
+body[data-role=client] .portal-topbar,body[data-role=client] .panel,body[data-role=client] .cp-card,body[data-role=client] .cp-table-wrap{background:#fff;color:#172b49;border-color:#e0e7f3}
+body[data-role=client] .cp-section-heading>span,body[data-role=client] .cp-intro,body[data-role=client] .muted{color:#6a7b94}
+body[data-role=client] .cp-hero{background:linear-gradient(120deg,#103d83,#1769d2);color:#fff}
 body[data-role=client] .cp-hero h2,body[data-role=client] .cp-hero p{color:#fff}
-body[data-role=client] .cp-section-heading h2,body[data-role=client] .panel h2,body[data-role=client] td{color:#173b30}
-body[data-role=client] th{background:#006b4a;color:#fff}
-body[data-role=client] .cp-count,body[data-role=client] .cp-progress-caption strong,body[data-role=client] .cp-shortcuts span,body[data-role=client] .cp-shortcuts svg{color:#006b4a}
-body[data-role=client] .cp-progress progress{accent-color:#006b4a}
-body[data-role=client] .cp-progress progress::-webkit-progress-value{background:#006b4a}
-body[data-role=client] .cp-payment.cp-balance{background:#edf6f0;border-color:#cbded1}
-body[data-role=client] .cp-shortcuts a:hover{border-color:#78aa8e}
-body[data-role=client] .cp-day-updated{background:#edf6f0;border-color:#cbded1}
-body[data-role=client] .cp-day-today time{background:#006b4a;color:#fff}
-body[data-role=client] .cp-eye{border-color:#cbd9d0;color:#006b4a}
-body[data-role=client] .cp-eye:hover,body[data-role=client] .cp-eye:focus-visible{background:#006b4a;color:#fff;outline-color:#78aa8e}
-body[data-role=client] .cp-receipt-icon{color:#006b4a;background:#e9f3ed}
-body[data-role=client] .cp-empty,body[data-role=client] .cp-month-picker label,body[data-role=client] .cp-weekday,body[data-role=client] .cp-payment-list li>div>div>span{color:#708078}
-body[data-role=client] .cp-empty h3{color:#173b30}
-body[data-role=client] .cp-hover-preview,body[data-role=client] .cp-report-dialog{background:#fff;border-color:#e2e9e4;color:#173b30}
+body[data-role=client] .cp-section-heading h2,body[data-role=client] .panel h2,body[data-role=client] td{color:#102342}
+body[data-role=client] th{background:#1559ad;color:#fff}
+body[data-role=client] .cp-count,body[data-role=client] .cp-progress-caption strong,body[data-role=client] .cp-shortcuts span,body[data-role=client] .cp-shortcuts svg{color:#1769d2}
+body[data-role=client] .cp-progress progress{accent-color:#2563eb}
+body[data-role=client] .cp-progress progress::-webkit-progress-value{background:#2563eb}
+body[data-role=client] .cp-payment.cp-balance{background:#eaf2ff;border-color:#c9dcf4}
+body[data-role=client] .cp-shortcuts a:hover{border-color:#78a8e8}
+body[data-role=client] .cp-day-updated{background:#eaf2ff;border-color:#c9dcf4}
+body[data-role=client] .cp-day-today time{background:#2563eb;color:#fff}
+body[data-role=client] .cp-eye{border-color:#cbd9ee;color:#1559ad}
+body[data-role=client] .cp-eye:hover,body[data-role=client] .cp-eye:focus-visible{background:#2563eb;color:#fff;outline-color:#78a8e8}
+body[data-role=client] .cp-receipt-icon{color:#1559ad;background:#e9f1ff}
+body[data-role=client] .cp-empty,body[data-role=client] .cp-month-picker label,body[data-role=client] .cp-weekday,body[data-role=client] .cp-payment-list li>div>div>span{color:#6a7b94}
+body[data-role=client] .cp-empty h3{color:#102342}
+body[data-role=client] .cp-hover-preview,body[data-role=client] .cp-report-dialog{background:#fff;border-color:#e0e7f3;color:#102342}

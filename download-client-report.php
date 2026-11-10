@@ -35,7 +35,7 @@ $end=$start->modify($period==='month'?'+1 month':($period==='week'?'+7 days':'+1
 $reports=rows('SELECT * FROM client_work_reports WHERE client_id=? AND report_date>=? AND report_date<? ORDER BY report_date,id',[$client['id'],$start->format('Y-m-d'),$end->format('Y-m-d')]);
 $byDate=[];
 foreach ($reports as $report) $byDate[$report['report_date']][]=$report;
-$headers=['Client','Report date','Update','Work','Type','Content source','Content received / collected','Work started','Sent on WhatsApp','Client approval','Social media upload','Social media / uploaded by','Remarks / changes'];
+$headers=['Client','Report date','Update','Work','Type','Content source','Reviews received','Replies sent','Content received / collected','Work started','Sent on WhatsApp','Client approval','Social media upload','Social media / uploaded by','Remarks / changes'];
 $records=(static function() use ($start,$end,$byDate,$client,$headers): Generator {
 for ($day=$start;$day<$end;$day=$day->modify('+1 day')) {
     $key=$day->format('Y-m-d');

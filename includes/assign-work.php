@@ -3407,40 +3407,10 @@ unset(
 
 
 
-                        <td class="wrap">
-
-                            <strong>
-
-                                Task
-
-                                <?= $taskNumbers[
-                                    $assignment[
-                                        'id'
-                                    ]
-                                ] ?>
-
-                                ·
-
-                                <?= h(
-                                    $assignment[
-                                        'title'
-                                    ]
-                                ) ?>
-
+                        <td class="assignment-task-cell">
+                            <strong class="assignment-task-summary" title="<?= h('Task '.$taskNumbers[$assignment['id']].' · '.$assignment['title']) ?>">
+                                Task <?= $taskNumbers[$assignment['id']] ?> · <?= h($assignment['title']) ?>
                             </strong>
-
-                            <br>
-
-                            <small class="muted">
-
-                                <?= h(
-                                    $assignment[
-                                        'description'
-                                    ]
-                                ) ?>
-
-                            </small>
-
                         </td>
 
 

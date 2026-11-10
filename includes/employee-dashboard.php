@@ -2644,6 +2644,7 @@ if (
 $workTrendRows=rows("SELECT s.work_date,COUNT(e.id) AS task_count,SUM(e.task_status='completed') AS completed_count FROM daily_work_submissions s LEFT JOIN daily_work_entries e ON e.submission_id=s.id WHERE s.employee_id=? AND s.submission_status='submitted' AND s.work_date BETWEEN DATE_SUB(CURDATE(),INTERVAL 6 DAY) AND CURDATE() GROUP BY s.work_date ORDER BY s.work_date",[$user['id']]);
 $workTrendByDate=[]; foreach ($workTrendRows as $trendRow) $workTrendByDate[$trendRow['work_date']]=$trendRow;
 $workTrend=[]; $workTrendMax=1; for ($offset=6;$offset>=0;$offset--) { $trendDate=(new DateTimeImmutable('today'))->modify('-'.$offset.' days')->format('Y-m-d'); $trend=$workTrendByDate[$trendDate]??['task_count'=>0,'completed_count'=>0]; $trend['date']=$trendDate; $trend['task_count']=(int)$trend['task_count']; $trend['completed_count']=(int)$trend['completed_count']; $trend['pending_count']=max(0,$trend['task_count']-$trend['completed_count']); $workTrend[]=$trend; $workTrendMax=max($workTrendMax,$trend['task_count']); }
+$dashboardNotifications=rows('SELECT n.id,n.title,n.message,n.created_at,n.read_at,sender.full_name AS sender_name FROM notifications n LEFT JOIN users sender ON sender.id=n.sender_id WHERE n.recipient_id=? AND n.created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY) ORDER BY n.created_at DESC,n.id DESC',[$user['id']]);
 
 ?>
 
@@ -2660,6 +2661,26 @@ $workTrend=[]; $workTrendMax=1; for ($offset=6;$offset>=0;$offset--) { $trendDat
     Update your assigned work and keep your manager informed.
 
 </p>
+
+<section class="panel employee-notifications" id="employee-notifications">
+    <div class="panel-heading">
+        <h2>Notifications · <span data-notification-count><?= count($dashboardNotifications) ?></span></h2>
+        <a href="manager-notification.php">View all</a>
+    </div>
+    <?php if (!$dashboardNotifications): ?>
+        <p class="muted">No recent notifications. New messages stay here for 24 hours.</p>
+    <?php else: ?>
+        <div class="employee-notification-feed" role="region" aria-label="Recent notifications">
+            <?php foreach ($dashboardNotifications as $notification): ?>
+                <a class="employee-notification-card<?= $notification['read_at']?'':' unread' ?>" id="notification-<?= (int)$notification['id'] ?>" data-expires-at="<?= h(date(DATE_ATOM,strtotime($notification['created_at'])+86400)) ?>" href="notification-open.php?id=<?= (int)$notification['id'] ?>">
+                    <strong><?= h($notification['title']) ?></strong>
+                    <p><?= h($notification['message']) ?></p>
+                    <small><?= h($notification['sender_name']?:'Bhavi team') ?> · <?= h($user['full_name']) ?> · <?= h($user['department_name']) ?> · <?= h(date('d M Y, g:i A',strtotime($notification['created_at']))) ?></small>
+                </a>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+</section>
 
 
 

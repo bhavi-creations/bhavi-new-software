@@ -32,7 +32,7 @@ document.querySelectorAll('[data-department-select]').forEach(department => {
   const employee = document.getElementById(department.dataset.departmentSelect);
   const update = () => {
     Array.from(employee.options).forEach(option => {
-      option.hidden = Boolean(option.dataset.department && department.value && option.dataset.department !== department.value);
+      option.hidden = Boolean(option.dataset.department && department.value && department.value !== 'all' && option.dataset.department !== department.value);
       option.disabled = option.hidden;
     });
     if (employee.selectedOptions[0]?.disabled) employee.value = '';
@@ -72,6 +72,39 @@ document.querySelectorAll('[data-filter-department]').forEach(select => select.a
   select.form.querySelector('[name="employee"]').value = '';
   select.form.requestSubmit();
 }));
+
+document.querySelectorAll('[data-expires-at]').forEach(notification => {
+  const expireAt = Date.parse(notification.dataset.expiresAt);
+  if (!Number.isFinite(expireAt)) return;
+  const expire = () => {
+    const remaining = expireAt - Date.now();
+    if (remaining > 0) {
+      window.setTimeout(expire, Math.min(remaining, 2147483647));
+      return;
+    }
+    const day = notification.closest('.notification-day');
+    notification.remove();
+    if (day) {
+      const count = day.querySelector('[data-notification-day-count]');
+      const remainingDayNotifications = day.querySelectorAll('.notification-link').length;
+      if (count) count.textContent = `${remainingDayNotifications} notifications`;
+      if (!remainingDayNotifications) day.remove();
+    }
+    const feed = document.querySelector('.employee-notification-feed');
+    if (feed) {
+      const count = feed.closest('.employee-notifications').querySelector('[data-notification-count]');
+      const remainingNotifications = feed.querySelectorAll('.employee-notification-card').length;
+      if (count) count.textContent = remainingNotifications;
+      if (!remainingNotifications) {
+        const empty = document.createElement('p');
+        empty.className = 'muted';
+        empty.textContent = 'No recent notifications. New messages stay here for 24 hours.';
+        feed.replaceWith(empty);
+      }
+    }
+  };
+  expire();
+});
 
 // Reset only the attendance display at midnight in the portal's timezone.
 // Portal authentication and yesterday's unfinished record stay intact.
