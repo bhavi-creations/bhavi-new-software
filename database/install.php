@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 21;
+const PORTAL_SCHEMA_VERSION = 22;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -334,6 +334,23 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (uploaded_by) REFERENCES users(id)
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (21)');
+        $addColumn('work_assignments','editing_type','VARCHAR(50) NULL');
+        $addColumn('work_assignments','reference_link','TEXT NULL');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS work_assignment_attachments (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            assignment_id BIGINT UNSIGNED NOT NULL,
+            original_name VARCHAR(255) NOT NULL,
+            stored_name VARCHAR(255) NOT NULL,
+            file_path VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            file_size BIGINT UNSIGNED NOT NULL,
+            uploaded_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_assignment_attachment_assignment (assignment_id),
+            FOREIGN KEY (assignment_id) REFERENCES work_assignments(id) ON DELETE CASCADE,
+            FOREIGN KEY (uploaded_by) REFERENCES users(id)
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (22)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

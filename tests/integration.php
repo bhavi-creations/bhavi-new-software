@@ -320,10 +320,17 @@ try {
     $manager->request('manager-assign-work.php');
     $websiteDepartment = (int)scalar("SELECT id FROM departments WHERE code='website'");
     $assignmentDate = date('Y-m-d', strtotime('+1 day'));
-    $assignmentData = ['department_id' => $websiteDepartment, 'employee_id' => $employeeIds['website'], 'client_id' => $clientId, 'work_date' => $assignmentDate, 'tasks' => [['title' => 'Build home page', 'description' => 'Responsive page with contact form'], ['title' => 'Add contact form', 'description' => 'Validate and style the form']]];
+    $assignmentData = ['department_id' => $websiteDepartment, 'tasks' => [
+        ['employee_id' => $employeeIds['website'], 'client_id' => $clientId, 'work_date' => $assignmentDate, 'editing_type' => 'video_editing', 'title' => 'Build home page', 'description' => 'Responsive page with contact form', 'reference_link' => 'https://example.com/reference'],
+        ['employee_id' => $employeeIds['website'], 'client_id' => $clientId, 'work_date' => $assignmentDate, 'editing_type' => 'poster', 'title' => 'Add contact form', 'description' => 'Validate and style the form', 'reference_link' => '']
+    ]];
     expect(str_contains($manager->request('manager-assign-work.php')['body'], 'assets/js/records.js') && str_contains($admin->request('manager-assign-work.php')['body'], 'data-add-assignment-task'), 'Assignment page loads the Add task handler for both staff roles');
-    expect($manager->post('manager-assign-work.php', array_merge($assignmentData, ['employee_id' => $employeeIds['seo']]))['status'] === 200, 'Employee department mismatch rejected');
+    $invalidAssignmentData = $assignmentData;
+    foreach ($invalidAssignmentData['tasks'] as &$task) $task['employee_id'] = $employeeIds['seo'];
+    unset($task);
+    expect($manager->post('manager-assign-work.php', $invalidAssignmentData)['status'] === 200, 'Employee department mismatch rejected');
     expect((int)scalar('SELECT COUNT(*) FROM work_assignments') === 0, 'Invalid assignment never saved');
+    expect((int)scalar("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='work_assignment_attachments'") === 1, 'Assignment attachment table is installed');
     expect($manager->post('manager-assign-work.php', $assignmentData)['status'] === 303, 'Manager assigns work');
     expect((int)scalar('SELECT COUNT(*) FROM work_assignments') === 2, 'Multiple task briefs are saved as individual assignments');
     $assignmentId = (int)scalar('SELECT id FROM work_assignments ORDER BY id LIMIT 1');
@@ -331,6 +338,23 @@ try {
     expect(str_contains($browsers['website']->request($dashboards['website'])['body'], 'href="employee-assigned-work.php"><h2>Today\'s work</h2><strong>2</strong>'), 'Upcoming tasks are included in employee assigned-work dashboard count');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'], 'assignment_date=' . $assignmentDate), 'Future assignment appears in the date list');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'Responsive page with contact form'), 'Selecting an assignment date shows its full work brief');
+    $assignedWork = $browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'];
+    expect(str_contains($assignedWork, 'Shared Client Updated') && str_contains($assignedWork, 'Type of editing') && str_contains($assignedWork, 'Video Editing'), 'Employee sees the assigned client and editing type');
+    expect(str_contains($assignedWork, 'https://example.com/reference') && str_contains($assignedWork, 'Reference / Drive Link'), 'Employee sees the assignment reference link');
+    $assignmentFileName = 'integration-' . bin2hex(random_bytes(6)) . '.txt';
+    $assignmentFileDirectory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'work-assignments' . DIRECTORY_SEPARATOR . date('Y') . DIRECTORY_SEPARATOR . date('m');
+    if (!is_dir($assignmentFileDirectory) && !mkdir($assignmentFileDirectory, 0775, true) && !is_dir($assignmentFileDirectory)) throw new RuntimeException('Unable to create assignment attachment test folder.');
+    $assignmentFilePath = $assignmentFileDirectory . DIRECTORY_SEPARATOR . $assignmentFileName;
+    $assignmentFileContents = 'Assignment attachment integration test.';
+    if (file_put_contents($assignmentFilePath, $assignmentFileContents) === false) throw new RuntimeException('Unable to create assignment attachment test file.');
+    $temporary[] = $assignmentFilePath;
+    $assignmentFileRelativePath = 'uploads/work-assignments/' . date('Y/m') . '/' . $assignmentFileName;
+    $pdo->prepare('INSERT INTO work_assignment_attachments (assignment_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by) VALUES (?,?,?,?,?,?,?)')->execute([$assignmentId, $assignmentFileName, $assignmentFileName, $assignmentFileRelativePath, 'text/plain', strlen($assignmentFileContents), scalar("SELECT id FROM users WHERE username='manager.test'")]);
+    $assignmentAttachmentId = (int)$pdo->lastInsertId();
+    $assignedWork = $browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'];
+    expect(str_contains($assignedWork, $assignmentFileName), 'Employee sees attached assignment documents');
+    $assignmentFileResponse = $browsers['website']->request('employee-assigned-work.php?task_file=' . $assignmentAttachmentId . '&mode=download');
+    expect($assignmentFileResponse['status'] === 200 && $assignmentFileResponse['body'] === $assignmentFileContents, 'Employee can download an assignment attachment');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'Task 2 · Add contact form'), 'Employee sees each assigned task numbered separately');
     expect(!str_contains($browsers['seo']->request('employee-assigned-work.php')['body'], 'Build home page'), 'Assignment hidden from another employee');
     expect($browsers['seo']->post($dashboards['seo'], ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'remark' => 'Attack'])['status'] === 403, 'Assignment ownership enforced');
@@ -475,7 +499,7 @@ try {
     expect(str_contains($allDatesSheet, 'Yesterday page') && str_contains($allDatesSheet, 'website daily task') && str_contains($allDatesSheet, '1 hour 30 min') && !str_contains($allDatesSheet, 'seo daily task'), 'All-dates Excel includes selected employee history and time without other employees');
     $ownExport=report_content($website->request('download-work.php?all_dates=1&employee='.$employeeIds['seo']));
     expect(str_contains($ownExport,'website daily task') && !str_contains($ownExport,'seo daily task'),'Employee export ignores another employee ID');
-    $internalData=array_replace($assignmentData,['client_id'=>'','tasks'=>[['title'=>'Internal assignment regression','description'=>'No client required']]]);
+    $internalData=array_replace($assignmentData,['tasks'=>[['employee_id'=>$employeeIds['website'],'client_id'=>'','work_date'=>$assignmentDate,'editing_type'=>'other','title'=>'Internal assignment regression','description'=>'No client required','reference_link'=>'']]]);
     expect($admin->post('manager-assign-work.php',$internalData)['status']===303,'Assignment accepts optional client');
     $internalId=(int)scalar("SELECT id FROM work_assignments WHERE title='Internal assignment regression'");
     expect(scalar('SELECT client_id FROM work_assignments WHERE id=?',[$internalId])===null,'Optional assignment client stored as null');

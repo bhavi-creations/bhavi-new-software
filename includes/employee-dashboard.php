@@ -241,39 +241,27 @@ function employee_assignment_files(
     int $assignmentId
 ): array {
 
+    return rows(
+        "SELECT
+            id,
+            assignment_id,
+            original_name,
+            stored_name,
+            file_path,
+            mime_type,
+            file_size,
+            created_at
 
-    try {
+         FROM work_assignment_attachments
 
+         WHERE assignment_id=?
 
-        return rows(
-            "SELECT
-                id,
-                assignment_id,
-                original_name,
-                stored_name,
-                file_path,
-                mime_type,
-                file_size,
-                created_at
+         ORDER BY id",
 
-             FROM work_assignment_attachments
-
-             WHERE assignment_id=?
-
-             ORDER BY id",
-
-            [
-                $assignmentId
-            ]
-        );
-
-
-    } catch (Throwable $e) {
-
-
-        return [];
-
-    }
+        [
+            $assignmentId
+        ]
+    );
 
 }
 
@@ -3495,6 +3483,24 @@ if (
     border-top: 1px solid rgba(0,0,0,.07);
 }
 
+.employee-assignment-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px 18px;
+    margin: 16px 0;
+}
+
+.employee-assignment-meta dt {
+    font-size: 12px;
+    opacity: .7;
+}
+
+.employee-assignment-meta dd {
+    margin: 3px 0 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
 .employee-assigned-task.is-open .employee-task-details {
     display: block;
 }
@@ -3813,6 +3819,14 @@ if (
                 )
             );
 
+        $editingType =
+            trim(
+                (string) (
+                    $assignment['editing_type']
+                    ?? ''
+                )
+            );
+
 
         $started =
             !empty(
@@ -3855,7 +3869,7 @@ if (
 
 
         <article
-            class="work-card employee-assigned-task"
+            class="work-card employee-assigned-task is-open"
             data-assignment-accordion
         >
 
@@ -3864,7 +3878,7 @@ if (
                 type="button"
                 class="employee-task-summary"
                 data-assignment-toggle
-                aria-expanded="false"
+                aria-expanded="true"
                 aria-controls="assignment-task-details-<?= (int) $assignment['id'] ?>"
             >
 
@@ -3915,6 +3929,24 @@ if (
                 data-assignment-details
             >
 
+            <dl class="employee-assignment-meta">
+                <div>
+                    <dt>Client</dt>
+                    <dd><?= h($assignment['client_name'] ?: 'No client / internal work') ?></dd>
+                </div>
+                <div>
+                    <dt>Type of editing</dt>
+                    <dd><?= h($editingType !== '' ? ucwords(str_replace('_', ' ', $editingType)) : 'Not specified') ?></dd>
+                </div>
+                <div>
+                    <dt>Work date</dt>
+                    <dd><?= h(date('d M Y', strtotime($assignment['work_date']))) ?></dd>
+                </div>
+                <div>
+                    <dt>Assigned by</dt>
+                    <dd><?= h($assignment['assigned_by_name']) ?></dd>
+                </div>
+            </dl>
 
             <!-- =================================================
                  MESSAGE / TASK BRIEF
