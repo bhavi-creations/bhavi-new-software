@@ -38,6 +38,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error=mutation_error($e); }
 }
 $notifications=rows('SELECT n.*,sender.full_name AS sender_name FROM notifications n LEFT JOIN users sender ON sender.id=n.sender_id WHERE n.recipient_id=? AND n.created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY) ORDER BY n.created_at DESC,n.id DESC',[$user['id']]);
+// Opening this page counts as seeing the notifications: clear the unread number.
+// (The list above was loaded first, so new items are still highlighted on this visit.)
+if ($_SERVER['REQUEST_METHOD']==='GET') query('UPDATE notifications SET read_at=NOW() WHERE recipient_id=? AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
 $notificationDays=[];
 foreach ($notifications as $notification) $notificationDays[substr($notification['created_at'],0,10)][]=$notification;
 $openNotificationId=filter_var($_GET['open']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]])?:0;

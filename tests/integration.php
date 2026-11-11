@@ -785,6 +785,13 @@ try {
     $notificationPage = $website->request('manager-notification.php')['body'];
     expect(str_contains($notificationPage, 'Please review the brief') && str_contains($notificationPage, 'notification-open.php?id='), 'Notification messages link to their destination');
     expect(str_contains($notificationPage, '<details class="panel notification-day">') && str_contains($notificationPage, 'notifications</span></summary>'), 'Notification dates have expandable counts');
+    $unreadAfterOpen = (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=NOW()-INTERVAL 1 DAY', [$employeeIds['website']]);
+    $sidebarAfterOpen = $website->request('chat.php')['body'];
+    expect($unreadAfterOpen === 0 && !preg_match('~href="manager-notification\.php"[^>]*>.*?<em class="nav-badge">~s', explode('</nav>', $sidebarAfterOpen)[0]), 'Opening the notifications page clears the unread number');
+    $seoUnread = (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=NOW()-INTERVAL 1 DAY', [$employeeIds['seo']]);
+    $seoDash = $browsers['seo']->request('chat.php')['body'];
+    expect($seoUnread > 0 && $browsers['seo']->post('notifications-mark-read.php', [])['status'] === 200 && (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL', [$employeeIds['seo']]) === 0, 'Opening the bell marks notifications as read');
+    expect($guest->request('notifications-mark-read.php')['headers']['location'] === 'login.php', 'Mark-read needs sign-in');
     $dashboardPage=$website->request('website-employee-dashboard.php')['body'];
     $websiteEmployeeName=(string)scalar('SELECT full_name FROM users WHERE id=?',[$employeeIds['website']]);
     expect(str_contains($dashboardPage,'Please review the brief') && str_contains($dashboardPage,'employee-notification-feed') && str_contains($dashboardPage,$websiteEmployeeName), 'Employee dashboard displays recent notifications in a scrollable feed');

@@ -2705,6 +2705,8 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
 </div>
 <script>
 document.addEventListener('click',e=>{const bell=document.querySelector('.ed-bell[open]');if(bell&&!bell.contains(e.target))bell.removeAttribute('open');});
+// Opening the bell marks notifications as read: the number on the bell and in the sidebar disappears.
+(()=>{const bell=document.querySelector('.ed-bell');if(!bell)return;bell.addEventListener('toggle',()=>{if(!bell.open)return;const count=bell.querySelector('.ed-bell-count');if(!count)return;count.remove();document.querySelectorAll('.portal-sidebar a[href="manager-notification.php"] .nav-badge').forEach(b=>b.remove());bell.querySelectorAll('.employee-notification-card.unread').forEach(c=>c.classList.remove('unread'));fetch('notifications-mark-read.php',{method:'POST',credentials:'same-origin',body:new URLSearchParams({csrf:<?= json_encode(csrf_token()) ?>})}).catch(()=>{});});})();
 </script>
 
 <?php endif; ?>
