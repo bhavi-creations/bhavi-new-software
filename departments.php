@@ -5,7 +5,7 @@ const DEPARTMENT_COLORS = ['navy' => '#103d83', 'blue' => '#1769d2', 'gold' => '
 $editId=(int)($_GET['edit']??0);
 $record=$editId?one('SELECT * FROM departments WHERE id=? AND is_active=1',[$editId]):null;
 if ($editId && !$record) fail(404,'Department not found.');
-$headOptions=rows("SELECT u.id,u.full_name,u.role FROM users u WHERE u.role IN ('employee','manager','admin') AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name");
+$headOptions=rows("SELECT u.id,u.full_name,u.role,ep.department_id FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.role IN ('employee','manager','admin') AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name");
 if ($_SERVER['REQUEST_METHOD']==='POST') {
     check_csrf();
     try {
@@ -89,8 +89,23 @@ page_start('Departments','departments.php'); error_message($error);
         <aside class="dept-form-card" id="dept-form">
             <div class="dept-form-head"><small><?= $record?'Edit':'Quick add' ?></small><h3><?= $record?'Edit department':'New department' ?></h3></div>
             <form method="post" class="dept-form"><?= csrf_field() ?>
+                <?php
+                // Pick an existing department (opens it for editing) or start a new one.
+                $deptNames=array_column($departmentList,'name','id');
+                // Head list: employees of the chosen department. For a new department, everyone grouped by department.
+                $deptMembers=$record?array_values(array_filter($headOptions,static fn($o)=>(int)($o['department_id']??0)===(int)$record['id'])):[];
+                if ($record && $form['head_user_id']!=='' && !in_array($form['head_user_id'],array_map(static fn($o)=>(string)$o['id'],$deptMembers),true)) foreach ($headOptions as $o) if ((string)$o['id']===$form['head_user_id']) $deptMembers[]=$o;
+                ?>
+                <label>Department<select data-dept-pick><option value="">＋ New department</option><?php foreach ($deptNames as $did=>$dname): ?><option value="<?= (int)$did ?>" <?= $record && (int)$record['id']===(int)$did?'selected':'' ?>><?= h($dname) ?></option><?php endforeach; ?></select></label>
                 <label>Department name<input id="name" name="name" maxlength="100" placeholder="e.g. Photography" value="<?= h($form['name']) ?>" required></label>
-                <label>Department head<select name="head_user_id"><option value="">Select an employee</option><?php foreach ($headOptions as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$o['id']===$form['head_user_id']?'selected':'' ?>><?= h($o['full_name']) ?><?= $o['role']!=='employee'?' ('.h(ucfirst($o['role'])).')':'' ?></option><?php endforeach; ?></select></label>
+                <label>Department head<select name="head_user_id"><option value="">Select an employee</option>
+                    <?php if ($record): ?>
+                        <?php if (!$deptMembers): ?><option value="" disabled>No employees in <?= h($record['name']) ?> yet</option><?php endif; ?>
+                        <?php foreach ($deptMembers as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$o['id']===$form['head_user_id']?'selected':'' ?>><?= h($o['full_name']) ?><?= $o['role']!=='employee'?' ('.h(ucfirst($o['role'])).')':'' ?></option><?php endforeach; ?>
+                    <?php else: $groups=[]; foreach ($headOptions as $o) $groups[$o['role']!=='employee'?'Admins & managers':($deptNames[(int)($o['department_id']??0)]??'No department')][]=$o; ksort($groups); ?>
+                        <?php foreach ($groups as $groupName=>$groupPeople): ?><optgroup label="<?= h($groupName) ?>"><?php foreach ($groupPeople as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$o['id']===$form['head_user_id']?'selected':'' ?>><?= h($o['full_name']) ?><?= $o['role']!=='employee'?' ('.h(ucfirst($o['role'])).')':'' ?></option><?php endforeach; ?></optgroup><?php endforeach; ?>
+                    <?php endif; ?>
+                </select><?php if ($record): ?><small class="dept-hint">Showing employees of <?= h($record['name']) ?></small><?php endif; ?></label>
                 <label>Description<textarea name="description" maxlength="255" rows="3" placeholder="What does this team handle?"><?= h($form['description']) ?></textarea></label>
                 <fieldset class="dept-colors"><legend>Card colour</legend><?php foreach (DEPARTMENT_COLORS as $key=>$hex): ?><label title="<?= h(ucfirst($key)) ?>"><input type="radio" name="card_color" value="<?= h($key) ?>" <?= $form['card_color']===$key?'checked':'' ?>><span style="background:<?= h($hex) ?>"></span><b class="sr-only"><?= h(ucfirst($key)) ?></b></label><?php endforeach; ?></fieldset>
                 <div class="dept-form-actions"><button type="submit" class="dept-btn dept-btn-gold"><?= $record?'Save changes':'Create department' ?></button><a class="dept-btn dept-btn-outline" href="departments.php">Cancel</a></div>
@@ -114,6 +129,9 @@ page_start('Departments','departments.php'); error_message($error);
     page.querySelectorAll('[data-dept-view]').forEach(function (b) { b.addEventListener('click', function () { view = b.dataset.deptView; try { localStorage.setItem('deptView', view); } catch (e) {} apply(); }); });
     search.addEventListener('input', apply);
     page.querySelector('[data-dept-focus]').addEventListener('click', function (e) { e.preventDefault(); document.getElementById('dept-form').scrollIntoView({behavior: 'smooth', block: 'start'}); document.getElementById('name').focus({preventScroll: true}); });
+    // Picking a department opens it (with its own employees as head choices); "New department" clears the form.
+    var pick = page.querySelector('[data-dept-pick]');
+    if (pick) pick.addEventListener('change', function () { location.href = 'departments.php' + (pick.value ? '?edit=' + encodeURIComponent(pick.value) : '') + '#dept-form'; });
     apply();
 })();
 </script>

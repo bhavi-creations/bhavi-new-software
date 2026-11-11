@@ -1,12 +1,13 @@
 <?php
 require_once __DIR__ . '/layout.php';
+require_once __DIR__.'/office-timing.php';
 require_once __DIR__.'/employee-documents.php';
 require_once __DIR__.'/finance.php';
 require_once __DIR__.'/employee-accounts.php';
 $user = require_roles(['admin','manager']);
 $id = (int) ($_GET['id'] ?? 0);
 if (!$id && $user['role'] !== 'admin') { fail(403,'Only an administrator can create accounts.'); }
-$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis,ep.pf_number,ep.esi_number,ep.date_of_birth,ep.gender,ep.address,ep.work_timings,ep.employment_type FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
+$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis,ep.pf_number,ep.esi_number,ep.date_of_birth,ep.gender,ep.address,ep.work_timings,ep.shift_start,ep.shift_end,ep.shift_label,ep.employment_type FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
 if ($id && (!$record || !in_array($record['role'],['employee'],true))) { fail(403,'You cannot edit this account.'); }
 $error = null;
 const EMPLOYEE_GENDERS = ['male'=>'Male','female'=>'Female','other'=>'Other','na'=>'Prefer not to say'];
@@ -56,7 +57,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($dateOfBirth && $dateOfBirth>today()) throw new InvalidArgumentException('Date of birth cannot be in the future.');
         $gender=is_string($_POST['gender']??null) && isset(EMPLOYEE_GENDERS[$_POST['gender']]) ? $_POST['gender'] : '';
         $address=optional_text('address',500);
-        $workTimings=optional_text('work_timings',100);
+        // Office timing (admin default) or this employee's own shift. Older forms post a plain work_timings text.
+        $timingMode=isset($_POST['timing_mode'])?(string)$_POST['timing_mode']:null;
+        $shift=null;
+        if ($timingMode==='custom') {
+            $shiftStart=office_time_input((string)($_POST['shift_start']??''),'shift start time');
+            $shiftEnd=office_time_input((string)($_POST['shift_end']??''),'shift end time');
+            if ($shiftStart===$shiftEnd) throw new InvalidArgumentException('Shift start and end time cannot be the same.');
+            $shift=[$shiftStart,$shiftEnd,optional_text('shift_label',60)?:'Own shift'];
+            $workTimings=office_range_label($shiftStart,$shiftEnd);
+        } elseif ($timingMode==='office') {
+            $workTimings='';
+        } else {
+            $workTimings=optional_text('work_timings',100);
+        }
         $employmentType=is_string($_POST['employment_type']??null) && isset(EMPLOYMENT_TYPES[$_POST['employment_type']]) ? $_POST['employment_type'] : ($record['employment_type'] ?? 'full_time');
         $makeHead=($_POST['access_role']??'')==='department_head';
         $phone=optional_text('phone',30); $guardian=optional_text('guardian_phone',30);
@@ -89,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,other_benefit_amount=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
         query('UPDATE employee_profiles SET pf_number=?,esi_number=? WHERE user_id=?',[optional_text('pf_number',100),optional_text('esi_number',100),$id]);
         query('UPDATE employee_profiles SET date_of_birth=?,gender=?,address=?,work_timings=?,employment_type=? WHERE user_id=?',[$dateOfBirth,$gender,$address,$workTimings,$employmentType,$id]);
+        if ($timingMode!==null) query('UPDATE employee_profiles SET shift_start=?,shift_end=?,shift_label=? WHERE user_id=?',[$shift[0]??null,$shift[1]??null,$shift[2]??'',$id]);
         if (isset($_POST['access_role'])) {
             query('UPDATE departments SET head_user_id=NULL WHERE head_user_id=? AND id<>?',[$id,$makeHead?$department:0]);
             if ($makeHead) query('UPDATE departments SET head_user_id=? WHERE id=?',[$id,$department]);
@@ -167,25 +182,31 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
             <label>Designation *<input id="designation" name="designation" required value="<?= h($value('designation')) ?>" maxlength="150" placeholder="e.g. Senior Graphic Designer" data-card-src="designation"></label>
             <label>Joining date *<input type="date" id="joining_date" name="joining_date" required value="<?= h($joinedValue) ?>" data-card-src="joined"></label>
             <label>Reporting to<select name="manager_id"><option value="">Select department head</option><?php foreach ($reportingOptions as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$value('manager_id')===(string)$o['id']?'selected':'' ?>><?= h($o['full_name']) ?> (<?= $o['role']==='employee'?'Department head':h(ucfirst($o['role'])) ?>)</option><?php endforeach; ?></select></label>
-            <label>Work timings<input name="work_timings" maxlength="100" value="<?= h($value('work_timings')) ?>" placeholder="10:00 AM - 7:00 PM"></label>
+            <?php $officeDefault=office_timing_default(); $timingMode=$isPost?(string)($_POST['timing_mode']??'office'):(!empty($record['shift_start'])?'custom':'office'); ?>
+            <label>Work timings<select name="timing_mode" data-timing-mode><option value="office" <?= $timingMode!=='custom'?'selected':'' ?>>Office timing · <?= h(office_range_label($officeDefault['start'],$officeDefault['end'])) ?></option><option value="custom" <?= $timingMode==='custom'?'selected':'' ?>>Different shift (e.g. night shift)</option></select></label>
+            <div class="emp-shift" data-shift-fields<?= $timingMode==='custom'?'':' hidden' ?>>
+                <label>Shift starts<input type="time" name="shift_start" value="<?= h($isPost?(string)($_POST['shift_start']??''):substr((string)($record['shift_start']??'21:00'),0,5)) ?>"></label>
+                <label>Shift ends<input type="time" name="shift_end" value="<?= h($isPost?(string)($_POST['shift_end']??''):substr((string)($record['shift_end']??'06:00'),0,5)) ?>"></label>
+                <label>Shift name <small>(optional)</small><input name="shift_label" maxlength="60" value="<?= h($isPost?(string)($_POST['shift_label']??''):(string)($record['shift_label']??'')) ?>" placeholder="Night shift"></label>
+            </div>
+            <script>(() => { const s = document.currentScript.parentElement.querySelector('[data-timing-mode]'), f = document.currentScript.parentElement.querySelector('[data-shift-fields]'); const sync = () => { const on = s.value === 'custom'; f.hidden = !on; f.querySelectorAll('input[type=time]').forEach(i => { i.required = on; }); }; s.addEventListener('change', sync); sync(); })();</script>
             <label>Relieving date (if leaving)<input type="date" id="relieving_date" name="relieving_date" value="<?= h($value('relieving_date')) ?>"></label>
         </div>
         <fieldset class="emp-choice emp-choice-inline"><legend>Employment type *</legend>
             <?php foreach (EMPLOYMENT_TYPES as $k=>$l): ?><label><input type="radio" name="employment_type" value="<?= $k ?>" <?= $employmentType===$k?'checked':'' ?>><span><?= h($l) ?></span></label><?php endforeach; ?>
         </fieldset>
+        <div class="emp-more emp-benefits"><p class="emp-label">Benefits <small>— tick what this employee gets</small></p>
+            <div class="benefit-options emp-checks"><?php foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label): ?><label><input type="checkbox" name="benefit_<?= $key ?>" value="1" <?= ($isPost?isset($_POST['benefit_'.$key]):!empty($record['benefit_'.$key]))?'checked':'' ?>><?= $label ?></label><?php endforeach; ?></div>
+            <div class="emp-grid"><?php foreach (['pf_number'=>'PF number','esi_number'=>'ESI number'] as $key=>$label): ?><label><?= $label ?><input name="<?= $key ?>" maxlength="100" value="<?= h($value($key)) ?>"></label><?php endforeach; ?></div>
+            <div id="other-benefits-field"><div class="emp-grid"><label>Other benefits amount (₹)<input id="other_benefit_amount" name="other_benefit_amount" type="number" min="0" max="9999999999.99" step="0.01" value="<?= h($value('other_benefit_amount')) ?>" placeholder="e.g. 500"></label><label>Reason for benefits<input id="other_benefits" name="other_benefits" maxlength="255" value="<?= h($value('other_benefits')) ?>" placeholder="e.g. Travel allowance"></label></div></div>
+            <p class="help">PF and ESI use half of the monthly salary. PF: employee 12%, company 12%. ESI: employee 0.75%, company 3.25%. Only the employee share is deducted.</p>
+        </div>
         <div class="emp-salary">
             <p class="emp-label">Monthly salary (₹)</p>
             <p class="help"><?= $record?'To change salary, add the new amount and its start date. Leave empty to keep the saved history.':'Enter the monthly salary. If the start date is empty, the joining date is used.' ?></p>
             <div id="salary-rows" data-initial-salary="<?= $record?'0':'1' ?>"><?php $draft=$_POST['salary']??[['amount'=>'','from'=>'','to'=>'']]; if (!is_array($draft)) $draft=[]; foreach ($draft as $index=>$entry): if (!is_array($entry)) continue; ?><div class="emp-grid emp-grid-3 repeat-row"><label>Amount (₹)<input type="number" name="salary[<?= (int)$index ?>][amount]" min="0.01" max="9999999999.99" step="0.01" placeholder="₹ 0" value="<?= h($entry['amount']??'') ?>"></label><label>Starts on<input type="date" name="salary[<?= (int)$index ?>][from]" value="<?= h($entry['from']??'') ?>"></label><label>Ends on (optional)<input type="date" name="salary[<?= (int)$index ?>][to]" value="<?= h($entry['to']??'') ?>"></label><button type="button" class="emp-link-btn" data-remove-row>Remove</button></div><?php endforeach; ?></div>
             <button type="button" class="emp-link-btn" data-add-row="salary">＋ Add another salary / increment</button><div id="salary-preview" aria-live="polite"></div>
         </div>
-        <?php $benefitsOn=$isPost?(isset($_POST['benefit_pf'])||isset($_POST['benefit_esi'])||isset($_POST['benefit_other'])):(!empty($record['benefit_pf'])||!empty($record['benefit_esi'])||!empty($record['benefit_other'])); ?>
-        <details class="emp-more"<?= $benefitsOn?' open':'' ?>><summary>PF, ESI &amp; other benefits</summary>
-            <div class="emp-grid"><?php foreach (['pf_number'=>'PF number','esi_number'=>'ESI number'] as $key=>$label): ?><label><?= $label ?><input name="<?= $key ?>" maxlength="100" value="<?= h($value($key)) ?>"></label><?php endforeach; ?></div>
-            <div class="benefit-options emp-checks"><?php foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label): ?><label><input type="checkbox" name="benefit_<?= $key ?>" value="1" <?= ($isPost?isset($_POST['benefit_'.$key]):!empty($record['benefit_'.$key]))?'checked':'' ?>><?= $label ?></label><?php endforeach; ?></div>
-            <div id="other-benefits-field"><div class="emp-grid"><label>Other benefits amount (₹)<input id="other_benefit_amount" name="other_benefit_amount" type="number" min="0" max="9999999999.99" step="0.01" value="<?= h($value('other_benefit_amount')) ?>" placeholder="e.g. 500"></label><label>Reason for benefits<input id="other_benefits" name="other_benefits" maxlength="255" value="<?= h($value('other_benefits')) ?>" placeholder="e.g. Travel allowance"></label></div></div>
-            <p class="help">PF and ESI use half of the monthly salary. PF: employee 12%, company 12%. ESI: employee 0.75%, company 3.25%. Only the employee share is deducted.</p>
-        </details>
     </section>
 
     <section class="emp-card" id="emp-login"><h3>3 · Login access</h3><p class="emp-card-sub">How this person signs in to Team Workspace</p>

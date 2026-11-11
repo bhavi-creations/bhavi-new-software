@@ -87,8 +87,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $services=$_POST['services']??[];
             if (!is_array($services)) $services=[];
             $services=array_values(array_intersect(array_keys(CLIENT_SERVICES),array_map('strval',$services)));
-            $accountManager=null; if (($_POST['account_manager_id']??'')!=='') { $accountManager=positive_id($_POST['account_manager_id']); if (!in_array($accountManager,array_map('intval',array_column($managerOptions,'id')),true)) throw new InvalidArgumentException('Choose a valid account manager.'); }
-            $leadDepartment=null; if (($_POST['lead_department_id']??'')!=='') { $leadDepartment=positive_id($_POST['lead_department_id']); if (!one('SELECT id FROM departments WHERE id=? AND is_active=1',[$leadDepartment])) throw new InvalidArgumentException('Choose a valid lead department.'); }
+            // Account manager / lead department are no longer on the form: keep what was saved unless a value is posted.
+            $accountManager=isset($_POST['account_manager_id'])?null:($record['account_manager_id']??null); if (($_POST['account_manager_id']??'')!=='') { $accountManager=positive_id($_POST['account_manager_id']); if (!in_array($accountManager,array_map('intval',array_column($managerOptions,'id')),true)) throw new InvalidArgumentException('Choose a valid account manager.'); }
+            $leadDepartment=isset($_POST['lead_department_id'])?null:($record['lead_department_id']??null); if (($_POST['lead_department_id']??'')!=='') { $leadDepartment=positive_id($_POST['lead_department_id']); if (!one('SELECT id FROM departments WHERE id=? AND is_active=1',[$leadDepartment])) throw new InvalidArgumentException('Choose a valid lead department.'); }
             $billing=is_string($_POST['billing_cycle']??null)&&isset(CLIENT_BILLING[$_POST['billing_cycle']])?$_POST['billing_cycle']:'monthly';
             $status=is_string($_POST['client_status']??null)&&isset(CLIENT_STATUSES[$_POST['client_status']])?$_POST['client_status']:'active';
             $extra+=['industry'=>$industry,'contact_person'=>optional_text('contact_person',150),'contact_designation'=>optional_text('contact_designation',150),'whatsapp'=>optional_text('whatsapp',30),'email'=>$clientEmail,'city'=>optional_text('city',100),'gst_number'=>optional_text('gst_number',30),'address'=>optional_text('address',500),'services'=>implode(',',$services),'account_manager_id'=>$accountManager,'lead_department_id'=>$leadDepartment,'billing_cycle'=>$billing,'team_notes'=>optional_text('team_notes',5000),'client_status'=>$status];
@@ -196,10 +197,8 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
         </div>
     </section>
 
-    <section class="emp-card"><h3>Team &amp; billing</h3><p class="emp-card-sub">Who handles this client and how they pay</p>
+    <section class="emp-card"><h3>Billing</h3><p class="emp-card-sub">When the project started and how the client pays</p>
         <div class="emp-grid">
-            <label>Account manager *<select name="account_manager_id" required><option value="">Select employee</option><?php foreach ($managerOptions as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$value('account_manager_id')===(string)$o['id']?'selected':'' ?>><?= h($o['full_name']) ?><?= $o['role']!=='employee'?' ('.h(ucfirst($o['role'])).')':'' ?></option><?php endforeach; ?></select></label>
-            <label>Lead department<select name="lead_department_id"><option value="">Select department</option><?= options($departmentsList,'name',$value('lead_department_id')) ?></select></label>
             <label>Start date *<input id="starting_date" name="starting_date" type="date" value="<?= h($value('starting_date')) ?>" required></label>
             <label>Package amount (₹)<input id="payment_total" name="payment_total" type="number" min="0" max="9999999999.99" step="0.01" placeholder="₹ 0" value="<?= h($value('payment_total','0.00')) ?>" required></label>
         </div>

@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             query('DELETE FROM leave_requests WHERE id=?',[$id]);
             db()->commit(); flash('Leave request deleted.'); redirect('manager-leave-requist.php');
         }
-        $status=$_POST['decision']??''; $note=text_input('decision_note',3000,false);
+        $status=$_POST['decision']??''; $note=isset($_POST['decision_note'])?text_input('decision_note',3000,false):'';
         if (($_POST['action']??'')==='save_note') {
             if ($note==='') throw new InvalidArgumentException('Enter a message for the employee.');
             db()->beginTransaction();
@@ -22,6 +22,17 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             query('UPDATE leave_requests SET decision_note=? WHERE id=?',[$note,$id]);
             query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,leave_request_id) VALUES (?,?,'leave_decision',?,?,?)",[$leave['employee_id'],$user['id'],'Message about your leave',$leave['from_date'].' to '.$leave['to_date'].' - '.$note,$id]);
             db()->commit(); flash('Note saved and sent to the employee.'); redirect('manager-leave-requist.php');
+        }
+        if (($_POST['action']??'')==='change_decision') {
+            // Change a decided leave: approve a rejected one again (or reject an approved one).
+            if (!in_array($status,['approved','rejected'],true)) throw new InvalidArgumentException('Choose Approve or Reject.');
+            db()->beginTransaction();
+            $leave=one("SELECT * FROM leave_requests WHERE id=? AND status=? FOR UPDATE",[$id,$status==='approved'?'rejected':'approved']);
+            if (!$leave) throw new InvalidArgumentException('This leave request was already changed. Refresh the page.');
+            $changeNote=$note!==''?$note:($status==='approved'?'Your leave has now been approved.':'Your leave has now been rejected.');
+            query('UPDATE leave_requests SET status=?,decision_note=?,decided_by=?,decided_at=NOW() WHERE id=?',[$status,$changeNote,$user['id'],$id]);
+            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,leave_request_id) VALUES (?,?,'leave_decision',?,?,?)",[$leave['employee_id'],$user['id'],'Leave '.$status.' (updated)',$leave['from_date'].' to '.$leave['to_date'].' · '.$changeNote,$id]);
+            db()->commit(); flash($status==='approved'?'Leave approved. The employee has been notified.':'Leave rejected. The employee has been notified.'); redirect('manager-leave-requist.php'.($status==='approved'?'?status=approved':''));
         }
         if (!in_array($status,['approved','rejected'],true)) throw new InvalidArgumentException('Choose Approve or Reject.');
         db()->beginTransaction();
@@ -101,6 +112,7 @@ page_start('Leave requests','manager-leave-requist.php'); error_message($error);
             <div class="lv-who"><strong><?= h($leave['full_name']) ?></strong><small><?= h($leave['department_name']) ?> · <?= h($leave['leave_type']) ?></small></div>
             <div class="lv-when"><strong><?= h($range($leave['from_date'],$leave['to_date'])) ?></strong><small><?= h($days($leave['working_days'])) ?></small></div>
             <span class="st-status <?= $leave['status']==='approved'?'st-status-done':'st-status-overdue' ?>"><?= h(ucfirst($leave['status'])) ?></span>
+            <?php $flipTo=$leave['status']==='rejected'?'approved':'rejected'; ?><form method="post" class="lv-flip" onsubmit="return confirm('<?= $flipTo==='approved'?'Approve this leave now? The employee will be notified.':'Reject this approved leave? The employee will be notified.' ?>')"><?= csrf_field() ?><input type="hidden" name="action" value="change_decision"><input type="hidden" name="id" value="<?= (int)$leave['id'] ?>"><input type="hidden" name="decision" value="<?= $flipTo ?>"><button type="submit" class="lv-flip-btn <?= $flipTo==='approved'?'is-approve':'is-reject' ?>"><?= $flipTo==='approved'?'✓ Approve now':'Reject' ?></button></form>
             <details class="dept-menu"><summary aria-label="More actions"><?= icon('more') ?></summary><div class="dept-menu-list"><button type="button" class="lv-menu-btn" data-dialog="leave-<?= (int)$leave['id'] ?>"><?= icon('eye') ?>Details</button><?php delete_button((int)$leave['id'],'delete_leave','Permanently delete this leave request? It will also be removed from the employee history and leave calendar.'); ?></div></details>
         </header>
         <blockquote class="lv-reason">“<?= h($leave['reason']) ?>”</blockquote>

@@ -151,6 +151,46 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             db()->commit();
             redirect('chat.php?id='.$conversationId);
         }
+        if ($action==='remove_member') {
+            // Admins, managers and the person who created the group can remove a member.
+            $conversationId=positive_id($_POST['conversation_id']??null);
+            $removeId=positive_id($_POST['user_id']??null);
+            $group=one("SELECT c.id,c.created_by FROM chat_conversations c JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=? WHERE c.id=? AND c.conversation_type='group'",[$user['id'],$conversationId]);
+            if (!$group) throw new InvalidArgumentException('You can only manage a group you are in.');
+            if (!in_array($user['role'],['admin','manager'],true) && (int)$group['created_by']!==(int)$user['id']) throw new InvalidArgumentException('Only the group creator, admins and managers can remove members.');
+            if ($removeId===(int)$user['id']) throw new InvalidArgumentException('You cannot remove yourself.');
+            $removed=one('SELECT u.full_name FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=? AND p.user_id=?',[$conversationId,$removeId]);
+            if (!$removed) throw new InvalidArgumentException('This person is no longer in the group.');
+            db()->beginTransaction();
+            query('DELETE FROM chat_participants WHERE conversation_id=? AND user_id=?',[$conversationId,$removeId]);
+            query('INSERT INTO chat_messages (conversation_id,sender_id,body) VALUES (?,?,?)',[$conversationId,$user['id'],'➖ Removed '.$removed['full_name'].' from the group']);
+            $messageId=(int)db()->lastInsertId();
+            query('UPDATE chat_participants SET last_read_message_id=GREATEST(last_read_message_id,?) WHERE conversation_id=? AND user_id=?',[$messageId,$conversationId,$user['id']]);
+            query('UPDATE chat_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?',[$conversationId]);
+            db()->commit();
+            redirect('chat.php?id='.$conversationId.'#chat-latest');
+        }
+        if ($action==='add_members') {
+            // Any member of a group can add more people to it.
+            $conversationId=positive_id($_POST['conversation_id']??null);
+            if (!one("SELECT c.id FROM chat_conversations c JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=? WHERE c.id=? AND c.conversation_type='group'",[$user['id'],$conversationId])) throw new InvalidArgumentException('You can only add people to a group you are in.');
+            $rawIds=$_POST['user_ids']??[];
+            if (!is_array($rawIds) || !$rawIds) throw new InvalidArgumentException('Choose at least one person to add.');
+            $newIds=array_values(array_unique(array_map(static fn($v)=>positive_id($v),$rawIds)));
+            $placeholders=implode(',',array_fill(0,count($newIds),'?'));
+            $valid=rows("SELECT id,full_name FROM users WHERE id IN ($placeholders) AND role IN ('admin','manager','employee') AND account_status='active' AND deleted_at IS NULL AND id NOT IN (SELECT user_id FROM chat_participants WHERE conversation_id=?) ORDER BY full_name",array_merge($newIds,[$conversationId]));
+            if (!$valid) throw new InvalidArgumentException('Those people are already in this group.');
+            db()->beginTransaction();
+            // New members start "read" up to now, so old messages do not show as unread.
+            $lastMessage=(int)(one('SELECT MAX(id) AS m FROM chat_messages WHERE conversation_id=?',[$conversationId])['m']??0);
+            foreach ($valid as $person) query('INSERT INTO chat_participants (conversation_id,user_id,added_by,last_read_message_id) VALUES (?,?,?,?)',[$conversationId,$person['id'],$user['id'],$lastMessage]);
+            query('INSERT INTO chat_messages (conversation_id,sender_id,body) VALUES (?,?,?)',[$conversationId,$user['id'],'➕ Added '.implode(', ',array_column($valid,'full_name')).' to the group']);
+            $messageId=(int)db()->lastInsertId();
+            query('UPDATE chat_participants SET last_read_message_id=GREATEST(last_read_message_id,?) WHERE conversation_id=? AND user_id=?',[$messageId,$conversationId,$user['id']]);
+            query('UPDATE chat_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?',[$conversationId]);
+            db()->commit();
+            redirect('chat.php?id='.$conversationId.'#chat-latest');
+        }
         if ($action==='send_message') {
             $conversationId=positive_id($_POST['conversation_id']??null);
             if (!one('SELECT conversation_id FROM chat_participants WHERE conversation_id=? AND user_id=?',[$conversationId,$user['id']])) throw new InvalidArgumentException('You are not a member of this chat.');
@@ -307,7 +347,8 @@ page_start('Chat','chat.php'); error_message($error);
             <h3 class="tc-info-name"><?= h($roomTitle) ?></h3>
             <p class="tc-info-sub">Group · <?= count($members)+1 ?> members</p>
             <p class="tc-info-label">Members</p>
-            <div class="tc-members"><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($user['full_name'])) ?></span><?= h($user['full_name']) ?> <small>(you)</small></span><?php foreach ($members as $member): ?><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($member['full_name'])) ?></span><?= h($member['full_name']) ?></span><?php endforeach; ?></div>
+            <div class="tc-members"><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($user['full_name'])) ?></span><?= h($user['full_name']) ?> <small>(you)</small></span><?php $canManageGroup=$isStaff || (int)($selected['created_by']??0)===(int)$user['id']; foreach ($members as $member): ?><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($member['full_name'])) ?></span><span class="tc-member-name"><?= h($member['full_name']) ?></span><?php if ($canManageGroup): ?><form method="post" class="tc-remove-member" onsubmit="return confirm('Remove <?= h(addslashes($member['full_name'])) ?> from this group? They will no longer see its messages.')"><?= csrf_field() ?><input type="hidden" name="action" value="remove_member"><input type="hidden" name="conversation_id" value="<?= (int)$selectedId ?>"><input type="hidden" name="user_id" value="<?= (int)$member['id'] ?>"><button type="submit" title="Remove from group" aria-label="Remove <?= h($member['full_name']) ?> from group">×</button></form><?php endif; ?></span><?php endforeach; ?></div>
+            <?php $memberIds=array_map(static fn($m)=>(int)$m['id'],$members); $addable=array_values(array_filter($people,static fn($p)=>!in_array((int)$p['id'],$memberIds,true))); if ($addable): ?><button type="button" class="tc-add-members" data-dialog="add-members-dialog"><?= icon('plus') ?> Add people to group</button><?php endif; ?>
         <?php endif; ?>
         <p class="tc-info-label">Shared files</p>
         <div class="tc-nofiles" data-tc-nofiles<?= $sharedFiles?' hidden':'' ?>>No files shared yet</div>
@@ -317,6 +358,29 @@ page_start('Chat','chat.php'); error_message($error);
 </div>
 </div>
 
+<?php if ($selected && $selected['conversation_type']==='group' && !empty($addable)): ?>
+<dialog id="add-members-dialog" class="detail-dialog tc-dialog">
+    <div class="dialog-heading"><h2>Add people to <?= h($roomTitle) ?></h2><button type="button" data-close-dialog aria-label="Close">×</button></div>
+    <form method="post" class="tc-new-form" data-add-members-form><?= csrf_field() ?><input type="hidden" name="action" value="add_members"><input type="hidden" name="conversation_id" value="<?= (int)$selectedId ?>">
+        <label class="dept-search"><?= icon('search') ?><span class="sr-only">Search people</span><input type="search" placeholder="Search people…" data-add-search></label>
+        <div class="tc-people-bar"><p class="help">Choose one or more people. They will see new messages from now on.</p><button type="button" class="tc-select-all" data-add-all>Select all</button></div>
+        <div class="tc-people">
+            <?php foreach ($addable as $person): ?><label class="tc-person" data-name="<?= h(mb_strtolower($person['full_name'].' '.$person['department_name'])) ?>"><input type="checkbox" name="user_ids[]" value="<?= (int)$person['id'] ?>"><span class="tc-avatar tc-avatar-sm"><?= h($initials($person['full_name'])) ?></span><span class="tc-person-text"><strong><?= h($person['full_name']) ?></strong><small><?= h($person['department_name'] ?: ucfirst($person['role'])) ?></small></span></label><?php endforeach; ?>
+        </div>
+        <button class="emp-btn emp-btn-gold" type="submit" data-add-submit disabled>Add to group</button>
+    </form>
+</dialog>
+<script>
+(() => {
+    const form = document.querySelector('[data-add-members-form]'); if (!form) return;
+    const boxes = form.querySelectorAll('input[type=checkbox]'), submit = form.querySelector('[data-add-submit]');
+    const count = () => { const n = Array.from(boxes).filter(b => b.checked).length; submit.disabled = n === 0; submit.textContent = n ? 'Add ' + n + (n === 1 ? ' person' : ' people') + ' to group' : 'Add to group'; };
+    boxes.forEach(b => b.addEventListener('change', count));
+    form.querySelector('[data-add-all]').addEventListener('click', () => { const visible = Array.from(boxes).filter(b => !b.closest('.tc-person').hidden); const all = visible.every(b => b.checked); visible.forEach(b => { b.checked = !all; }); count(); });
+    form.querySelector('[data-add-search]').addEventListener('input', e => { const q = e.target.value.trim().toLowerCase(); form.querySelectorAll('.tc-person').forEach(p => { p.hidden = q !== '' && !p.dataset.name.includes(q); }); });
+})();
+</script>
+<?php endif; ?>
 <dialog id="new-chat-dialog" class="detail-dialog tc-dialog">
     <div class="dialog-heading"><h2>New chat</h2><button type="button" data-close-dialog aria-label="Close">×</button></div>
     <form method="post" class="tc-new-form chat-start-form"><?= csrf_field() ?><input type="hidden" name="action" value="create_conversation">

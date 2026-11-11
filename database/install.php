@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 33;
+const PORTAL_SCHEMA_VERSION = 34;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -437,6 +437,21 @@ function portal_install(PDO $pdo, string $database): void
             $pdo->exec('UPDATE work_assignments SET timer_resumed_at=started_at WHERE started_at IS NOT NULL AND completed_at IS NULL');
         }
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (33)');
+        // Payslips up to 100 MB are kept as files in storage/payslips (older ones stay in file_content).
+        $addColumn('payslips','file_path','VARCHAR(255) NULL');
+        $pdo->exec('ALTER TABLE payslips MODIFY COLUMN file_content MEDIUMBLOB NULL');
+        // Office timing set by admin (default for everyone) and optional per-employee shift (e.g. night shift).
+        $pdo->exec("CREATE TABLE IF NOT EXISTS portal_settings (
+            setting_key VARCHAR(64) PRIMARY KEY,
+            setting_value TEXT NOT NULL,
+            updated_by BIGINT UNSIGNED NULL,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB");
+        $pdo->exec("INSERT IGNORE INTO portal_settings (setting_key,setting_value) VALUES ('office_start','10:00'),('office_end','19:00')");
+        $addColumn('employee_profiles','shift_start','TIME NULL');
+        $addColumn('employee_profiles','shift_end','TIME NULL');
+        $addColumn('employee_profiles','shift_label',"VARCHAR(60) NOT NULL DEFAULT ''");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (34)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

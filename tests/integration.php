@@ -16,7 +16,7 @@ function expect(bool $condition, string $label): void
 {
     global $checks;
     if (!$condition) throw new RuntimeException($label);
-    $checks++;
+    $checks++; 
 }
 function scalar(string $sql, array $params = []): mixed
 {
@@ -243,6 +243,8 @@ try {
     $clientPost=$admin->post('admin-add-client.php',['client_profile'=>'1','client_name'=>'Layout Regression Pipes','industry'=>'Manufacturing','contact_person'=>'Santhi','contact_designation'=>'Owner','phone'=>'9876543210','whatsapp'=>'9876543210','email'=>'pipes@example.test','website_url'=>'https://example.com','city'=>'Visakhapatnam','gst_number'=>'37ABCDE1234F1Z5','address'=>'Port road','services'=>['graphic_design','meta_google_ads','not_a_service'],'account_manager_id'=>(string)$deptHead,'lead_department_id'=>'','starting_date'=>date('Y-m-d'),'payment_total'=>'25000','billing_cycle'=>'quarterly','team_notes'=>'Blue brand colours','client_status'=>'lead','after'=>'project','monthly_reels'=>'0','monthly_posters'=>'0','monthly_carousels'=>'0','monthly_blogs'=>'0']);
     $regClient=(int)scalar("SELECT id FROM clients WHERE client_name='Layout Regression Pipes' AND deleted_at IS NULL");
     expect($clientPost['status']===303 && str_contains((string)($clientPost['headers']['location']??$clientPost['location']??'manager-assign-work.php'),'manager-assign-work.php') && $regClient && scalar('SELECT CONCAT(industry,"|",city,"|",services,"|",billing_cycle,"|",client_status,"|",account_manager_id,"|",payment_total) FROM clients WHERE id=?',[$regClient])==='Manufacturing|Visakhapatnam|graphic_design,meta_google_ads|quarterly|lead|'.$deptHead.'|25000.00','New client business, services and billing fields save');
+    $clientFormPage=$admin->request('admin-add-client.php')['body'];
+    expect(!str_contains($clientFormPage,'name="account_manager_id"') && !str_contains($clientFormPage,'name="lead_department_id"') && str_contains($clientFormPage,'<h3>Billing</h3>'),'Client form billing section has only client details (no account manager / lead department)');
     expect(str_contains($clientFormPage,'<option value="Pinterest"') && str_contains($clientFormPage,'<option value="Twitter"'),'Client social media platform list includes Pinterest and Twitter');
     $admin->request('admin-add-client.php?id='.$regClient);
     expect($admin->post('admin-add-client.php?id='.$regClient,['client_profile'=>'1','client_name'=>'Layout Regression Pipes','website_url'=>'https://example.com','payment_total'=>'25000','monthly_reels'=>'0','monthly_posters'=>'0','monthly_carousels'=>'0','monthly_blogs'=>'0','social_links'=>[['platform'=>'Pinterest','url'=>'https://pinterest.com/pipes','username'=>'pipes.pin','password'=>''],['platform'=>'Twitter','url'=>'https://twitter.com/pipes','username'=>'pipes_x','password'=>'']]])['status']===303 && scalar('SELECT GROUP_CONCAT(platform_name ORDER BY id) FROM client_social_links WHERE client_id=?',[$regClient])==='Pinterest,Twitter','Pinterest and Twitter social links save to the database');
@@ -256,6 +258,14 @@ try {
         ['employee_id'=>$employeeIds['website'],'client_id'=>'','work_date'=>date('Y-m-d'),'editing_type'=>'reel','priority'=>'high','title'=>'Layout regression reel','description'=>'Reel cover','reference_link'=>''],
     ]]);
     expect($awPost['status']===303 && scalar("SELECT GROUP_CONCAT(priority ORDER BY id) FROM work_assignments WHERE title LIKE 'Layout regression %'")==='urgent,high' && (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=?',[$employeeIds['website']])===$awNotesBefore,'Multiple tasks save with priority and in-app notification can be turned off');
+    expect(str_contains($awPage,'data-editing-wrap') && !preg_match('~name="tasks\[[^"]*\]\[editing_type\]"[^>]*required~',$awPage),'Type of editing is optional on the assign form');
+    $admin->request('manager-assign-work.php');
+    $noTypePost=$admin->post('manager-assign-work.php',['notify_present'=>'1','department_id'=>$awDept,'tasks'=>[['employee_id'=>$employeeIds['website'],'client_id'=>'','work_date'=>date('Y-m-d'),'editing_type'=>'','priority'=>'normal','title'=>'No type regression task','description'=>'Website update','reference_link'=>'']]]);
+    expect($noTypePost['status']===303 && scalar("SELECT editing_type FROM work_assignments WHERE title='No type regression task'")===null,'Assignment saves without a type of editing');
+    $admin->request('manager-assign-work.php');
+    expect($admin->post('manager-assign-work.php',['notify_present'=>'1','department_id'=>$awDept,'tasks'=>[['employee_id'=>$employeeIds['website'],'client_id'=>'','work_date'=>date('Y-m-d'),'editing_type'=>'bogus','priority'=>'normal','title'=>'Bad type regression task','description'=>'x','reference_link'=>'']]])['status']===200 && (int)scalar("SELECT COUNT(*) FROM work_assignments WHERE title='Bad type regression task'")===0,'Unknown type of editing is rejected');
+    $pdo->exec("DELETE FROM notifications WHERE message LIKE '%No type regression task%'");
+    $pdo->exec("DELETE FROM work_assignments WHERE title='No type regression task'");
     $pdo->prepare("UPDATE work_assignments SET work_date=DATE_SUB(CURDATE(),INTERVAL 3 DAY) WHERE title='Layout regression reel'")->execute();
     $stPage=$admin->request('manager-assigned-status.php')['body'];
     expect(str_contains($stPage,'Overall progress') && str_contains($stPage,'Employee progress') && str_contains($stPage,'Overdue · 3d') && str_contains($stPage,'still pending') && str_contains($stPage,'remind_assignment'),'Assigned status page shows progress, date groups and overdue reminder');
@@ -280,6 +290,30 @@ try {
     expect($chatStart['status']===303 && $chatSend['status']===303 && str_contains($chatPage,'Team chat') && str_contains($chatPage,'Layout regression hello') && str_contains($chatPage,'tc-msg chat-message own') && str_contains($chatPage,'Quick actions') && str_contains($chatPage,'View their tasks') && str_contains($chatPage,'Shared files') && str_contains($chatPage,'New chat'),'Team chat shows list, own message bubble and profile panel');
     $chatList=$admin->request('chat.php')['body'];
     expect(str_contains($chatList,'Layout regression hello'),'Chat list shows the last message preview');
+    // Group chat: add more people later.
+    $admin->request('chat.php');
+    $admin->post('chat.php',['action'=>'create_conversation','conversation_type'=>'group','title'=>'Add members regression','user_ids'=>[$employeeIds['website']]]);
+    $groupId=(int)scalar("SELECT id FROM chat_conversations WHERE title='Add members regression'");
+    $groupPage=$admin->request('chat.php?id='.$groupId)['body'];
+    expect(str_contains($groupPage,'Add people to group') && str_contains($groupPage,'value="add_members"'),'Group chat shows Add people button');
+    $addMembers=$admin->post('chat.php',['action'=>'add_members','conversation_id'=>$groupId,'user_ids'=>[$employeeIds['seo'],$employeeIds['website']]]);
+    expect($addMembers['status']===303 && (int)scalar('SELECT COUNT(*) FROM chat_participants WHERE conversation_id=?',[$groupId])===3 && str_contains((string)scalar('SELECT body FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1',[$groupId]),'Added Employee seo'),'New employee is added to an existing group (existing members skipped)');
+    expect($browsers['seo']->request('chat.php?id='.$groupId)['status']===200 && str_contains($browsers['seo']->request('chat.php?id='.$groupId)['body'],'Add members regression'),'Added employee can open the group');
+    $admin->request('chat.php?id='.$chatId);
+    expect($admin->post('chat.php',['action'=>'add_members','conversation_id'=>$chatId,'user_ids'=>[$employeeIds['seo']]])['status']===200,'People cannot be added to a private chat');
+    // Remove a member from the group.
+    $groupPage=$admin->request('chat.php?id='.$groupId)['body'];
+    expect(str_contains($groupPage,'value="remove_member"'),'Group creator sees remove buttons next to members');
+    $browsers['seo']->request('chat.php?id='.$groupId);
+    expect($browsers['seo']->post('chat.php',['action'=>'remove_member','conversation_id'=>$groupId,'user_id'=>$employeeIds['website']])['status']===200 && (int)scalar('SELECT COUNT(*) FROM chat_participants WHERE conversation_id=? AND user_id=?',[$groupId,$employeeIds['website']])===1,'A normal member cannot remove others');
+    $admin->request('chat.php?id='.$groupId);
+    expect($admin->post('chat.php',['action'=>'remove_member','conversation_id'=>$groupId,'user_id'=>$adminId??(int)scalar("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1")])['status']===200,'You cannot remove yourself');
+    $removeSeo=$admin->post('chat.php',['action'=>'remove_member','conversation_id'=>$groupId,'user_id'=>$employeeIds['seo']]);
+    expect($removeSeo['status']===303 && (int)scalar('SELECT COUNT(*) FROM chat_participants WHERE conversation_id=?',[$groupId])===2 && str_contains((string)scalar('SELECT body FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 1',[$groupId]),'Removed Employee seo'),'Admin removes a member from the group');
+    expect(!str_contains($browsers['seo']->request('chat.php?id='.$groupId)['body'],'Add members regression'),'Removed member can no longer open the group');
+    $pdo->prepare('DELETE FROM chat_messages WHERE conversation_id=?')->execute([$groupId]);
+    $pdo->prepare('DELETE FROM chat_participants WHERE conversation_id=?')->execute([$groupId]);
+    $pdo->prepare('DELETE FROM chat_conversations WHERE id=?')->execute([$groupId]);
     $pdo->prepare('DELETE FROM chat_messages WHERE conversation_id=?')->execute([$chatId]);
     $pdo->prepare('DELETE FROM chat_participants WHERE conversation_id=?')->execute([$chatId]);
     $pdo->prepare('DELETE FROM chat_conversations WHERE id=?')->execute([$chatId]);
@@ -341,6 +375,9 @@ try {
     expect((int)scalar('SELECT COUNT(*) FROM payslips') === 0, 'Invalid payslip not saved');
     expect($manager->post('payslips.php', $payData)['status'] === 303, 'Manager uploads private payslip');
     $payId = (int)scalar('SELECT id FROM payslips LIMIT 1');
+    $payPath = (string)scalar('SELECT file_path FROM payslips WHERE id=?', [$payId]);
+    if ($payPath !== '') $temporary[] = dirname(__DIR__) . '/' . $payPath;
+    expect(preg_match('~^storage/payslips/[a-f0-9]{40}\.pdf$~', $payPath) === 1 && scalar('SELECT file_content FROM payslips WHERE id=?', [$payId]) === null, 'Payslip is stored as a private file, not in the database');
     expect($browsers['website']->request('download-payslip.php?id=' . $payId)['body'] === $pdfContent, 'Owner downloads original payslip');
     expect($manager->request('download-payslip.php?id=' . $payId)['body'] === $pdfContent, 'Manager downloads payslip');
     expect($browsers['seo']->request('download-payslip.php?id=' . $payId)['status'] === 404, 'Other employee cannot download payslip by ID');
@@ -448,9 +485,9 @@ try {
     expect($assignmentFileResponse['status'] === 200 && $assignmentFileResponse['body'] === $assignmentFileContents, 'Employee can download an assignment attachment');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'Task 2 · Add contact form'), 'Employee sees each assigned task numbered separately');
     expect(!str_contains($browsers['seo']->request('employee-assigned-work.php')['body'], 'Build home page'), 'Assignment hidden from another employee');
-    $assignmentNotificationId=(int)scalar("SELECT id FROM notifications WHERE recipient_id=? AND title LIKE '%task assigned' ORDER BY id DESC LIMIT 1",[$employeeIds['website']]);
+    $assignmentNotificationId=(int)scalar("SELECT id FROM notifications WHERE recipient_id=? AND (title LIKE '%task assigned' OR title LIKE '%tasks assigned') ORDER BY id DESC LIMIT 1",[$employeeIds['website']]);
     $assignmentNotification=$browsers['website']->request('notification-open.php?id='.$assignmentNotificationId);
-    expect($assignmentNotification['status']===303 && $assignmentNotification['headers']['location']==='employee-assigned-work.php','Task-assigned notification opens My assigned work');
+    expect($assignmentNotification['status']===303 && preg_match('~^employee-assigned-work\.php\?task=\d+$~',(string)$assignmentNotification['headers']['location'])===1,'Task-assigned notification opens the exact task on My assigned work');
     expect($browsers['seo']->post($dashboards['seo'], ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'remark' => 'Attack'])['status'] === 403, 'Assignment ownership enforced');
     $website = $browsers['website'];
     $website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate);
@@ -498,6 +535,8 @@ try {
         $work = array_merge(['action' => 'save_entry', 'client_id' => $clientId, 'task_title' => $code . ' daily task', 'task_status' => 'completed', 'remark' => 'Daily ' . $code, 'submit_mode' => 'submitted'], $metrics);
         expect($browser->post($dashboard, $work)['status'] === 303, 'Department work submission ' . $code);
     }
+    $adminId = (int)scalar("SELECT id FROM users WHERE role='admin' AND deleted_at IS NULL ORDER BY id LIMIT 1");
+    expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND notification_type='work_submitted' AND title LIKE '%submitted daily work'", [$adminId]) >= 1, 'Admin is notified when an employee submits work');
     $designer=$browsers['design_video'];
     $creativeForm=$designer->request('employee-daily-work.php')['body'];
     expect(str_contains($creativeForm,'data-dw-form') && str_contains($creativeForm,'value="reel"') && str_contains($creativeForm,'Thumbnail') && str_contains($creativeForm,'Video Editing') && str_contains($creativeForm,'Save &amp; add another'),'Creative daily work shows designer task types and Save &amp; add another');
@@ -657,6 +696,13 @@ try {
     $manager->request('manager-leave-requist.php');
     expect($manager->post('manager-leave-requist.php', ['id' => $seoLeave, 'decision' => 'rejected', 'decision_note' => 'Discuss new dates'])['status'] === 303, 'Manager rejects leave');
     expect(str_contains($seo->request('my-leave-requests.php')['body'], 'Discuss new dates'), 'Rejected decision visible');
+    $rejectedPage = $manager->request('manager-leave-requist.php?status=rejected')['body'];
+    expect(str_contains($rejectedPage, '✓ Approve now') && str_contains($rejectedPage, 'value="change_decision"'), 'Rejected leave shows an Approve now button');
+    $flipNotes = (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND leave_request_id=?', [$employeeIds['seo'], $seoLeave]);
+    expect($manager->post('manager-leave-requist.php', ['action' => 'change_decision', 'id' => $seoLeave, 'decision' => 'approved'])['status'] === 303 && scalar('SELECT status FROM leave_requests WHERE id=?', [$seoLeave]) === 'approved' && (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND leave_request_id=?', [$employeeIds['seo'], $seoLeave]) === $flipNotes + 1, 'Rejected leave can be approved again and the employee is notified');
+    $manager->request('manager-leave-requist.php');
+    expect($manager->post('manager-leave-requist.php', ['action' => 'change_decision', 'id' => $seoLeave, 'decision' => 'approved'])['status'] === 200, 'Approving an already approved leave again is refused');
+    expect($manager->post('manager-leave-requist.php', ['action' => 'change_decision', 'id' => $seoLeave, 'decision' => 'rejected', 'decision_note' => 'Discuss new dates'])['status'] === 303 && scalar('SELECT status FROM leave_requests WHERE id=?', [$seoLeave]) === 'rejected', 'Approved leave can be rejected again');
     expect(!str_contains($seo->request('my-leave-requests.php')['body'], 'Family appointment'), 'Leave history is private');
     $seo->request('apply-leaves.php');
     expect($seo->post('apply-leaves.php', array_merge($leaveData, ['reason' => 'Request to cancel']))['status'] === 303, 'Leave can be reapplied after rejection');
@@ -688,6 +734,24 @@ try {
     expect($admin->post('departments.php?edit=' . $newDepartment, ['name' => 'Quality Engineering'])['status'] === 303, 'Admin edits department');
     expect(str_contains($admin->request('admin-add-employee.php')['body'], 'Quality Engineering'), 'Renamed department appears in employee form');
     expect($manager->request('departments.php')['status'] === 403, 'Department management is admin only');
+    // Departments: picker of existing departments; head list shows only that department's employees.
+    $websiteDeptId = (int)scalar("SELECT id FROM departments WHERE code='website'");
+    $deptEdit = $admin->request('departments.php?edit=' . $websiteDeptId)['body'];
+    $headSelect = preg_match('~<select name="head_user_id">(.*?)</select>~s', $deptEdit, $hm) ? $hm[1] : '';
+    expect(str_contains($deptEdit, 'data-dept-pick') && str_contains($deptEdit, 'Quality Engineering') && str_contains($headSelect, 'Employee website') && !str_contains($headSelect, 'Employee seo'), 'Department head list shows only employees of that department');
+    // Office timings: admin default applies to everyone; one employee can have a night shift.
+    expect($manager->request('office-timings.php')['status'] === 403 && $website->request('office-timings.php')['status'] === 403, 'Office timings page is admin only');
+    $admin->request('office-timings.php');
+    expect($admin->post('office-timings.php', ['action' => 'save_default', 'office_start' => '09:30', 'office_end' => '18:30'])['status'] === 303 && scalar("SELECT setting_value FROM portal_settings WHERE setting_key='office_start'") === '09:30', 'Admin saves office timing');
+    expect(str_contains($website->request('employee-profile.php')['body'], '9:30 AM – 6:30 PM'), 'Employee gets the office timing by default');
+    $admin->request('office-timings.php');
+    expect($admin->post('office-timings.php', ['action' => 'save_shift', 'employee_id' => $employeeIds['seo'], 'shift_start' => '21:00', 'shift_end' => '06:00', 'shift_label' => 'Night shift'])['status'] === 303, 'Admin sets a night shift for one employee');
+    expect(str_contains($browsers['seo']->request('employee-profile.php')['body'], '9:00 PM – 6:00 AM (next day) · Night shift') && str_contains($website->request('employee-profile.php')['body'], '9:30 AM – 6:30 PM'), 'Night shift applies only to that employee');
+    $admin->request('office-timings.php');
+    expect($admin->post('office-timings.php', ['action' => 'save_default', 'office_start' => '10:00', 'office_end' => '10:00'])['status'] === 200, 'Office timing with same start and end is rejected');
+    expect($admin->post('office-timings.php', ['action' => 'reset_shift', 'employee_id' => $employeeIds['seo']])['status'] === 303 && scalar('SELECT shift_start FROM employee_profiles WHERE user_id=?', [$employeeIds['seo']]) === null, 'Employee can be moved back to office timing');
+    $admin->request('office-timings.php');
+    $admin->post('office-timings.php', ['action' => 'save_default', 'office_start' => '10:00', 'office_end' => '19:00']);
     $admin->request('departments.php');
     expect(str_contains($admin->post('departments.php', ['action' => 'delete_department', 'id' => $websiteDepartment])['body'], 'Move the employees'), 'Populated department deletion prevented');
     expect($admin->post('departments.php', ['action' => 'delete_department', 'id' => $newDepartment])['status'] === 303, 'Unused department deleted');
@@ -708,6 +772,10 @@ try {
     $managerNotificationPage=$manager->request('manager-notification.php')['body'];
     expect(str_contains($managerNotificationPage,'All departments') && str_contains($managerNotificationPage,'All employees'),'Notification form offers all-department and all-employee audiences');
     expect($manager->post('manager-notification.php', ['action' => 'send_notification', 'department_id' => $websiteDepartment, 'employee_id' => $employeeIds['website'], 'title' => 'Project update', 'message' => 'Please review the brief'])['status'] === 303, 'Manager sends employee notification');
+    $tickerPage=$website->request('chat.php')['body'];
+    expect(str_contains($tickerPage,'class="topbar-ticker"') && str_contains($tickerPage,'Project update — Please review the brief') && !preg_match('~ticker-track.*Work report reviewed~s',$tickerPage),'Announcement scrolls in the employee top bar (announcements only)');
+    expect(!str_contains($browsers['seo']->request('chat.php')['body'],'Project update — Please review the brief'),'Announcement ticker only shows to its recipients');
+    expect(str_contains($admin->request('admin-dashboard.php')['body'],'class="topbar-ticker"'),'Admin top bar shows sent announcements');
     $websiteActiveCount=(int)scalar("SELECT COUNT(*) FROM users u JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL AND ep.department_id=?",[$websiteDepartment]);
     expect($manager->post('manager-notification.php',['action'=>'send_notification','department_id'=>(string)$websiteDepartment,'employee_id'=>'all','title'=>'Department update','message'=>'Update for the whole department'])['status']===303,'Manager can notify every active employee in a department');
     expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE title='Department update' AND recipient_id IN (SELECT u.id FROM users u JOIN employee_profiles ep ON ep.user_id=u.id WHERE ep.department_id=?)",[$websiteDepartment])===$websiteActiveCount,'Department-wide notification reaches all active department employees');

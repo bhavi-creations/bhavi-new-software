@@ -3877,3 +3877,130 @@ i.is-progress{background:var(--wr-gold)}
 .emp-side-text small.client-side-plan{color:#e2bf62;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 body[data-role="client"] .sectioned-nav{margin-top:6px}
 body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;padding-top:14px;border-top:1px solid #ffffff1a}
+/* ===== Top bar announcement ticker ===== */
+.topbar-ticker{display:flex;align-items:center;flex:1 1 auto;min-width:0;max-width:760px;height:40px;border:1px solid #f0dca8;border-radius:999px;background:#fffaf0;color:#5c4410;text-decoration:none;overflow:hidden}
+.topbar-ticker:hover{border-color:#d6ad48}
+.ticker-label{display:grid;place-items:center;flex:0 0 40px;align-self:stretch;background:#d6ad48;color:#172b49}
+.ticker-label svg{width:17px;height:17px}
+.ticker-window{flex:1;min-width:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 24px),transparent)}
+.ticker-track{display:inline-flex;white-space:nowrap;animation:topbarTicker var(--ticker-duration,30s) linear infinite}
+.ticker-track>span{padding-right:80px;font-size:13px;font-weight:600}
+.topbar-ticker:hover .ticker-track,.topbar-ticker:focus-visible .ticker-track{animation-play-state:paused}
+@keyframes topbarTicker{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media(prefers-reduced-motion:reduce){.ticker-track{animation:none}.ticker-track>span[aria-hidden]{display:none}.ticker-track>span{display:block;overflow:hidden;text-overflow:ellipsis}.ticker-track{display:block}}
+@media(max-width:760px){.topbar-ticker{height:34px}.ticker-label{flex-basis:34px}.ticker-track>span{font-size:12px}}
+.portal-topbar:has(.topbar-ticker) .topbar-left,.portal-topbar:has(.topbar-ticker) .topbar-account{flex-shrink:0}
+.portal-topbar:has(.topbar-ticker) .topbar-left>span,.portal-topbar:has(.topbar-ticker) .topbar-account time{white-space:nowrap}
+.portal-topbar:has(.topbar-ticker) .account-name strong{white-space:nowrap}
+/* Ticker sits on its own line above the breadcrumb and account row. */
+.portal-topbar:has(.topbar-ticker){flex-wrap:wrap;row-gap:12px}
+.portal-topbar .topbar-ticker{order:-1;flex:0 0 100%;max-width:none}
+/* Space between scrolling announcements, with a gold dot separator. */
+.ticker-track>span{display:inline-flex;align-items:center;padding-right:0}
+.ticker-item{display:inline-flex;align-items:center}
+.ticker-item:after{content:"";display:inline-block;width:6px;height:6px;margin:0 56px;border-radius:50%;background:#d6ad48}
+/* Employee form: benefits always visible */
+.emp-benefits{display:grid;gap:4px}
+.emp-benefits .emp-label small{color:#6a7b94;font-size:12px;font-weight:500}
+.emp-benefits .benefit-options{margin:6px 0 12px}
+/* Assign work: keep reference-link text clear of its icon (beats the general .emp-page input rule). */
+.emp-page .aw-link-input input:not([type=radio]):not([type=checkbox]):not([type=file]){padding-left:40px}
+.aw-link-input svg{width:16px;height:16px;pointer-events:none}
+.aw-optional{color:#6a7b94;font-size:11px;font-weight:500}
+[data-editing-wrap][hidden]{display:none!important}
+/* Employee form: clear PF / ESI salary breakdown */
+.emp-benefits{margin:14px 0}
+.salary-estimate{margin-top:14px;padding:14px 16px;border:1px solid #d9e1ee;border-radius:12px;background:#fbfcfe}
+.salary-estimate h3{margin:0 0 10px;color:#103d83;font-size:13px;font-weight:800}
+.salary-breakdown{display:grid;margin:0}
+.salary-breakdown div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed #e3e8f1}
+.salary-breakdown dt{color:#4a5a72;font-size:12.5px}
+.salary-breakdown dd{margin:0;color:#172b49;font-size:13px;font-weight:700;white-space:nowrap}
+.salary-breakdown .is-note dt,.salary-breakdown .is-note dd{color:#6a7b94;font-size:11.5px;font-weight:500}
+.salary-breakdown .is-cut dd{color:#b42318}
+.salary-breakdown .is-add dd{color:#1f7a45}
+.salary-breakdown .is-total{margin-top:4px;padding:10px 12px;border:0;border-radius:10px;background:#103d83}
+.salary-breakdown .is-total dt,.salary-breakdown .is-total dd{color:#fff;font-size:13.5px;font-weight:800}
+.salary-company-note{margin:10px 0 0;color:#6a7b94;font-size:11.5px}
+/* Leave: change a decision */
+.lv-flip{margin:0}
+.lv-flip-btn{min-height:32px;padding:0 12px;border:1px solid #d9e1ee;border-radius:8px;background:#fff;font:700 12px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+.lv-flip-btn.is-approve{border-color:#1f7a45;background:#1f7a45;color:#fff}
+.lv-flip-btn.is-approve:hover{background:#17663a}
+.lv-flip-btn.is-reject{color:#b42318}
+.lv-flip-btn.is-reject:hover{border-color:#b42318;background:#fdf1f0}
+/* Employee form: own shift */
+.emp-shift{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:12px;border:1px dashed #c9d5e8;border-radius:12px;background:#fbfcfe}
+.emp-shift[hidden]{display:none}
+@media(max-width:640px){.emp-shift{grid-template-columns:minmax(0,1fr)}}
+.ed-timing{color:#103d83!important;font-weight:600}
+.dept-hint{display:block;margin-top:4px;color:#6a7b94;font-size:11px;font-weight:500}
+/* Chat: add people to an existing group */
+.tc-add-members{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:10px;min-height:38px;border:1px dashed #9db8e0;border-radius:10px;background:#f7f9fe;color:#103d83;font:700 12.5px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.tc-add-members svg{width:14px;height:14px}
+.tc-add-members:hover{border-style:solid;background:#eef3fb}
+.tc-person[hidden]{display:none}
+.tc-add-members+*{margin-top:12px}
+/* ===== Admin: Office timings (ot-*) ===== */
+.ot-page{--ot-ink:#172b49;--ot-muted:#6a7b94;--ot-line:#e3e8f1;--ot-brand:#103d83;--ot-deep:#0d2f66;--ot-gold:#d6ad48;display:grid;grid-template-columns:minmax(0,1fr);gap:18px;max-width:100%;overflow-x:clip;color:var(--ot-ink);font-family:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif}
+.ot-page h1,.ot-page h2,.ot-page p{margin:0}
+.ot-crumb{color:#a57d22;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.ot-page .ot-title{margin-top:6px;color:var(--ot-brand);font:600 clamp(30px,3.4vw,42px)/1.1 "Cormorant Garamond",Georgia,serif}
+.ot-sub{margin-top:6px!important;color:var(--ot-muted);font-size:13px}
+.ot-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:18px;align-items:start}
+.ot-grid>*{min-width:0}
+.ot-card{display:grid;gap:12px;padding:22px;border:1px solid var(--ot-line);border-radius:18px;background:#fff;min-width:0}
+.ot-page .ot-card h2{color:var(--ot-brand);font:600 clamp(20px,2vw,24px)/1.2 "Cormorant Garamond",Georgia,serif}
+.ot-help{color:var(--ot-muted);font-size:12.5px}
+.ot-default{position:relative;background:var(--ot-deep);border-color:var(--ot-deep);color:#fff;overflow:hidden}
+.ot-default:after{position:absolute;top:-70px;right:-70px;width:200px;height:200px;border:1px solid #e2bf6240;border-radius:50%;content:"";pointer-events:none}
+.ot-eyebrow{color:#e2bf62;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.ot-page .ot-now{color:#fff;font-size:clamp(22px,2.4vw,30px);font-weight:800}
+.ot-form{position:relative;z-index:1;display:grid;gap:12px}
+.ot-form label{display:grid;gap:6px;min-width:0}
+.ot-form label span{font-size:12px;font-weight:700}
+.ot-form label small{color:var(--ot-muted);font-weight:500}
+.ot-default .ot-form label span{color:#ffffffcc}
+.ot-page .ot-form input,.ot-page .ot-form select{width:100%;min-height:42px;padding:0 12px;border:1px solid #d9e1ee;border-radius:10px;background:#f7f9fe;color:var(--ot-ink);font:600 13px "Plus Jakarta Sans",system-ui,sans-serif;box-sizing:border-box}
+.ot-default .ot-form input{border-color:transparent;background:#fff}
+.ot-two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.ot-default small{color:#ffffffb3;font-size:11.5px}
+.ot-gold,.ot-dark{min-height:42px;padding:0 18px;border:0;border-radius:10px;font:800 13px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.ot-gold{background:var(--ot-gold);color:#172b49}
+.ot-gold:hover{background:#e2bf62}
+.ot-dark{background:var(--ot-deep);color:#fff}
+.ot-dark:hover{background:var(--ot-brand)}
+.ot-actions{display:flex;align-items:center;gap:14px}
+.ot-actions a{color:var(--ot-muted);font-size:12.5px;font-weight:700}
+.ot-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ot-card-head span{color:var(--ot-muted);font-size:12px}
+.ot-list{display:grid;gap:8px}
+.ot-row{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--ot-line);border-radius:12px;min-width:0}
+.ot-row.is-custom{border-color:#f0dca8;background:#fffaf0}
+.ot-avatar{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border-radius:50%;background:#eef3fb;color:var(--ot-brand);font-size:12px;font-weight:800}
+.ot-row.is-custom .ot-avatar{background:#fdf1dc;color:#8a6516}
+.ot-who{display:grid;gap:2px;flex:1;min-width:0}
+.ot-who strong{font-size:13.5px;overflow-wrap:anywhere}
+.ot-who small{color:var(--ot-muted);font-size:11.5px}
+.ot-when{display:grid;justify-items:end;gap:2px;text-align:right}
+.ot-when strong{font-size:13px;white-space:nowrap}
+.ot-when em{color:var(--ot-muted);font-size:11px;font-style:normal;font-weight:700}
+.ot-row.is-custom .ot-when em{color:#8a6516}
+.ot-row-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.ot-row-actions form{margin:0}
+.ot-row-actions a,.ot-row-actions button{padding:6px 11px;border:1px solid var(--ot-line);border-radius:8px;background:#fff;color:var(--ot-brand);font:700 11.5px "Plus Jakarta Sans",system-ui,sans-serif;text-decoration:none;cursor:pointer;white-space:nowrap}
+.ot-row-actions button{color:#8a6516}
+@media(max-width:1000px){.ot-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:700px){.ot-row{flex-wrap:wrap}.ot-when{justify-items:start;text-align:left;order:3;flex-basis:100%;padding-left:48px}.ot-row-actions{order:4;padding-left:48px}.ot-card{padding:16px}}
+/* Submitted work: long task names wrap inside their own column (a global table rule set nowrap) */
+.sw-table td{white-space:normal}
+.sw-table td.sw-time{white-space:nowrap}
+.sw-c-time{width:70px}.sw-c-status{width:100px}.sw-c-remark{width:24%}.sw-c-actions{width:104px}
+.sw-table td,.sw-table th{overflow:hidden}
+.sw-table .sw-actions{gap:6px}
+/* Chat: remove a member from a group */
+.tc-member-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.tc-remove-member{margin:0 0 0 auto}
+.tc-remove-member button{display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#9aa6b8;font-size:16px;line-height:1;cursor:pointer}
+.tc-member:hover .tc-remove-member button{border-color:#f0caca;color:#b42318}
+.tc-remove-member button:hover,.tc-remove-member button:focus-visible{background:#fdf1f0;color:#b42318}

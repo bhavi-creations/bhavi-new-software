@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/work.php';
+require_once __DIR__ . '/office-timing.php';
 
 
 $user = require_roles(['employee']);
@@ -2652,6 +2653,7 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
                 <h2>Attendance</h2>
                 <strong><?= $todayAttendance?'In at '.h(date('g:i A',strtotime($todayAttendance['login_at']))):'Not logged in' ?></strong>
                 <p><?= $todayAttendance?'View day-wise attendance':'Use Login in the sidebar to record today’s time' ?></p>
+                <?php $edTiming=employee_timing(one('SELECT shift_start,shift_end,shift_label FROM employee_profiles WHERE user_id=?',[$user['id']])?:[]); ?><p class="ed-timing">Your timing · <?= h($edTiming['text']) ?><?= $edTiming['custom']?' ('.h($edTiming['label']).')':'' ?></p>
                 <?php if ($todayAttendance && $todayAttendance['logout_at']): ?><p data-attendance-logout>Logout time · <?= h(date('g:i A',strtotime($todayAttendance['logout_at']))) ?></p><?php endif; ?>
             </span>
             <span class="ed-tile-arrow">→</span>

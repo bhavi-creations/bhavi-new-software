@@ -1,5 +1,5 @@
 (() => {
-  const format = n => 'INR ' + (n / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const format = n => '₹' + (n / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const cents = value => Math.round((Number(value) || 0) * 100);
   function refresh() {
     const salaryRows = document.getElementById('salary-rows');
@@ -65,13 +65,33 @@
           note.textContent = 'Benefits: ' + format(extra) + ' added to salary. Reason: ' + (benefitReason.value || 'Enter a reason above.');
           section.append(note);
         }
-        const details = document.createElement('details'); details.className = 'simple-details';
-        const summary = document.createElement('summary'); summary.textContent = 'View PF & ESI breakdown'; details.append(summary);
-        const description = document.createElement('p'); description.textContent = 'Calculation base: half of salary = ' + format(base) + '.'; details.append(description);
-        const employee = document.createElement('p'); employee.textContent = 'Employee deduction: PF ' + format(employeePf) + ' + ESI ' + format(employeeEsi) + '.';
-        const company = document.createElement('p'); company.textContent = 'Company pays separately: PF ' + format(employeePf) + ' + ESI ' + format(companyEsi) + '. This does not reduce employee salary.';
-        details.append(employee,company); section.append(details); preview.append(section);
+        // Always-visible, line-by-line breakdown so it is clear what PF / ESI cut from the salary.
+        const lines = [['Monthly salary', gross, '']];
+        if (pf || esi) lines.push(['PF / ESI are calculated on half the salary', base, 'is-note']);
+        if (pf) lines.push(['− PF (employee 12% of ' + format(base) + ')', -employeePf, 'is-cut']);
+        if (esi) lines.push(['− ESI (employee 0.75% of ' + format(base) + ')', -employeeEsi, 'is-cut']);
+        if (extra > 0) lines.push(['+ Other benefits', extra, 'is-add']);
+        lines.push(['Employee receives (in hand)', gross - employeePf - employeeEsi + extra, 'is-total']);
+        const table = document.createElement('dl'); table.className = 'salary-breakdown';
+        lines.forEach(([label, amount, cls]) => {
+          const row = document.createElement('div'); if (cls) row.className = cls;
+          const dt = document.createElement('dt'); dt.textContent = label;
+          const dd = document.createElement('dd'); dd.textContent = (amount < 0 ? '− ' : '') + format(Math.abs(amount));
+          row.append(dt, dd); table.append(row);
+        });
+        section.append(table);
+        if (pf || esi) {
+          const company = document.createElement('p'); company.className = 'salary-company-note';
+          company.textContent = 'Company also pays' + (pf ? ' PF ' + format(employeePf) : '') + (pf && esi ? ' +' : '') + (esi ? ' ESI ' + format(companyEsi) : '') + ' from its side — this is not cut from the employee salary.';
+          section.append(company);
+        } else {
+          const none = document.createElement('p'); none.className = 'salary-company-note'; none.textContent = 'No PF / ESI ticked — nothing is cut from the salary.'; section.append(none);
+        }
+        preview.append(section);
       });
+      if (!preview.children.length && (pf || esi)) {
+        const hint = document.createElement('p'); hint.className = 'salary-company-note'; hint.textContent = 'Enter the monthly salary to see exactly how much PF / ESI will cut.'; preview.append(hint);
+      }
     }
   }
   document.addEventListener('click', event => {

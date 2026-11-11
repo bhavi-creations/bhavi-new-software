@@ -10,11 +10,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         $month=text_input('pay_month',7);
         date_input('pay_date',['pay_date'=>$month.'-01']);
         $file=$_FILES['payslip']??null;
-        if (!$file || $file['error']!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) throw new InvalidArgumentException('Choose a PDF payslip to upload (maximum 2 MB).');
-        if (filesize($file['tmp_name'])>2*1024*1024) throw new InvalidArgumentException('Payslip must be 2 MB or smaller.');
+        if ($file && in_array((int)$file['error'],[UPLOAD_ERR_INI_SIZE,UPLOAD_ERR_FORM_SIZE],true)) throw new InvalidArgumentException('Payslip must be 100 MB or smaller.');
+        if (!$file || $file['error']!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) throw new InvalidArgumentException('Choose a PDF payslip to upload (maximum 100 MB).');
+        if (filesize($file['tmp_name'])>100*1024*1024) throw new InvalidArgumentException('Payslip must be 100 MB or smaller.');
         if ((new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name'])!=='application/pdf') throw new InvalidArgumentException('Only PDF payslips are accepted.');
-        $content=file_get_contents($file['tmp_name']);
-        query('INSERT INTO payslips (employee_id,pay_month,file_content,uploaded_by) VALUES (?,?,?,?)',[$employee,$month.'-01',$content,$user['id']]);
+        // Saved as a private file (storage/ is blocked from the web), so large PDFs do not hit database size limits.
+        if (one('SELECT id FROM payslips WHERE employee_id=? AND pay_month=?',[$employee,$month.'-01'])) throw new InvalidArgumentException('A payslip already exists for this employee and month.');
+        $directory=__DIR__.'/storage/payslips';
+        if (!is_dir($directory) && !mkdir($directory,0700,true) && !is_dir($directory)) throw new InvalidArgumentException('Unable to create secure payslip storage.');
+        $relative='storage/payslips/'.bin2hex(random_bytes(20)).'.pdf';
+        if (!move_uploaded_file($file['tmp_name'],__DIR__.'/'.$relative)) throw new InvalidArgumentException('The payslip could not be saved. Check disk space and storage permissions.');
+        try { query('INSERT INTO payslips (employee_id,pay_month,file_path,uploaded_by) VALUES (?,?,?,?)',[$employee,$month.'-01',$relative,$user['id']]); }
+        catch (Throwable $saveError) { @unlink(__DIR__.'/'.$relative); throw $saveError; }
         flash('Payslip added. Only the selected employee and management can access it.'); redirect('payslips.php');
     } catch (Throwable $e) { $error=$e instanceof PDOException && $e->getCode()==='23000'?'A payslip already exists for this employee and month.':mutation_error($e); }
 }
@@ -26,7 +33,7 @@ page_start($staff?'Employee payslips':'My payslips','payslips.php'); error_messa
 <div class="field"><label for="department_id">Department</label><select id="department_id" name="department_id" data-department-select="employee_id" required><option value="">Select department</option><?= options(departments(),'name',$_POST['department_id']??'') ?></select></div>
 <div class="field"><label for="employee_id">Employee</label><select id="employee_id" name="employee_id" required><option value="">Select employee</option><?php foreach (employees() as $employee): if ($employee['account_status']!=='active') continue; ?><option value="<?= $employee['id'] ?>" data-department="<?= $employee['department_id'] ?>" <?= (string)$employee['id']===(string)($_POST['employee_id']??'')?'selected':'' ?>><?= h($employee['full_name']) ?></option><?php endforeach; ?></select></div>
 <div class="field"><label for="pay_month">Salary month</label><input id="pay_month" name="pay_month" type="month" value="<?= h($_POST['pay_month']??date('Y-m')) ?>" required></div>
-<div class="field"><label for="payslip">Payslip PDF (maximum 2 MB)</label><input id="payslip" name="payslip" type="file" accept="application/pdf,.pdf" required></div></div>
+<div class="field"><label for="payslip">Payslip PDF (maximum 100 MB)</label><input id="payslip" name="payslip" type="file" accept="application/pdf,.pdf" required></div></div>
 <div class="form-actions"><button class="primary" type="submit">Add payslip</button></div></form></section>
 <?php endif; ?>
 <section class="panel"><h2><?= $staff?'Uploaded payslips':'Your payslips' ?></h2><div class="table-scroll"><table><thead><tr><th>Salary month</th><?php if ($staff): ?><th>Employee</th><th>Department</th><?php endif; ?><th>Added on</th><th>Download</th></tr></thead><tbody>

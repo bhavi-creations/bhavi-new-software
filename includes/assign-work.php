@@ -1047,8 +1047,10 @@ if (
             ];
 
 
+            // Optional: only the design / video team uses it. Empty is saved as NULL.
             if (
-                !in_array(
+                $editingType !== ''
+                && !in_array(
                     $editingType,
                     $allowedEditingTypes,
                     true
@@ -1060,9 +1062,13 @@ if (
                     .
                     ($index + 1)
                     .
-                    ': Select type of editing.'
+                    ': Select a valid type of editing.'
                 );
 
+            }
+
+            if ($editingType === '') {
+                $editingType = null;
             }
 
 
@@ -1844,7 +1850,7 @@ $awRenderTask = static function ($index, array $row, bool $open) use ($employeeL
             </fieldset>
             <div class="aw-grid-3">
                 <label>Client<select data-task-client name="<?= $name ?>[client_id]"><option value="">No client / internal work</option><?= options($clientList, 'client_name', $row['client_id'] ?? '') ?></select></label>
-                <label>Type of editing *<select data-task-editing-type name="<?= $name ?>[editing_type]" required><option value="">Select type</option><?php foreach ($awEditingTypes as $k => $l): ?><option value="<?= h($k) ?>" <?= (string) $row['editing_type'] === $k ? 'selected' : '' ?>><?= h($l) ?></option><?php endforeach; ?></select></label>
+                <label data-editing-wrap><span>Type of editing <small class="aw-optional">(optional)</small></span><select data-task-editing-type name="<?= $name ?>[editing_type]"><option value="">Not needed</option><?php foreach ($awEditingTypes as $k => $l): ?><option value="<?= h($k) ?>" <?= (string) $row['editing_type'] === $k ? 'selected' : '' ?>><?= h($l) ?></option><?php endforeach; ?></select></label>
                 <label>Work date *<input type="date" data-task-date name="<?= $name ?>[work_date]" value="<?= h($row['work_date'] ?: today()) ?>" required></label>
             </div>
             <fieldset class="emp-choice emp-choice-inline aw-priority"><legend>Priority</legend>
@@ -1862,8 +1868,10 @@ $awRenderTask = static function ($index, array $row, bool $open) use ($employeeL
     <?php
 };
 $awDepartmentId = (string) $value('department_id');
+// Departments that use "Type of editing" (design / video). For other teams the field is hidden.
+$awCreativeDepartments = array_values(array_map(static fn($d) => (string) $d['id'], array_filter($departmentList, static fn($d) => creative_work_department((string) ($d['code'] ?? ''), (string) ($d['name'] ?? '')))));
 ?>
-<form method="post" enctype="multipart/form-data" class="emp-page aw-page" id="assignmentForm" data-aw-form><?= csrf_field() ?><input type="hidden" name="notify_present" value="1">
+<form method="post" enctype="multipart/form-data" class="emp-page aw-page" id="assignmentForm" data-aw-form data-creative-depts="<?= h(implode(',', $awCreativeDepartments)) ?>"><?= csrf_field() ?><input type="hidden" name="notify_present" value="1">
 <header class="emp-header">
     <div><p class="emp-crumb">Dashboard / Assign work / <?= $record ? 'Edit' : 'New' ?></p><h2 class="emp-title"><?= $record ? 'Edit assignment' : 'New assignment' ?></h2><p class="emp-sub">Pick a department, then add one or more tasks for your team.</p></div>
     <a class="emp-btn emp-btn-outline" href="manager-assigned-status.php">View assigned status</a>
@@ -2103,6 +2111,7 @@ if ($assignmentView === 'new'):
     var form = document.querySelector('[data-aw-form]'); if (!form) return;
     var container = document.getElementById('assignmentTasks');
     var dept = form.querySelector('[data-aw-department]');
+    var creativeDepts = (form.dataset.creativeDepts || '').split(',').filter(Boolean);
     var addBtn = document.getElementById('addAssignmentTask');
     var tpl = document.getElementById('assignmentTaskTemplate');
     var nextIndex = 0;
@@ -2124,6 +2133,13 @@ if ($assignmentView === 'new'):
         });
         task.querySelector('[data-pick-department]').hidden = d !== '';
         task.querySelector('[data-no-employees]').hidden = d === '' || shown > 0;
+        // "Type of editing" is only for the design / video team.
+        var wrap = task.querySelector('[data-editing-wrap]');
+        if (wrap) {
+            var creative = d !== '' && creativeDepts.indexOf(d) !== -1;
+            wrap.hidden = !creative;
+            if (!creative) wrap.querySelector('select').value = '';
+        }
     }
 
     function summaryText(task) {
