@@ -456,7 +456,7 @@ if (
 
             if (empty($assignment['started_at'])) {
                 // First start: the clock begins now.
-                query("UPDATE work_assignments SET started_at=NOW(), timer_resumed_at=NOW(), timer_accumulated_seconds=0, completed_at=NULL, time_spent_seconds=NULL, time_spent_minutes=NULL, status='pending' WHERE id=?", [$assignmentId]);
+                query("UPDATE work_assignments SET started_at=NOW(), timer_resumed_at=NOW(), timer_accumulated_seconds=0, completed_at=NULL, time_spent_seconds=NULL, time_spent_minutes=0, status='pending' WHERE id=?", [$assignmentId]);
                 $timerMessage = 'Work started. Timer is running.';
             } elseif (empty($assignment['timer_resumed_at'])) {
                 // Resume after a pause: earlier time stays in timer_accumulated_seconds.

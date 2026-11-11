@@ -489,6 +489,15 @@ try {
     $assignmentNotificationId=(int)scalar("SELECT id FROM notifications WHERE recipient_id=? AND (title LIKE '%task assigned' OR title LIKE '%tasks assigned') ORDER BY id DESC LIMIT 1",[$employeeIds['website']]);
     $assignmentNotification=$browsers['website']->request('notification-open.php?id='.$assignmentNotificationId);
     expect($assignmentNotification['status']===303 && preg_match('~^employee-assigned-work\.php\?task=\d+$~',(string)$assignmentNotification['headers']['location'])===1,'Task-assigned notification opens the exact task on My assigned work');
+    // Timer: Start → Pause → Resume on an assigned task (must also work on strict-mode MySQL).
+    $timerTask=(int)scalar("SELECT id FROM work_assignments WHERE employee_id=? AND title='Add contact form' AND deleted_at IS NULL",[$employeeIds['website']]);
+    $browsers['website']->request('employee-assigned-work.php?task='.$timerTask);
+    $startTimer=$browsers['website']->post('employee-assigned-work.php?task='.$timerTask,['action'=>'start_assignment','assignment_id'=>$timerTask]);
+    expect($startTimer['status']===303 && scalar('SELECT started_at FROM work_assignments WHERE id=?',[$timerTask])!==null && scalar('SELECT timer_resumed_at FROM work_assignments WHERE id=?',[$timerTask])!==null,'Employee can start the timer on an assigned task');
+    expect($browsers['website']->post('employee-assigned-work.php?task='.$timerTask,['action'=>'pause_assignment','assignment_id'=>$timerTask])['status']===303 && scalar('SELECT timer_resumed_at FROM work_assignments WHERE id=?',[$timerTask])===null,'Employee can pause the timer');
+    expect($browsers['website']->post('employee-assigned-work.php?task='.$timerTask,['action'=>'start_assignment','assignment_id'=>$timerTask])['status']===303 && scalar('SELECT timer_resumed_at FROM work_assignments WHERE id=?',[$timerTask])!==null,'Employee can resume the timer');
+    expect($browsers['seo']->post('employee-assigned-work.php?task='.$timerTask,['action'=>'start_assignment','assignment_id'=>$timerTask])['status']===403,'Another employee cannot start this task');
+    $pdo->prepare('UPDATE work_assignments SET started_at=NULL,timer_resumed_at=NULL,timer_accumulated_seconds=0 WHERE id=?')->execute([$timerTask]);
     expect($browsers['seo']->post($dashboards['seo'], ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'remark' => 'Attack'])['status'] === 403, 'Assignment ownership enforced');
     $website = $browsers['website'];
     $website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate);
