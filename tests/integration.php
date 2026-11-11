@@ -226,13 +226,14 @@ try {
     $deptHead=(int)scalar("SELECT id FROM users WHERE role='admin' AND deleted_at IS NULL ORDER BY id LIMIT 1");
     expect($admin->post('departments.php',['name'=>'Card Regression Dept','description'=>'Logos and posters','head_user_id'=>(string)$deptHead,'card_color'=>'gold'])['status']===303,'Admin creates department with head, description and colour');
     $deptPage=$admin->request('departments.php')['body'];
-    expect(str_contains($deptPage,'Card Regression Dept') && str_contains($deptPage,'Logos and posters') && str_contains($deptPage,'Department heads') && !str_contains($deptPage,'Active projects') && scalar("SELECT card_color FROM departments WHERE name='Card Regression Dept'")==='gold','Departments page shows card layout without active projects');
+    expect(str_contains($deptPage,'Card Regression Dept') && str_contains($deptPage,'Logos and posters') && str_contains($deptPage,'Department heads') && str_contains($deptPage,'Active projects') && scalar("SELECT card_color FROM departments WHERE name='Card Regression Dept'")==='gold','Departments page shows card layout with active projects');
     $empFormPage=$admin->request('admin-add-employee.php')['body'];
     expect(str_contains($empFormPage,'Add new employee') && str_contains($empFormPage,'ID card preview') && str_contains($empFormPage,'Employment type') && str_contains($empFormPage,'Save &amp; add another'),'Add employee page renders the redesigned layout');
     $regDept=(int)scalar("SELECT id FROM departments WHERE name='Card Regression Dept'");
     $newEmp=$admin->post('admin-add-employee.php',['employee_name'=>'Layout Regression Person','email'=>'','username'=>'layout.regression','temporary_password'=>'Regression#2026','account_status'=>'active','department_id'=>(string)$regDept,'designation'=>'Designer','joining_date'=>date('Y-m-d'),'manager_id'=>(string)$deptHead,'date_of_birth'=>'1998-04-12','gender'=>'female','address'=>'Main road, Hyderabad','work_timings'=>'10:00 AM - 7:00 PM','employment_type'=>'intern','access_role'=>'department_head','after'=>'another','salary'=>[['amount'=>'15000','from'=>'','to'=>'']]]);
     $newEmpId=(int)scalar("SELECT id FROM users WHERE username='layout.regression'");
     expect($newEmp['status']===303 && $newEmpId && scalar('SELECT CONCAT(gender,"|",employment_type,"|",work_timings,"|",date_of_birth,"|",manager_id) FROM employee_profiles WHERE user_id=?',[$newEmpId])==='female|intern|10:00 AM - 7:00 PM|1998-04-12|'.$deptHead && (int)scalar('SELECT head_user_id FROM departments WHERE id=?',[$regDept])===$newEmpId,'New employee fields and department head role save');
+    expect(!str_contains($admin->request('admin-add-employee.php')['body'],'name="manager_id"'),'Add employee form has no Reporting to field');
     $pdo->prepare('UPDATE departments SET head_user_id=NULL WHERE id=?')->execute([$regDept]);
     $pdo->prepare('DELETE FROM employee_salary_history WHERE employee_id=?')->execute([$newEmpId]);
     $pdo->prepare('DELETE FROM employee_profiles WHERE user_id=?')->execute([$newEmpId]);
@@ -738,7 +739,7 @@ try {
     $websiteDeptId = (int)scalar("SELECT id FROM departments WHERE code='website'");
     $deptEdit = $admin->request('departments.php?edit=' . $websiteDeptId)['body'];
     $headSelect = preg_match('~<select name="head_user_id">(.*?)</select>~s', $deptEdit, $hm) ? $hm[1] : '';
-    expect(str_contains($deptEdit, 'data-dept-pick') && str_contains($deptEdit, 'Quality Engineering') && str_contains($headSelect, 'Employee website') && !str_contains($headSelect, 'Employee seo'), 'Department head list shows only employees of that department');
+    expect(str_contains($deptEdit, 'data-dept-name') && str_contains($deptEdit, 'datalist id="dept-names"') && str_contains($deptEdit, 'Quality Engineering') && str_contains($headSelect, 'Employee website') && !str_contains($headSelect, 'Employee seo'), 'Department head list shows only employees of that department');
     // Office timings: admin default applies to everyone; one employee can have a night shift.
     expect($manager->request('office-timings.php')['status'] === 403 && $website->request('office-timings.php')['status'] === 403, 'Office timings page is admin only');
     $admin->request('office-timings.php');
@@ -1086,6 +1087,29 @@ try {
     $badProof=$clientBrowser->post('client-reuirement.php',['action'=>'submit_requirement','return'=>'payments','tasks[0][type]'=>'payment','tasks[0][due_date]'=>date('Y-m-d'),'tasks[0][remark]'=>'']);
     expect($badProof['status']===303 && str_starts_with((string)$badProof['headers']['location'],'client-payments.php'),'Invalid payment proof returns to payments page with an error');
     expect(!str_contains($clientBrowser->request('client-reuirement.php')['body'],'value="payment"'),'Payment proof is not offered as a work type');
+    // Admin confirms or rejects payment proofs.
+    $proofId=(int)scalar("SELECT id FROM client_requirements WHERE brief LIKE '%UTR-TEST-1%'");
+    $proofClient=(int)scalar('SELECT client_id FROM client_requirements WHERE id=?',[$proofId]);
+    $paidBefore=(string)scalar('SELECT paid_amount FROM clients WHERE id=?',[$proofClient]);
+    $requestsPage=$admin->request('client-reuirement.php')['body'];
+    expect(str_contains($requestsPage,'id="request-'.$proofId.'"') && str_contains($requestsPage,'value="confirm_payment"') && str_contains($requestsPage,'Not received'),'Admin sees Confirm payment / Not received on a payment proof');
+    expect($website->post('client-reuirement.php',['action'=>'confirm_payment','requirement_id'=>$proofId,'amount'=>'1000','payment_date'=>date('Y-m-d')])['status']===403,'Employees cannot confirm client payments');
+    expect($admin->post('client-reuirement.php',['action'=>'confirm_payment','requirement_id'=>$proofId,'amount'=>'99999999','payment_date'=>date('Y-m-d')])['status']===200 && scalar('SELECT status FROM client_requirements WHERE id=?',[$proofId])==='assigned','Payment above the balance is refused');
+    $confirm=$admin->post('client-reuirement.php',['action'=>'confirm_payment','requirement_id'=>$proofId,'amount'=>'1000','payment_date'=>date('Y-m-d')]);
+    expect($confirm['status']===303 && scalar('SELECT status FROM client_requirements WHERE id=?',[$proofId])==='completed' && (int)scalar("SELECT COUNT(*) FROM client_payments WHERE request_key=?",['proof-'.$proofId])===1 && abs((float)scalar('SELECT paid_amount FROM clients WHERE id=?',[$proofClient])-((float)$paidBefore+1000))<0.01,'Confirming a proof records the payment and updates the balance');
+    $clientPaymentsAfter=$clientBrowser->request('client-payments.php')['body'];
+    expect(!str_contains($clientPaymentsAfter,'Payment proof sent') && str_contains($clientPaymentsAfter,'₹1,000'),'Client sees the confirmed payment in history');
+    expect($admin->post('client-reuirement.php',['action'=>'confirm_payment','requirement_id'=>$proofId,'amount'=>'1000','payment_date'=>date('Y-m-d')])['status']===200 && (int)scalar("SELECT COUNT(*) FROM client_payments WHERE request_key=?",['proof-'.$proofId])===1,'A proof cannot be confirmed twice');
+    $clientBrowser->request('client-payments.php');
+    $clientBrowser->post('client-reuirement.php',['action'=>'submit_requirement','return'=>'payments','tasks[0][type]'=>'payment','tasks[0][due_date]'=>date('Y-m-d'),'tasks[0][remark]'=>"Payment proof\nTransaction ID / UTR: UTR-TEST-2"]);
+    $proof2=(int)scalar("SELECT id FROM client_requirements WHERE brief LIKE '%UTR-TEST-2%'");
+    $admin->request('client-reuirement.php');
+    expect($admin->post('client-reuirement.php',['action'=>'reject_payment','requirement_id'=>$proof2,'note'=>'Not in our bank yet'])['status']===303 && scalar('SELECT status FROM client_requirements WHERE id=?',[$proof2])==='cancelled','Admin marks a proof as not received');
+    $clientPaymentsAfter=$clientBrowser->request('client-payments.php')['body'];
+    expect(str_contains($clientPaymentsAfter,'Payment proof not confirmed') && str_contains($clientPaymentsAfter,'Not in our bank yet'),'Client sees the not-received note on Payments');
+    // Put the client's payments back as they were for later checks.
+    $pdo->prepare("DELETE FROM client_payments WHERE request_key LIKE 'proof-%'")->execute();
+    $pdo->prepare('UPDATE clients SET paid_amount=? WHERE id=?')->execute([$paidBefore,$proofClient]);
     $clientReport=$clientBrowser->request('client-reports.php?month=2026-10&client_id='.$clientId)['body'];
     expect(str_contains($clientReport,'Two revisions') && str_contains($clientReport,'15 Oct 2026, 09:00 AM') && str_contains($clientReport,'data-wr-pick="2026-10-15"'),'Client calendar shows saved workflow and preview trigger');
     expect(str_contains($clientReport,'Reviews received') && str_contains($clientReport,'Replies sent') && str_contains($clientReport,'>3</dd>') && str_contains($clientReport,'>2</dd>'),'Client sees review and reply counts in report details');

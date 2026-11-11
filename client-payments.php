@@ -4,6 +4,8 @@ $client=own_client();
 $payments=rows('SELECT id,payment_date,amount FROM client_payments WHERE client_id=? ORDER BY payment_date DESC,id DESC',[$client['id']]);
 // Payment proofs the client sent that the team has not closed yet.
 $proofs=rows("SELECT id,created_at,brief,status FROM client_requirements WHERE client_id=? AND status IN ('assigned','in_progress') AND (title LIKE 'Payment proof · %' OR title LIKE 'URGENT · Payment proof · %') ORDER BY created_at DESC",[$client['id']]);
+// Proofs the team marked as not received in the last 30 days (with their note).
+$rejectedProofs=rows("SELECT id,created_at,approved_text FROM client_requirements WHERE client_id=? AND status='cancelled' AND (title LIKE 'Payment proof · %' OR title LIKE 'URGENT · Payment proof · %') AND created_at>=NOW()-INTERVAL 30 DAY ORDER BY created_at DESC",[$client['id']]);
 $payInfo=array_map(static fn($v)=>trim((string)$v),(array)require __DIR__.'/includes/payment-details.php');
 
 $total=(float)$client['payment_total']; $paid=(float)$client['paid_amount']; $balance=(float)$client['remaining_amount'];
@@ -42,13 +44,19 @@ page_start('Payments','client-payments.php');
                 <h2>Payment history</h2>
                 <span><?= count($payments) ?> <?= count($payments)===1?'payment':'payments' ?> · newest first</span>
             </div>
+            <?php foreach ($rejectedProofs as $proof): $d=new DateTimeImmutable($proof['created_at']); ?>
+                <div class="pp-item is-proof is-rejected">
+                    <span class="pp-date"><small><?= h(strtoupper($d->format('M'))) ?></small><b><?= h($d->format('d')) ?></b><small><?= h($d->format('Y')) ?></small></span>
+                    <span class="pp-item-text"><strong>Payment proof not confirmed</strong><small><?= h($proof['approved_text'] ?: 'Please check and send the proof again.') ?></small></span>
+                </div>
+            <?php endforeach; ?>
             <?php foreach ($proofs as $proof): ?>
                 <div class="pp-item is-proof">
                     <span class="pp-date"><?php $d=new DateTimeImmutable($proof['created_at']); ?><small><?= h(strtoupper($d->format('M'))) ?></small><b><?= h($d->format('d')) ?></b><small><?= h($d->format('Y')) ?></small></span>
                     <span class="pp-item-text"><strong>Payment proof sent</strong><small><?= icon('clock') ?> Waiting for Bhavi to confirm</small></span>
                 </div>
             <?php endforeach; ?>
-            <?php if (!$payments && !$proofs): ?>
+            <?php if (!$payments && !$proofs && !$rejectedProofs): ?>
                 <div class="pp-empty"><strong>No payments recorded yet</strong><small>Your payment dates and amounts will appear here once our team records them.</small></div>
             <?php endif; ?>
             <?php foreach ($payments as $payment): $d=new DateTimeImmutable($payment['payment_date']); ?>

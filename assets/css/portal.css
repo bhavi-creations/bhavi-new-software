@@ -4004,3 +4004,28 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 .tc-remove-member button{display:grid;place-items:center;width:24px;height:24px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#9aa6b8;font-size:16px;line-height:1;cursor:pointer}
 .tc-member:hover .tc-remove-member button{border-color:#f0caca;color:#b42318}
 .tc-remove-member button:hover,.tc-remove-member button:focus-visible{background:#fdf1f0;color:#b42318}
+/* Departments: 4 stat cards, members + active projects on each card */
+.dept-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.dept-counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:900px){.dept-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.dept-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Admin: confirm a client's payment proof */
+.requirement-card.is-payment-proof{border-left:4px solid #d6ad48}
+.requirement-card:target{box-shadow:0 0 0 3px #d6ad4855}
+.proof-box{display:grid;gap:10px;margin-top:12px;padding:14px;border:1px solid #f0dca8;border-radius:12px;background:#fffaf0}
+.proof-title{margin:0;color:#6b4d0f;font-size:13px;font-weight:800}
+.proof-confirm,.proof-reject{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin:0}
+.proof-confirm label{display:grid;gap:4px;min-width:150px;color:#172b49;font-size:12px;font-weight:700}
+.proof-confirm input,.proof-reject input{min-height:38px;padding:0 10px;border:1px solid #d9e1ee;border-radius:9px;background:#fff;font:inherit;font-size:13px}
+.proof-reject input{flex:1;min-width:200px}
+.proof-yes,.proof-no{min-height:38px;padding:0 16px;border-radius:9px;font:800 12.5px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+.proof-yes{border:0;background:#1f7a45;color:#fff}
+.proof-yes:hover{background:#17663a}
+.proof-no{border:1px solid #f0caca;background:#fff;color:#b42318}
+.proof-no:hover{background:#fdf1f0}
+.proof-box small{color:#6a7b94;font-size:11.5px}
+/* Client payments: a proof that was not confirmed */
+.pp-item.is-rejected{border-color:#f0caca;background:#fdf6f5}
+.pp-item.is-rejected .pp-date{background:#f3d3d0;color:#a12a2a}
+.pp-item.is-rejected .pp-date small{color:#a12a2a}
+.pp-item.is-rejected .pp-item-text small{color:#a12a2a;font-weight:500;overflow-wrap:anywhere}

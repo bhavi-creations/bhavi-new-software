@@ -52,7 +52,60 @@ if ($isClient && !$clientRecord) fail(403,'Your client account is unavailable.')
 $clientFilter=is_staff()?(int)($_GET['client']??0):0;
 $error=null;
 
-if ($_SERVER['REQUEST_METHOD']==='POST') {
+/** Amount and date the client wrote in a payment proof ("Amount: ₹50000", "Paid on: 2026-11-11"). */
+function payment_proof_values(string $brief): array
+{
+    $amount=preg_match('/Amount:\s*₹?\s*([\d,]+(?:\.\d{1,2})?)/u',$brief,$m)?str_replace(',','',$m[1]):'';
+    $date=preg_match('/Paid on:\s*(\d{4}-\d{2}-\d{2})/',$brief,$d)?$d[1]:'';
+    return ['amount'=>$amount,'date'=>$date];
+}
+function is_payment_proof(array $requirement): bool
+{
+    return (bool)preg_match('/^(URGENT · )?Payment proof · /u',(string)$requirement['title']);
+}
+
+// Admin / manager: confirm a client's payment proof (records the payment) or mark it as not received.
+if ($_SERVER['REQUEST_METHOD']==='POST' && in_array($_POST['action']??'',['confirm_payment','reject_payment'],true)) {
+    require_once __DIR__.'/finance.php';
+    require_roles(['admin','manager']); check_csrf();
+    try {
+        $proofId=positive_id($_POST['requirement_id']??null);
+        db()->beginTransaction();
+        $proof=one("SELECT r.*,c.client_name,c.user_id AS client_user_id,c.payment_total FROM client_requirements r JOIN clients c ON c.id=r.client_id WHERE r.id=? AND c.deleted_at IS NULL FOR UPDATE",[$proofId]);
+        if (!$proof || !is_payment_proof($proof)) throw new InvalidArgumentException('Payment proof not found.');
+        if (!in_array($proof['status'],['assigned','in_progress'],true)) throw new InvalidArgumentException('This payment proof was already handled.');
+        if ($_POST['action']==='confirm_payment') {
+            $amountText=trim((string)($_POST['amount']??''));
+            $amountCents=money_cents($amountText);
+            if ($amountCents<=0) throw new InvalidArgumentException('Enter the amount received.');
+            $paidOn=date_input('payment_date');
+            if ($paidOn>today()) throw new InvalidArgumentException('Payment date cannot be in the future.');
+            $paidSoFar=(string)query('SELECT COALESCE(SUM(amount),0) FROM client_payments WHERE client_id=?',[$proof['client_id']])->fetchColumn();
+            if (money_cents($paidSoFar)+$amountCents>money_cents(number_format((float)$proof['payment_total'],2,'.',''))) throw new InvalidArgumentException('This payment is more than the balance. Increase the package amount in the client details first.');
+            query('INSERT INTO client_payments (client_id,payment_date,amount,request_key,created_by) VALUES (?,?,?,?,?)',[$proof['client_id'],$paidOn,decimal_money($amountCents),'proof-'.$proofId,$user['id']]);
+            $paid=(string)query('SELECT COALESCE(SUM(amount),0) FROM client_payments WHERE client_id=?',[$proof['client_id']])->fetchColumn();
+            query('UPDATE clients SET paid_amount=? WHERE id=?',[$paid,$proof['client_id']]);
+            $note=trim((string)($_POST['note']??''));
+            $update='Payment of '.rupees_label(decimal_money($amountCents)).' received on '.date('d M Y',strtotime($paidOn)).'. Thank you!'.($note!==''?' '.mb_substr($note,0,500):'');
+            query("UPDATE client_requirements SET status='completed',approved_text=? WHERE id=?",[$update,$proofId]);
+            $message='Payment confirmed for '.$proof['client_name'].'.';
+        } else {
+            $note=trim((string)($_POST['note']??''));
+            $update=$note!==''?mb_substr($note,0,1000):'We could not find this payment yet. Please check the transaction ID and send the proof again.';
+            query("UPDATE client_requirements SET status='cancelled',approved_text=? WHERE id=?",[$update,$proofId]);
+            $message='Payment proof marked as not received. The client will see your note.';
+        }
+        if ($proof['client_user_id']) query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) VALUES (?,?,'requirement',?,?,?)",[$proof['client_user_id'],$user['id'],$_POST['action']==='confirm_payment'?'Payment confirmed':'Payment not confirmed',$update,$proofId]);
+        db()->commit();
+        flash($message);
+        redirect('client-reuirement.php#request-'.$proofId);
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) db()->rollBack();
+        $error=mutation_error($e);
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment'],true)) {
     require_roles(['client']); check_csrf(); $storedFiles=[];
     try {
         if (($_POST['action']??'')!=='submit_requirement') throw new InvalidArgumentException('Invalid request.');
@@ -392,5 +445,5 @@ $crTaskBlock=static function (string $i, int $number, array $task) use ($crTypes
 </script>
 <?php else: ?><p class="muted"><?= is_staff()?'Client requests are visible to management and the selected department.':'Client requests for your department appear here alongside your assigned briefs.' ?></p><?php endif; ?>
 <?php if (!$isClient && $assignments): ?><section class="panel"><h2>Assigned work</h2><?php foreach ($assignments as $assignment): ?><article class="requirement-card"><div class="panel-heading"><h3><?= h($assignment['title']) ?></h3><?= status_badge($assignment['status']) ?></div><p class="muted"><?= h($assignment['client_name']) ?> · <?= h($assignment['employee_name']) ?> · <?= h(date('d-m-Y',strtotime($assignment['work_date']))) ?></p><p><?= nl2br(h($assignment['description'])) ?></p></article><?php endforeach; ?></section><?php endif; ?>
-<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,original_file_name,file_size_bytes FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); ?><article class="requirement-card"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> request</h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?php if ($files): ?><h4>Attached files</h4><ul class="requirement-file-list"><?php foreach ($files as $file): ?><li><a href="download-requirement-file.php?id=<?= (int)$file['id'] ?>"><?= h($file['original_file_name']) ?></a><span><?= h(number_format((int)$file['file_size_bytes']/1024/1024,1)) ?> MB</span></li><?php endforeach; ?></ul><?php endif; ?></article><?php endforeach; ?></section><?php endif; ?>
+<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,original_file_name,file_size_bytes FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?><article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>" id="request-<?= (int)$requirement['id'] ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?php if ($files): ?><h4>Attached files</h4><ul class="requirement-file-list"><?php foreach ($files as $file): ?><li><a href="download-requirement-file.php?id=<?= (int)$file['id'] ?>"><?= h($file['original_file_name']) ?></a><span><?= h(number_format((int)$file['file_size_bytes']/1024/1024,1)) ?> MB</span></li><?php endforeach; ?></ul><?php endif; ?><?php if ($isProof && is_staff() && in_array($requirement['status'],['assigned','in_progress'],true)): $proofValues=payment_proof_values((string)$requirement['brief']); ?><div class="proof-box"><p class="proof-title">Check your bank / UPI, then confirm</p><form method="post" class="proof-confirm"><?= csrf_field() ?><input type="hidden" name="action" value="confirm_payment"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><label>Amount received (₹)<input type="number" name="amount" min="1" step="0.01" value="<?= h($proofValues['amount']) ?>" required></label><label>Paid on<input type="date" name="payment_date" max="<?= h(today()) ?>" value="<?= h($proofValues['date'] ?: today()) ?>" required></label><button type="submit" class="proof-yes">✓ Confirm payment</button></form><form method="post" class="proof-reject" onsubmit="return confirm('Mark this payment as not received? The client will see your note.')"><?= csrf_field() ?><input type="hidden" name="action" value="reject_payment"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><input name="note" maxlength="1000" placeholder="Note for the client (optional)"><button type="submit" class="proof-no">Not received</button></form><small>Confirming adds this amount to the client’s payments and updates their balance.</small></div><?php endif; ?></article><?php endforeach; ?></section><?php endif; ?>
 <?php page_end(); ?>

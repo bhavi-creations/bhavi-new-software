@@ -34,7 +34,7 @@ if ($notification['submission_id']) {
 } elseif ($notification['holiday_id']) {
     $destination='admin-holidays.php';
 } elseif ($notification['requirement_id']) {
-    $destination=$user['role']==='client'?'client-reuirement.php':'client-reuirement.php#department-requests';
+    $destination=$user['role']==='client'?'client-reuirement.php':'client-reuirement.php#request-'.(int)$notification['requirement_id'];
 } elseif ($user['role']==='employee' && $isTaskNotice) {
     // Open the exact task on "My assigned work".
     $taskId=$findTask((int)$user['id']);

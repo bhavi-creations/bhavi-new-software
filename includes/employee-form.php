@@ -47,6 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!one('SELECT id FROM departments WHERE id=? AND is_active=1',[$department])) { throw new InvalidArgumentException('Choose a valid department.'); }
             $designation = text_input('designation',150);
             $joiningDate = date_input('joining_date');
+            // "Reporting to" is no longer on the form: keep the saved value unless one is posted.
+            if (!isset($_POST['manager_id'])) $manager=isset($record['manager_id'])?(int)$record['manager_id']:null;
             $managerValue=$_POST['manager_id']??'';
             if ($managerValue!=='' && $managerValue!==null) {
                 $manager=positive_id($managerValue);
@@ -181,7 +183,6 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
             <label>Department *<select id="department_id" name="department_id" required data-card-src="dept"><option value="">Select department</option><?= options($departmentsList,'name',$selectedDepartment) ?></select></label>
             <label>Designation *<input id="designation" name="designation" required value="<?= h($value('designation')) ?>" maxlength="150" placeholder="e.g. Senior Graphic Designer" data-card-src="designation"></label>
             <label>Joining date *<input type="date" id="joining_date" name="joining_date" required value="<?= h($joinedValue) ?>" data-card-src="joined"></label>
-            <label>Reporting to<select name="manager_id"><option value="">Select department head</option><?php foreach ($reportingOptions as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$value('manager_id')===(string)$o['id']?'selected':'' ?>><?= h($o['full_name']) ?> (<?= $o['role']==='employee'?'Department head':h(ucfirst($o['role'])) ?>)</option><?php endforeach; ?></select></label>
             <?php $officeDefault=office_timing_default(); $timingMode=$isPost?(string)($_POST['timing_mode']??'office'):(!empty($record['shift_start'])?'custom':'office'); ?>
             <label>Work timings<select name="timing_mode" data-timing-mode><option value="office" <?= $timingMode!=='custom'?'selected':'' ?>>Office timing · <?= h(office_range_label($officeDefault['start'],$officeDefault['end'])) ?></option><option value="custom" <?= $timingMode==='custom'?'selected':'' ?>>Different shift (e.g. night shift)</option></select></label>
             <div class="emp-shift" data-shift-fields<?= $timingMode==='custom'?'':' hidden' ?>>

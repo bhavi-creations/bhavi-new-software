@@ -36,6 +36,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 $departmentList=rows("SELECT d.id,d.name,d.description,d.card_color,d.head_user_id,head.full_name AS head_name,COUNT(u.id) AS total FROM departments d LEFT JOIN users head ON head.id=d.head_user_id AND head.deleted_at IS NULL LEFT JOIN employee_profiles ep ON ep.department_id=d.id LEFT JOIN users u ON u.id=ep.user_id AND u.deleted_at IS NULL AND u.role='employee' WHERE d.is_active=1 GROUP BY d.id,d.name,d.description,d.card_color,d.head_user_id,head.full_name ORDER BY d.name");
 $memberTotal=array_sum(array_map(static fn($d)=>(int)$d['total'],$departmentList));
 $headTotal=count(array_filter($departmentList,static fn($d)=>$d['head_name']!==null));
+// Active projects = different clients with unfinished tasks for the department's employees.
+$activeByDept=[]; foreach (rows("SELECT ep.department_id,COUNT(DISTINCT a.client_id) AS total FROM work_assignments a JOIN employee_profiles ep ON ep.user_id=a.employee_id WHERE a.deleted_at IS NULL AND a.status<>'completed' AND a.client_id IS NOT NULL GROUP BY ep.department_id") as $row) $activeByDept[(int)$row['department_id']]=(int)$row['total'];
+$activeTotal=(int)count_value("SELECT COUNT(DISTINCT a.client_id) FROM work_assignments a WHERE a.deleted_at IS NULL AND a.status<>'completed' AND a.client_id IS NOT NULL");
 $initials=static function(string $name): string { $parts=preg_split('/\s+/',trim($name)) ?: []; $out=''; foreach (array_slice($parts,0,2) as $p) $out.=mb_strtoupper(mb_substr($p,0,1)); return $out ?: '?'; };
 $deptIcon=static function(string $name): string {
     $n=strtolower($name);
@@ -59,6 +62,7 @@ page_start('Departments','departments.php'); error_message($error);
         <div class="dept-stat is-primary"><span>Departments</span><strong><?= count($departmentList) ?></strong></div>
         <div class="dept-stat"><span>Team members</span><strong><?= $memberTotal ?></strong></div>
         <div class="dept-stat"><span>Department heads</span><strong><?= $headTotal ?></strong></div>
+        <div class="dept-stat"><span>Active projects</span><strong><?= $activeTotal ?></strong></div>
     </section>
 
     <div class="dept-layout">
@@ -73,14 +77,14 @@ page_start('Departments','departments.php'); error_message($error);
                         <details class="dept-menu"><summary aria-label="Department actions"><?= icon('more') ?></summary><div class="dept-menu-list"><a href="departments.php?edit=<?= (int)$d['id'] ?>#dept-form"><?= icon('edit') ?>Edit</a><?php delete_button((int)$d['id'],'delete_department','Delete this department? Existing reports will be retained.'); ?></div></details>
                     </div>
                     <div class="dept-head-box"><span class="dept-initials" style="--dept-color:<?= h($color) ?>"><?= h($d['head_name'] ? $initials($d['head_name']) : '—') ?></span><div><small>Head</small><strong><?= h($d['head_name'] ?? 'Not assigned') ?></strong></div></div>
-                    <div class="dept-members"><strong><?= (int)$d['total'] ?></strong><span>Member<?= (int)$d['total']===1?'':'s' ?></span></div>
+                    <div class="dept-counts"><div class="dept-members"><strong><?= (int)$d['total'] ?></strong><span>Member<?= (int)$d['total']===1?'':'s' ?></span></div><div class="dept-members"><strong><?= $activeByDept[(int)$d['id']]??0 ?></strong><span>Active project<?= ($activeByDept[(int)$d['id']]??0)===1?'':'s' ?></span></div></div>
                     <a class="dept-btn dept-btn-outline" href="admin-employees.php?department=<?= (int)$d['id'] ?>">View team</a>
                 </article>
                 <?php endforeach; ?>
             </div>
             <div class="dept-list panel" data-dept-list hidden>
-                <div class="table-scroll"><table><thead><tr><th>Department</th><th>Head</th><th>Members</th><th>Actions</th></tr></thead><tbody>
-                <?php foreach ($departmentList as $d): ?><tr data-dept-item data-name="<?= h(strtolower($d['name'].' '.$d['description'].' '.$d['head_name'])) ?>"><td><strong><?= h($d['name']) ?></strong><br><small class="muted"><?= h($d['description']) ?></small></td><td><?= h($d['head_name'] ?? '—') ?></td><td><?= (int)$d['total'] ?></td><td><div class="actions"><a class="button secondary" href="admin-employees.php?department=<?= (int)$d['id'] ?>">View team</a><a class="button secondary" href="departments.php?edit=<?= (int)$d['id'] ?>#dept-form">Edit</a><?php delete_button((int)$d['id'],'delete_department','Delete this department? Existing reports will be retained.'); ?></div></td></tr><?php endforeach; ?>
+                <div class="table-scroll"><table><thead><tr><th>Department</th><th>Head</th><th>Members</th><th>Active projects</th><th>Actions</th></tr></thead><tbody>
+                <?php foreach ($departmentList as $d): ?><tr data-dept-item data-name="<?= h(strtolower($d['name'].' '.$d['description'].' '.$d['head_name'])) ?>"><td><strong><?= h($d['name']) ?></strong><br><small class="muted"><?= h($d['description']) ?></small></td><td><?= h($d['head_name'] ?? '—') ?></td><td><?= (int)$d['total'] ?></td><td><?= $activeByDept[(int)$d['id']]??0 ?></td><td><div class="actions"><a class="button secondary" href="admin-employees.php?department=<?= (int)$d['id'] ?>">View team</a><a class="button secondary" href="departments.php?edit=<?= (int)$d['id'] ?>#dept-form">Edit</a><?php delete_button((int)$d['id'],'delete_department','Delete this department? Existing reports will be retained.'); ?></div></td></tr><?php endforeach; ?>
                 </tbody></table></div>
             </div>
             <p class="muted dept-empty" data-dept-empty hidden>No departments match your search.</p>
@@ -96,8 +100,7 @@ page_start('Departments','departments.php'); error_message($error);
                 $deptMembers=$record?array_values(array_filter($headOptions,static fn($o)=>(int)($o['department_id']??0)===(int)$record['id'])):[];
                 if ($record && $form['head_user_id']!=='' && !in_array($form['head_user_id'],array_map(static fn($o)=>(string)$o['id'],$deptMembers),true)) foreach ($headOptions as $o) if ((string)$o['id']===$form['head_user_id']) $deptMembers[]=$o;
                 ?>
-                <label>Department<select data-dept-pick><option value="">＋ New department</option><?php foreach ($deptNames as $did=>$dname): ?><option value="<?= (int)$did ?>" <?= $record && (int)$record['id']===(int)$did?'selected':'' ?>><?= h($dname) ?></option><?php endforeach; ?></select></label>
-                <label>Department name<input id="name" name="name" maxlength="100" placeholder="e.g. Photography" value="<?= h($form['name']) ?>" required></label>
+                <label>Department name<input id="name" name="name" maxlength="100" placeholder="e.g. Photography" value="<?= h($form['name']) ?>" required list="dept-names" autocomplete="off" data-dept-name data-current="<?= (int)($record['id']??0) ?>"><datalist id="dept-names"><?php foreach ($deptNames as $did=>$dname): ?><option value="<?= h($dname) ?>" data-id="<?= (int)$did ?>"></option><?php endforeach; ?></datalist><small class="dept-hint">Type a new name, or choose an existing department to edit it.</small></label>
                 <label>Department head<select name="head_user_id"><option value="">Select an employee</option>
                     <?php if ($record): ?>
                         <?php if (!$deptMembers): ?><option value="" disabled>No employees in <?= h($record['name']) ?> yet</option><?php endif; ?>
@@ -129,9 +132,13 @@ page_start('Departments','departments.php'); error_message($error);
     page.querySelectorAll('[data-dept-view]').forEach(function (b) { b.addEventListener('click', function () { view = b.dataset.deptView; try { localStorage.setItem('deptView', view); } catch (e) {} apply(); }); });
     search.addEventListener('input', apply);
     page.querySelector('[data-dept-focus]').addEventListener('click', function (e) { e.preventDefault(); document.getElementById('dept-form').scrollIntoView({behavior: 'smooth', block: 'start'}); document.getElementById('name').focus({preventScroll: true}); });
-    // Picking a department opens it (with its own employees as head choices); "New department" clears the form.
-    var pick = page.querySelector('[data-dept-pick]');
-    if (pick) pick.addEventListener('change', function () { location.href = 'departments.php' + (pick.value ? '?edit=' + encodeURIComponent(pick.value) : '') + '#dept-form'; });
+    // Choosing an existing department name opens it for editing (its own employees become the head choices).
+    var nameInput = page.querySelector('[data-dept-name]');
+    if (nameInput) nameInput.addEventListener('change', function () {
+        var typed = nameInput.value.trim().toLowerCase(), match = null;
+        page.querySelectorAll('#dept-names option').forEach(function (o) { if (o.value.toLowerCase() === typed) match = o; });
+        if (match && match.dataset.id !== nameInput.dataset.current) location.href = 'departments.php?edit=' + encodeURIComponent(match.dataset.id) + '#dept-form';
+    });
     apply();
 })();
 </script>
