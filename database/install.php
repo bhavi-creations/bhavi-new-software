@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 30;
+const PORTAL_SCHEMA_VERSION = 33;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -417,6 +417,26 @@ function portal_install(PDO $pdo, string $database): void
                 GROUP BY n.title,n.message,DATE(n.created_at)");
         }
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (30)');
+        // Chat read receipts ("Seen"), unread counts and online presence.
+        $addColumn('chat_participants','last_read_message_id','BIGINT UNSIGNED NOT NULL DEFAULT 0');
+        $addColumn('users','last_seen_at','DATETIME NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (31)');
+        // Daily work: department-specific work types (Reel, Thumbnail, New page…) and an output link per entry.
+        $pdo->exec('ALTER TABLE daily_work_entries MODIFY COLUMN work_type VARCHAR(40) NULL');
+        $addColumn('daily_work_entries','output_link','VARCHAR(500) NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (32)');
+        // Assigned work timer: start / pause / resume / finish. Older installs were missing the base timer columns.
+        $hadResumeColumn = (bool) $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='work_assignments' AND COLUMN_NAME='timer_resumed_at'")->fetchColumn();
+        $addColumn('work_assignments','started_at','DATETIME NULL');
+        $addColumn('work_assignments','completed_at','DATETIME NULL');
+        $addColumn('work_assignments','time_spent_seconds','INT UNSIGNED NULL');
+        $addColumn('work_assignments','timer_resumed_at','DATETIME NULL');
+        $addColumn('work_assignments','timer_accumulated_seconds','INT UNSIGNED NOT NULL DEFAULT 0');
+        if (!$hadResumeColumn) {
+            // Timers that were already running keep running from their original start time.
+            $pdo->exec('UPDATE work_assignments SET timer_resumed_at=started_at WHERE started_at IS NOT NULL AND completed_at IS NULL');
+        }
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (33)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

@@ -36,11 +36,14 @@ $reports=rows('SELECT * FROM client_work_reports WHERE client_id=? AND report_da
 $byDate=[];
 foreach ($reports as $report) $byDate[$report['report_date']][]=$report;
 $headers=['Client','Report date','Update','Work','Type','Content source','Reviews received','Replies sent','Content received / collected','Work started','Sent on WhatsApp','Client approval','Social media upload','Social media / uploaded by','Remarks / changes'];
-$records=(static function() use ($start,$end,$byDate,$client,$headers): Generator {
+// skip_empty=1 (client "Download a report" card) leaves out days without any update.
+$skipEmpty=!empty($_GET['skip_empty']);
+$records=(static function() use ($start,$end,$byDate,$client,$headers,$skipEmpty): Generator {
+if ($skipEmpty && !$byDate) { yield array_merge([$client['client_name'],$start->format('Y-m-d'),'No deliveries in this period'],array_fill(0,count($headers)-3,'')); return; }
 for ($day=$start;$day<$end;$day=$day->modify('+1 day')) {
     $key=$day->format('Y-m-d');
     $items=$byDate[$key]??[];
-    if (!$items) yield array_merge([$client['client_name'],$key,'No report added'],array_fill(0,count($headers)-3,''));
+    if (!$items && !$skipEmpty) yield array_merge([$client['client_name'],$key,'No report added'],array_fill(0,count($headers)-3,''));
     foreach ($items as $report) yield array_merge([$client['client_name'],$key,'Report added'],array_values(client_report_fields($report)));
 }
 })();

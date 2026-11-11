@@ -430,8 +430,8 @@ try {
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'], 'assignment_date=' . $assignmentDate), 'Future assignment appears in the date list');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'Responsive page with contact form'), 'Selecting an assignment date shows its full work brief');
     $assignedWork = $browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'];
-    expect(str_contains($assignedWork, 'Shared Client Updated') && str_contains($assignedWork, 'Type of editing') && str_contains($assignedWork, 'Video Editing'), 'Employee sees the assigned client and editing type');
-    expect(str_contains($assignedWork, 'https://example.com/reference') && str_contains($assignedWork, 'Reference / Drive Link'), 'Employee sees the assignment reference link');
+    expect(str_contains($assignedWork, 'Shared Client Updated') && str_contains($assignedWork, '<dt>Type</dt>') && str_contains($assignedWork, 'Video Editing'), 'Employee sees the assigned client and editing type');
+    expect(str_contains($assignedWork, 'https://example.com/reference') && str_contains($assignedWork, 'Open reference link'), 'Employee sees the assignment reference link');
     $assignmentFileName = 'integration-' . bin2hex(random_bytes(6)) . '.txt';
     $assignmentFileDirectory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'includes' . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'work-assignments' . DIRECTORY_SEPARATOR . date('Y') . DIRECTORY_SEPARATOR . date('m');
     if (!is_dir($assignmentFileDirectory) && !mkdir($assignmentFileDirectory, 0775, true) && !is_dir($assignmentFileDirectory)) throw new RuntimeException('Unable to create assignment attachment test folder.');
@@ -500,7 +500,9 @@ try {
     }
     $designer=$browsers['design_video'];
     $creativeForm=$designer->request('employee-daily-work.php')['body'];
-    expect(str_contains($creativeForm,'data-add-daily-task') && str_contains($creativeForm,'Video Editing') && str_contains($creativeForm,'Carousel'),'Creative daily work shows task types and Add task');
+    expect(str_contains($creativeForm,'data-dw-form') && str_contains($creativeForm,'value="reel"') && str_contains($creativeForm,'Thumbnail') && str_contains($creativeForm,'Video Editing') && str_contains($creativeForm,'Save &amp; add another'),'Creative daily work shows designer task types and Save &amp; add another');
+    $websiteForm=$website->request('employee-daily-work.php')['body'];
+    expect(str_contains($websiteForm,'New page') && str_contains($websiteForm,'Bug fix') && !str_contains($websiteForm,'value="reel"') && !str_contains($websiteForm,'Thumbnail'),'Website daily work shows website types only, never designer types');
     $creativeTasks=[
         ['work_type'=>'poster','task_title'=>'Campaign poster','task_status'=>'completed','time_spent_hours'=>'45 min','remark'=>'Poster ready <today>','client_id'=>$clientId],
         ['work_type'=>'video_editing','task_title'=>'Campaign video','task_status'=>'completed','time_spent_hours'=>'02:30','remark'=>'Video rendered','client_id'=>''],
@@ -541,7 +543,7 @@ try {
     expect(str_contains($monthlyExport,'Monthly total') && str_contains($monthlyExport,'Work detail') && str_contains($monthlyExport,'Campaign video'),'Monthly Excel includes summary and date-wise details');
     $creativeEntry=(int)scalar("SELECT id FROM daily_work_entries WHERE task_title='Campaign video'");
     $creativeEdit=$designer->request('employee-daily-work.php?edit_entry='.$creativeEntry)['body'];
-    expect(str_contains($creativeEdit,'value="video_editing" selected') && str_contains($creativeEdit,'value="2 hours 30 min"'),'Employee edit restores type and time');
+    expect(str_contains($creativeEdit,'value="video_editing" checked') && str_contains($creativeEdit,'value="2 hours 30 min"'),'Employee edit restores type and time');
     $editCreative=['action'=>'save_entry','entry_id'=>$creativeEntry,'work_type'=>'poster','task_title'=>'Campaign video revised','task_status'=>'completed','time_spent_hours'=>'1 hour','remark'=>'Changed to poster','client_id'=>''];
     expect($designer->post('employee-daily-work.php?edit_entry='.$creativeEntry,$editCreative)['status']===303,'Employee can edit a saved creative task');
     expect(scalar('SELECT work_type FROM daily_work_entries WHERE id=?',[$creativeEntry])==='poster','Employee type edit persists');
@@ -556,7 +558,7 @@ try {
         $response=$designer->post('employee-daily-work.php',array_replace($creativePayload,['tasks'=>$badTasks]));
         expect($response['status']===200 && str_contains($response['body'],'Task 2:'),'Batch rejects '.$label.' with task number');
         expect((int)scalar('SELECT COUNT(*) FROM daily_work_entries')===$entryCount && (int)scalar('SELECT COUNT(*) FROM notifications')===$notificationCount,'Invalid batch saves no tasks or notifications');
-        expect(str_contains($response['body'],'value="Campaign poster"') && str_contains($response['body'],'Awaiting copy'),'Invalid batch preserves entered task details');
+        // The multi-task batch form was replaced by one-entry-at-a-time ("Save & add another"); the server still rejects bad batches above.
     }
     expect(str_contains($designer->post('employee-daily-work.php',array_replace($creativePayload,['task_count'=>'2']))['body'],'incomplete'),'Truncated task batch is rejected');
     expect(str_contains($browsers['seo']->post('employee-daily-work.php',$creativePayload)['body'],'Graphic Designer and Video Editing'),'Other departments cannot use the creative batch action');
@@ -984,7 +986,7 @@ try {
     $newClient['social_links'][0]['password'] = '';
     expect($admin->post('admin-add-client.php?id=' . $credentialClient, $newClient)['status'] === 303, 'Edit preserves blank passwords');
     expect(scalar('SELECT password_cipher FROM client_social_links WHERE client_id=?', [$credentialClient]) === $cipher, 'Saved social password preserved');
-    foreach (['client-details.php','client-payments.php','client-reports.php'] as $clientRoute) {
+    foreach (['client-details.php','client-payments.php','client-reports.php','client-payment-statement.php'] as $clientRoute) {
         expect($guest->request($clientRoute)['headers']['location']==='login.php','Client route requires login: '.$clientRoute);
         expect($website->request($clientRoute)['status']===403,'Employee cannot access client route: '.$clientRoute);
         expect($clientBrowser->request($clientRoute,['action'=>'delete'])['status']===405,'Client page rejects mutation: '.$clientRoute);
@@ -993,16 +995,30 @@ try {
     expect(str_contains($details,'Credential client') && str_contains($details,'social.user') && !str_contains($details,'Shared Client Updated'),'Details always use authenticated client');
     expect(!str_contains($details,'Edit client') && !str_contains($details,'Edit payment') && !str_contains($details,'delete_client'),'Client details have no edit or delete actions');
     $payments=$clientBrowser->request('client-payments.php?client_id='.$clientId)['body'];
-    expect(str_contains($payments,'5,000.00') && str_contains($payments,'1,500.00') && str_contains($payments,'3,500.00'),'Client payment totals reconcile');
-    expect(str_contains($payments,'02 Oct 2026') && str_contains($payments,'10 Oct 2026') && str_contains($payments,'1,000.00') && str_contains($payments,'500.00'),'Dated receipts shown');
+    expect(str_contains($payments,'₹5,000') && str_contains($payments,'₹1,500') && str_contains($payments,'₹3,500') && str_contains($payments,'30%'),'Client payment totals reconcile');
+    expect(str_contains($payments,'02 Oct 2026') && str_contains($payments,'10 Oct 2026') && str_contains($payments,'₹1,000') && str_contains($payments,'₹500'),'Dated receipts shown');
+    $statement=$clientBrowser->request('client-payment-statement.php')['body'];
+    expect(str_contains($statement,'Payment statement') && str_contains($statement,'02 Oct 2026') && str_contains($statement,'₹1,500') && !str_contains($statement,'Shared Client Updated'),'Client statement lists own payments');
+    $ownPayment=(int)scalar('SELECT p.id FROM client_payments p JOIN clients c ON c.id=p.client_id WHERE c.user_id=(SELECT id FROM users WHERE username=?) ORDER BY p.id LIMIT 1',['client.test']);
+    $otherPayment=(int)scalar('SELECT p.id FROM client_payments p JOIN clients c ON c.id=p.client_id WHERE c.user_id IS NULL OR c.user_id<>(SELECT id FROM users WHERE username=?) ORDER BY p.id LIMIT 1',['client.test']);
+    expect(str_contains($clientBrowser->request('client-payment-statement.php?payment='.$ownPayment)['body'],'Payment receipt'),'Client receipt opens');
+    expect(!$otherPayment || $clientBrowser->request('client-payment-statement.php?payment='.$otherPayment)['status']===404,'Client cannot open another client receipt');
+    $clientBrowser->request('client-payments.php');
+    $proof=$clientBrowser->post('client-reuirement.php',['action'=>'submit_requirement','return'=>'payments','tasks[0][type]'=>'payment','tasks[0][due_date]'=>date('Y-m-d'),'tasks[0][remark]'=>"Payment proof\nTransaction ID / UTR: UTR-TEST-1"]);
+    expect($proof['status']===303 && $proof['headers']['location']==='client-payments.php','Payment proof returns to payments page');
+    expect(scalar("SELECT department_id FROM client_requirements WHERE brief LIKE '%UTR-TEST-1%'")===null && str_contains($clientBrowser->request('client-payments.php')['body'],'Payment proof sent'),'Payment proof goes to management and shows as waiting');
+    $clientBrowser->request('client-payments.php');
+    $badProof=$clientBrowser->post('client-reuirement.php',['action'=>'submit_requirement','return'=>'payments','tasks[0][type]'=>'payment','tasks[0][due_date]'=>date('Y-m-d'),'tasks[0][remark]'=>'']);
+    expect($badProof['status']===303 && str_starts_with((string)$badProof['headers']['location'],'client-payments.php'),'Invalid payment proof returns to payments page with an error');
+    expect(!str_contains($clientBrowser->request('client-reuirement.php')['body'],'value="payment"'),'Payment proof is not offered as a work type');
     $clientReport=$clientBrowser->request('client-reports.php?month=2026-10&client_id='.$clientId)['body'];
-    expect(str_contains($clientReport,'Two revisions') && str_contains($clientReport,'15 Oct 2026, 09:00 AM') && str_contains($clientReport,'data-report-preview'),'Client calendar shows saved workflow and preview trigger');
+    expect(str_contains($clientReport,'Two revisions') && str_contains($clientReport,'15 Oct 2026, 09:00 AM') && str_contains($clientReport,'data-wr-pick="2026-10-15"'),'Client calendar shows saved workflow and preview trigger');
     expect(str_contains($clientReport,'Reviews received') && str_contains($clientReport,'Replies sent') && str_contains($clientReport,'>3</dd>') && str_contains($clientReport,'>2</dd>'),'Client sees review and reply counts in report details');
-    expect(str_contains($clientReport,'1 completed') && str_contains($clientReport,'3 remaining'),'Client progress uses admin targets and uploaded count');
+    expect(str_contains($clientReport,'1 delivered') && str_contains($clientReport,'3 to go'),'Client progress uses admin targets and uploaded count');
     expect(!str_contains($clientReport,'Save report') && !str_contains($clientReport,'Edit work report'),'Client reports read-only');
-    expect(str_contains($clientReport,'<th>Download</th>') && str_contains($clientReport,'download-client-report.php?id='.$reportId),'Client daily report table has Excel download instead of edit');
+    expect(str_contains($clientReport,'download-client-report.php?id='.$reportId),'Client day panel has PDF download instead of edit');
     expect(substr_count($clientReport,'id="reports-2026-10-')===31 && str_contains($clientReport,'No report added for this date.'),'Every day appears including dates without reports');
-    expect(str_contains($clientReport,'<th>Date</th><th>Work</th>') && str_contains($clientReport,'name="from"') && str_contains($clientReport,'name="to"'),'Client has compact dated table and arbitrary date range download');
+    expect(str_contains($clientReport,'name="skip_empty"') && str_contains($clientReport,'name="from"') && str_contains($clientReport,'name="to"'),'Client has quick ranges and arbitrary date range download');
     expect(str_contains($reportPage,'<th>Date</th><th>Work</th>') && str_contains($reportPage,'<th>Download</th>') && str_contains($reportPage,'<th>Edit</th>'),'Admin report table matches client with editing retained');
     foreach (['from=2026-10-01&to=2026-10-12'=>['2026-10-01','2026-10-12','2026-10-13'],'from=2026-01-01&to=2026-10-13'=>['2026-01-01','2026-10-13','2026-10-14']] as $query=>$dates) {
         $custom=report_content($clientBrowser->request('download-client-report.php?period=custom&'.$query));
@@ -1135,7 +1151,7 @@ try {
         expect($admin->post('admin-add-employee.php',['employee_name'=>'Creative custom '.$index,'email'=>'creative.'.$index.'@example.test','username'=>'creative.'.$index,'temporary_password'=>$password,'account_status'=>'active','department_id'=>$departmentId,'designation'=>$departmentName,'joining_date'=>date('Y-m-d')])['status']===303,'Create employee in custom creative department');
         $customBrowser=new Browser($base);
         $customBrowser->login('creative.'.$index,$password,'employee-dashboard.php');
-        expect(str_contains($customBrowser->request('employee-daily-work.php')['body'],'data-add-daily-task'),'Custom '.$departmentName.' gets the creative task form');
+        expect(str_contains($customBrowser->request('employee-daily-work.php')['body'],'Thumbnail'),'Custom '.$departmentName.' gets the designer work types');
         $customTasks=$creativeTasks;
         foreach ($customTasks as &$customTask) { $customTask['task_title'].=' custom '.$index; $customTask['client_id']=''; }
         unset($customTask);

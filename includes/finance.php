@@ -7,6 +7,12 @@ function money_cents($value): int {
 }
 function decimal_money(int $cents): string { return sprintf('%d.%02d',intdiv($cents,100),$cents%100); }
 function money_label($value): string { return 'INR '.number_format((float)$value,2); }
+/** ₹ amount in Indian grouping, e.g. 150000 → ₹1,50,000 (paise shown only when not zero). */
+function rupees_label($value): string {
+    $cents=(int)round(abs((float)$value)*100); $whole=(string)intdiv($cents,100); $paise=$cents%100;
+    if (strlen($whole)>3) $whole=preg_replace('/\B(?=(\d{2})+(?!\d))/',',',substr($whole,0,-3)).','.substr($whole,-3);
+    return ((float)$value<0?'-':'').'₹'.$whole.($paise?sprintf('.%02d',$paise):'');
+}
 function optional_text(string $key,int $max=255): string { return isset($_POST[$key])?text_input($key,$max,false):''; }
 function optional_date(string $key): ?string { return empty($_POST[$key])?null:date_input($key); }
 function benefit_label(array $record): string {

@@ -19,7 +19,15 @@ function client_profile_link(string $url): void
     ?><a href="<?= h($url) ?>" target="_blank" rel="noopener noreferrer"><?= h($url) ?></a><?php
 }
 
-page_start('Client profile',$viewer['role']==='client'?'client-details.php':'add-client.php');
+if ($viewer['role']==='client') {
+    // Clients get their own read-only "Project details" view.
+    $socialLinks=rows('SELECT id,platform_name,url,username,password_cipher FROM client_social_links WHERE client_id=? ORDER BY id',[$id]);
+    page_start('Project details','client-details.php');
+    require __DIR__.'/includes/client-details-view.php';
+    page_end();
+    exit;
+}
+page_start('Client profile','add-client.php');
 ?>
 <?php if ($viewer['role']!=='client'): ?><div class="toolbar"><a class="button secondary" href="add-client.php">Back to clients</a></div><?php endif; ?>
 <div class="client-profile-layout">

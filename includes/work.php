@@ -9,24 +9,44 @@ function creative_work_department(string $code, string $name=''): bool
     }
     return false;
 }
+/** Designer / video editor work types (Graphic Designer and Video Editing departments only). */
 function creative_work_types(): array
 {
-    return ['poster'=>'Poster','video_editing'=>'Video Editing','carousel'=>'Carousel'];
+    return ['reel'=>'Reel','poster'=>'Poster','thumbnail'=>'Thumbnail','carousel'=>'Carousel','video_editing'=>'Video Editing','motion_graphics'=>'Motion Graphics','image_editing'=>'Image Editing','design_other'=>'Other design'];
+}
+/** Work types shown to each department on the daily work form. */
+function department_work_types(string $code, string $name=''): array
+{
+    if (creative_work_department($code,$name)) return creative_work_types();
+    return [
+        'website'=>['new_page'=>'New page','page_update'=>'Page changes','bug_fix'=>'Bug fix','content_update'=>'Content update','speed_seo_fix'=>'Speed / SEO fix','domain_hosting'=>'Domain & hosting','website_other'=>'Other website work'],
+        'seo'=>['on_page'=>'On-page SEO','off_page'=>'Off-page / backlinks','blog_content'=>'Blog / content','gbp'=>'Google Business Profile','keyword_research'=>'Keyword research','seo_report'=>'SEO report','seo_other'=>'Other SEO work'],
+        'telecaller'=>['calls'=>'Calls','follow_ups'=>'Follow-ups','lead_generation'=>'Lead generation','client_meeting'=>'Client meeting','telecall_other'=>'Other calling work'],
+    ][$code]??[];
+}
+/** Every known work type (used for labels and validation of older entries). */
+function all_work_types(): array
+{
+    return creative_work_types()+department_work_types('website')+department_work_types('seo')+department_work_types('telecaller');
 }
 function work_type_label(?string $type): string
 {
-    return (creative_work_types()+['reel'=>'Reel'])[$type??'']??'';
+    return all_work_types()[$type??'']??'';
 }
-function work_type_input(array $source, bool $required=true): ?string
+function work_type_input(array $source, bool $required=true, ?array $allowed=null): ?string
 {
     $type=$source['work_type']??'';
     if ($type==='' && !$required) return null;
-    if (!is_string($type) || !array_key_exists($type,creative_work_types())) throw new InvalidArgumentException('Choose Poster, Video Editing or Carousel.');
+    $allowed=$allowed??all_work_types();
+    if (!is_string($type) || !array_key_exists($type,$allowed)) throw new InvalidArgumentException('Choose a work type: '.implode(', ',array_values($allowed)).'.');
     return $type;
 }
-function render_work_type(array $values=[], string $suffix='', bool $required=true): void
+function render_work_type(array $values=[], string $suffix='', bool $required=true, ?array $options=null): void
 {
-    ?><div class="field"><label for="work-type<?= h($suffix) ?>">Task type</label><select id="work-type<?= h($suffix) ?>" name="work_type" <?= $required?'required':'' ?>><option value="">Choose task type</option><?php foreach (creative_work_types() as $value=>$label): ?><option value="<?= h($value) ?>" <?= ($values['work_type']??'')===$value?'selected':'' ?>><?= h($label) ?></option><?php endforeach; ?></select></div><?php
+    $options=$options??creative_work_types();
+    $current=(string)($values['work_type']??'');
+    if ($current!=='' && !isset($options[$current]) && isset(all_work_types()[$current])) $options[$current]=all_work_types()[$current];
+    ?><div class="field"><label for="work-type<?= h($suffix) ?>">Task type</label><select id="work-type<?= h($suffix) ?>" name="work_type" <?= $required?'required':'' ?>><option value="">Choose task type</option><?php foreach ($options as $value=>$label): ?><option value="<?= h($value) ?>" <?= $current===$value?'selected':'' ?>><?= h($label) ?></option><?php endforeach; ?></select></div><?php
 }
 function creative_task_data(array $task): array
 {
