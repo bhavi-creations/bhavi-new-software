@@ -7,7 +7,7 @@ if (!$id) fail(404,'Work report not found.');
 $sheet=one("SELECT s.*,u.full_name,u.username,d.code AS department_code,d.name AS department_name FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id WHERE s.id=? AND s.submission_status='submitted' AND u.deleted_at IS NULL",[$id]);
 if (!$sheet) fail(404,'Work report not found.');
 try { $filter=report_filter(); } catch (InvalidArgumentException $e) { fail(422,$e->getMessage()); }
-$backQuery=http_build_query(['from_date'=>$filter['from'],'to_date'=>$filter['to'],'all_dates'=>$filter['allDates']?1:0,'department'=>$filter['department'],'employee'=>$filter['employee']]);
+$backQuery=http_build_query(['from_date'=>$filter['from'],'to_date'=>$filter['to'],'all_dates'=>$filter['allDates']?1:0,'department'=>$filter['department'],'employee'=>$filter['employee'],'review_status'=>$filter['reviewStatus']]);
 $downloadQuery=http_build_query(['from_date'=>$sheet['work_date'],'to_date'=>$sheet['work_date'],'employee'=>$sheet['employee_id'],'department'=>$sheet['department_id']]);
 $entries=rows('SELECT e.*,c.client_name,a.description AS assignment_brief FROM daily_work_entries e LEFT JOIN clients c ON c.id=e.client_id LEFT JOIN work_assignments a ON a.id=e.assignment_id WHERE e.submission_id=? ORDER BY e.row_order,e.id',[$id]);
 $completed=count(array_filter($entries,static fn($entry)=>$entry['task_status']==='completed'));

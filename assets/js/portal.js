@@ -24,9 +24,18 @@ document.addEventListener('click', event => {
   button.title = show ? 'Hide password' : 'Show password';
 });
 const menu = document.querySelector('.menu-toggle');
-if (menu) menu.addEventListener('click', () => {
-  const open = document.getElementById('portalSidebar').classList.toggle('open');
-  menu.setAttribute('aria-expanded', String(open));
+const sidebar = document.getElementById('portalSidebar');
+const setSidebar = open => {
+  if (!sidebar) return;
+  sidebar.classList.toggle('open', open);
+  document.body.classList.toggle('sidebar-open', open);
+  if (menu) menu.setAttribute('aria-expanded', String(open));
+};
+if (menu) menu.addEventListener('click', () => setSidebar(!sidebar.classList.contains('open')));
+document.querySelector('.sidebar-close')?.addEventListener('click', () => { setSidebar(false); menu?.focus(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && sidebar?.classList.contains('open')) setSidebar(false); });
+document.addEventListener('click', event => {
+  if (sidebar?.classList.contains('open') && !sidebar.contains(event.target) && !event.target.closest('.menu-toggle')) setSidebar(false);
 });
 document.querySelectorAll('[data-department-select]').forEach(department => {
   const employee = document.getElementById(department.dataset.departmentSelect);

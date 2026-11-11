@@ -122,7 +122,7 @@
       const field = document.createElement('div'); field.className = 'field';
       const wrapper = document.createElement('label'); wrapper.textContent = label;
       const input = document.createElement(type === 'select' ? 'select' : 'input'); if (type !== 'select') input.type = type; input.name = (salary ? 'salary' : social ? 'social_links' : 'payments') + '[' + index + '][' + key + ']';
-      if (social && key === 'platform') { [['','Choose platform'],['Instagram','Instagram'],['Facebook','Facebook'],['YouTube','YouTube'],['LinkedIn','LinkedIn'],['Quora','Quora'],['Other','Other']].forEach(([value,label]) => { const option=document.createElement('option'); option.value=value; option.textContent=label; input.append(option); }); }
+      if (social && key === 'platform') { [['','Choose platform'],['Instagram','Instagram'],['Facebook','Facebook'],['YouTube','YouTube'],['LinkedIn','LinkedIn'],['Pinterest','Pinterest'],['Twitter','Twitter'],['Quora','Quora'],['Other','Other']].forEach(([value,label]) => { const option=document.createElement('option'); option.value=value; option.textContent=label; input.append(option); }); }
       if (social && key === 'username') input.maxLength = 255;
       if (social && key === 'password') { input.maxLength = 1000; input.autocomplete = 'new-password'; }
       if (social && key === 'url') { input.maxLength = 2048; input.placeholder = 'https://'; }

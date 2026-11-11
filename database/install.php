@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 23;
+const PORTAL_SCHEMA_VERSION = 30;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -354,6 +354,69 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('client_work_reports','reviews_received','INT UNSIGNED NOT NULL DEFAULT 0');
         $addColumn('client_work_reports','replies_sent','INT UNSIGNED NOT NULL DEFAULT 0');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (23)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS todo_tasks (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id BIGINT UNSIGNED NOT NULL,
+            title VARCHAR(500) NOT NULL DEFAULT '',
+            expected_date DATE NULL,
+            end_date DATE NULL,
+            remark TEXT NULL,
+            status ENUM('open','completed') NOT NULL DEFAULT 'open',
+            completed_at DATETIME NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_todo_user_status (user_id,status),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (24)');
+        $addColumn('departments','head_user_id','BIGINT UNSIGNED NULL');
+        $addColumn('departments','description',"VARCHAR(255) NOT NULL DEFAULT ''");
+        $addColumn('departments','card_color',"VARCHAR(20) NOT NULL DEFAULT 'navy'");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (25)');
+        foreach (['date_of_birth'=>'DATE NULL','gender'=>"VARCHAR(20) NOT NULL DEFAULT ''",'address'=>"VARCHAR(500) NOT NULL DEFAULT ''",'work_timings'=>"VARCHAR(100) NOT NULL DEFAULT ''",'employment_type'=>"VARCHAR(20) NOT NULL DEFAULT 'full_time'"] as $column=>$definition) $addColumn('employee_profiles',$column,$definition);
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (26)');
+        $addColumn('clients','industry','VARCHAR(60) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','contact_person','VARCHAR(150) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','contact_designation','VARCHAR(150) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','whatsapp','VARCHAR(30) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','email','VARCHAR(254) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','city','VARCHAR(100) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','gst_number','VARCHAR(30) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','address','VARCHAR(500) NOT NULL DEFAULT \'\'');
+        $addColumn('clients','services','TEXT NULL');
+        $addColumn('clients','account_manager_id','BIGINT UNSIGNED NULL');
+        $addColumn('clients','lead_department_id','BIGINT UNSIGNED NULL');
+        $addColumn('clients','billing_cycle','VARCHAR(20) NOT NULL DEFAULT \'monthly\'');
+        $addColumn('clients','team_notes','TEXT NULL');
+        $addColumn('clients','client_status','VARCHAR(20) NOT NULL DEFAULT \'active\'');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (27)');
+        $addColumn('work_assignments','priority',"VARCHAR(10) NOT NULL DEFAULT 'normal'");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (28)');
+        $addColumn('employee_attendance_days','marked_status','VARCHAR(10) NULL');
+        $addColumn('employee_attendance_days','marked_by','BIGINT UNSIGNED NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (29)');
+        $announcementsExisted = (bool) $pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='announcements'")->fetchColumn();
+        $pdo->exec("CREATE TABLE IF NOT EXISTS announcements (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(200) NOT NULL,
+            message TEXT NOT NULL,
+            audience VARCHAR(255) NOT NULL DEFAULT 'All employees',
+            recipient_count INT UNSIGNED NOT NULL DEFAULT 0,
+            sender_id BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_announcements_created (created_at)
+        ) ENGINE=InnoDB");
+        if (!$announcementsExisted) {
+            // Carry over announcements that were sent before this table existed.
+            $pdo->exec("INSERT INTO announcements (title,message,audience,recipient_count,sender_id,created_at)
+                SELECT n.title,n.message,'Employees',COUNT(*),MIN(n.sender_id),MIN(n.created_at)
+                FROM notifications n JOIN users sender ON sender.id=n.sender_id AND sender.role IN ('admin','manager')
+                JOIN users recipient ON recipient.id=n.recipient_id AND recipient.role='employee'
+                WHERE n.notification_type='general' AND n.title NOT LIKE '%task assigned' AND n.title NOT LIKE '%tasks assigned'
+                  AND n.title NOT IN ('Work assignment updated','Reminder: task pending') AND n.title NOT LIKE '%submitted an assigned task update' AND n.title NOT LIKE 'Work report %'
+                GROUP BY n.title,n.message,DATE(n.created_at)");
+        }
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (30)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

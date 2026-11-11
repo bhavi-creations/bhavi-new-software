@@ -200,9 +200,13 @@ function report_filter(): array
     $to=$allDates?null:date_input('to_date',['to_date'=>$_GET['to_date']??$from]);
     if (!$allDates && $to<$from) throw new InvalidArgumentException('The end date must be on or after the start date.');
     $department=(int)($_GET['department']??0); $employee=(int)($_GET['employee']??0);
+    $reviewStatus=$_GET['review_status']??'';
+    if (!is_string($reviewStatus) || !in_array($reviewStatus,['','pending','reviewed','changes_requested','needs_review'],true)) throw new InvalidArgumentException('Choose a valid report review status.');
     $where="s.submission_status='submitted' AND u.deleted_at IS NULL"; $params=[];
     if (!$allDates) { $where.=' AND s.work_date BETWEEN ? AND ?'; $params[]=$from; $params[]=$to; }
     if ($department) { $where.=' AND s.department_id=?'; $params[]=$department; }
     if ($employee) { $where.=' AND s.employee_id=?'; $params[]=$employee; }
-    return compact('from','to','allDates','department','employee','where','params');
+    if ($reviewStatus==='needs_review') $where.=" AND s.review_status IN ('pending','changes_requested')";
+    elseif ($reviewStatus!=='') { $where.=' AND s.review_status=?'; $params[]=$reviewStatus; }
+    return compact('from','to','allDates','department','employee','reviewStatus','where','params');
 }

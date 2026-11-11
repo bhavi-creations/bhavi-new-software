@@ -24,13 +24,17 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             foreach ($recipients as $recipient) {
                 query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",[$recipient['id'],$user['id'],$title,$message]);
             }
+            $audience='All employees';
+            if ($employee!==null) $audience=(string)(one('SELECT full_name FROM users WHERE id=?',[$employee])['full_name']??'One employee');
+            elseif ($department!==null) $audience=(string)(one('SELECT name FROM departments WHERE id=?',[$department])['name']??'Department').' team';
+            query('INSERT INTO announcements (title,message,audience,recipient_count,sender_id) VALUES (?,?,?,?,?)',[$title,$message,mb_substr($audience,0,255),count($recipients),$user['id']]);
             db()->commit();
             flash('Notification sent to '.count($recipients).' employee'.(count($recipients)===1?'':'s').'.');
         } else {
             query('UPDATE notifications SET read_at=COALESCE(read_at,NOW()) WHERE recipient_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
             flash('Notifications marked as read.');
         }
-        redirect('manager-notification.php');
+        redirect(($_POST['return']??'')==='dashboard' && is_staff() ? dashboard_path($user) : 'manager-notification.php');
     } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error=mutation_error($e); }
 }
 $notifications=rows('SELECT n.*,sender.full_name AS sender_name FROM notifications n LEFT JOIN users sender ON sender.id=n.sender_id WHERE n.recipient_id=? AND n.created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY) ORDER BY n.created_at DESC,n.id DESC',[$user['id']]);
