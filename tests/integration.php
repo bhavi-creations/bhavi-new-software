@@ -538,6 +538,10 @@ try {
     }
     $adminId = (int)scalar("SELECT id FROM users WHERE role='admin' AND deleted_at IS NULL ORDER BY id LIMIT 1");
     expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND notification_type='work_submitted' AND title LIKE '%submitted daily work'", [$adminId]) >= 1, 'Admin is notified when an employee submits work');
+    $workBadge = static fn(string $html): bool => (bool)preg_match('~<span>Work Reports</span><em class="nav-badge">\d+</em>~', $html);
+    expect($workBadge($admin->request('chat.php')['body']), 'Work Reports shows a number for new submitted work');
+    $admin->request('manager-dailywork.php');
+    expect(!$workBadge($admin->request('chat.php')['body']) && (int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND notification_type='work_submitted' AND read_at IS NULL", [$adminId]) === 0, 'Opening Daily Work Report clears the Work Reports number');
     $designer=$browsers['design_video'];
     $creativeForm=$designer->request('employee-daily-work.php')['body'];
     expect(str_contains($creativeForm,'data-dw-form') && str_contains($creativeForm,'value="reel"') && str_contains($creativeForm,'Thumbnail') && str_contains($creativeForm,'Video Editing') && str_contains($creativeForm,'Save &amp; add another'),'Creative daily work shows designer task types and Save &amp; add another');

@@ -80,7 +80,8 @@ function page_start(string $title, string $active = ''): void
     if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
     $adminNav = null;
     if ($user['role'] === 'admin') {
-        $todayReports = count_value("SELECT COUNT(*) FROM daily_work_submissions s WHERE s.work_date=? AND s.submission_status='submitted' AND EXISTS (SELECT 1 FROM daily_work_entries e WHERE e.submission_id=s.id)", [today()]);
+        // New work reports the admin has not seen yet (cleared when the Daily Work Report page is opened).
+        $todayReports = count_value("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND notification_type='work_submitted' AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)", [$user['id']]);
         $pendingLeaves = count_value("SELECT COUNT(*) FROM leave_requests WHERE status='pending'");
         $adminNav = [
             'Overview' => [
