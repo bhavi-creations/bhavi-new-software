@@ -498,6 +498,16 @@ try {
     expect($browsers['website']->post('employee-assigned-work.php?task='.$timerTask,['action'=>'start_assignment','assignment_id'=>$timerTask])['status']===303 && scalar('SELECT timer_resumed_at FROM work_assignments WHERE id=?',[$timerTask])!==null,'Employee can resume the timer');
     expect($browsers['seo']->post('employee-assigned-work.php?task='.$timerTask,['action'=>'start_assignment','assignment_id'=>$timerTask])['status']===403,'Another employee cannot start this task');
     $pdo->prepare('UPDATE work_assignments SET started_at=NULL,timer_resumed_at=NULL,timer_accumulated_seconds=0 WHERE id=?')->execute([$timerTask]);
+    // Work finished today for a task dated another day must still reach the admin.
+    $futureDate=date('Y-m-d',strtotime('+3 days'));
+    $pdo->prepare("INSERT INTO work_assignments (employee_id,department_id,client_id,work_date,title,description,status,assigned_by) VALUES (?,(SELECT department_id FROM employee_profiles WHERE user_id=?),NULL,?,'Future dated finish regression','Check admin sees it','pending',?)")->execute([$employeeIds['website'],$employeeIds['website'],$futureDate,(int)scalar("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1")]);
+    $futureTask=(int)$pdo->lastInsertId();
+    $browsers['website']->request('employee-assigned-work.php?task='.$futureTask);
+    $browsers['website']->post('employee-assigned-work.php?task='.$futureTask,['action'=>'start_assignment','assignment_id'=>$futureTask]);
+    $finishFuture=$browsers['website']->post('employee-assigned-work.php?task='.$futureTask,['action'=>'end_assignment','assignment_id'=>$futureTask,'remark'=>'Done early']);
+    expect($finishFuture['status']===303 && scalar("SELECT s.submission_status FROM daily_work_submissions s JOIN daily_work_entries e ON e.submission_id=s.id WHERE e.assignment_id=?",[$futureTask])==='submitted','Finishing a future-dated task submits it');
+    expect(str_contains($admin->request('manager-dailywork.php')['body'],date('d-m-Y',strtotime($futureDate))),'Admin Daily Work Report shows work submitted today even when the task is dated another day');
+    expect(str_contains($admin->request('admin-dashboard.php')['body'],'Future dated finish regression'),'Admin dashboard lists work submitted today for another date');
     expect($browsers['seo']->post($dashboards['seo'], ['action' => 'update_assignment', 'assignment_id' => $assignmentId, 'task_status' => 'completed', 'remark' => 'Attack'])['status'] === 403, 'Assignment ownership enforced');
     $website = $browsers['website'];
     $website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate);

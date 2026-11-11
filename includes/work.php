@@ -213,17 +213,22 @@ function assignment_rows(array $filter): array
 {
     return rows("SELECT a.*,u.full_name,d.name AS department_name,c.client_name,manager.full_name AS assigned_by_name,COALESCE(e.task_status,a.status) AS reported_status,COALESCE(e.time_spent_minutes,a.time_spent_minutes) AS reported_time,COALESCE(e.remark,a.employee_remark) AS reported_remark FROM work_assignments a JOIN users u ON u.id=a.employee_id JOIN departments d ON d.id=a.department_id LEFT JOIN clients c ON c.id=a.client_id JOIN users manager ON manager.id=a.assigned_by LEFT JOIN daily_work_entries e ON e.id=(SELECT latest.id FROM daily_work_entries latest JOIN daily_work_submissions sheet ON sheet.id=latest.submission_id WHERE latest.assignment_id=a.id ORDER BY sheet.work_date DESC,latest.updated_at DESC,latest.id DESC LIMIT 1) WHERE ".$filter['where']." ORDER BY a.work_date DESC,u.full_name,a.id",$filter['params']);
 }
-function report_filter(): array
+function report_filter(bool $recentByDefault=false): array
 {
     $allDates=($_GET['all_dates']??'')==='1';
+    // With no dates chosen, the admin page shows the last 7 days AND anything submitted in that time
+    // (work finished today for a task dated earlier or later must still appear).
+    $recent=$recentByDefault && !$allDates && !isset($_GET['from_date']) && !isset($_GET['to_date']) && !isset($_GET['date']);
+    if ($recent) $_GET['from_date']=date('Y-m-d',strtotime('-6 days'));
     $from=$allDates?null:date_input('from_date',['from_date'=>$_GET['from_date']??$_GET['date']??today()]);
-    $to=$allDates?null:date_input('to_date',['to_date'=>$_GET['to_date']??$from]);
+    $to=$allDates?null:date_input('to_date',['to_date'=>$_GET['to_date']??($recent?today():$from)]);
     if (!$allDates && $to<$from) throw new InvalidArgumentException('The end date must be on or after the start date.');
     $department=(int)($_GET['department']??0); $employee=(int)($_GET['employee']??0);
     $reviewStatus=$_GET['review_status']??'';
     if (!is_string($reviewStatus) || !in_array($reviewStatus,['','pending','reviewed','changes_requested','needs_review'],true)) throw new InvalidArgumentException('Choose a valid report review status.');
     $where="s.submission_status='submitted' AND u.deleted_at IS NULL"; $params=[];
-    if (!$allDates) { $where.=' AND s.work_date BETWEEN ? AND ?'; $params[]=$from; $params[]=$to; }
+    if ($recent) { $where.=' AND (s.work_date BETWEEN ? AND ? OR s.submitted_at>=?)'; $params[]=$from; $params[]=$to; $params[]=$from.' 00:00:00'; }
+    elseif (!$allDates) { $where.=' AND s.work_date BETWEEN ? AND ?'; $params[]=$from; $params[]=$to; }
     if ($department) { $where.=' AND s.department_id=?'; $params[]=$department; }
     if ($employee) { $where.=' AND s.employee_id=?'; $params[]=$employee; }
     if ($reviewStatus==='needs_review') $where.=" AND s.review_status IN ('pending','changes_requested')";

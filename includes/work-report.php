@@ -15,8 +15,8 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         db()->commit(); flash('Work report deleted.'); redirect('manager-dailywork.php');
     } catch (Throwable $e) { if (db()->inTransaction()) db()->rollBack(); $error=mutation_error($e); }
 }
-try { $filter=report_filter(); } catch (InvalidArgumentException $e) { fail(422,$e->getMessage()); }
-$reports=rows('SELECT s.*,u.full_name,d.name AS department_name,d.code AS department_code,COUNT(e.id) AS entry_count,COALESCE(SUM(e.task_status=\'completed\'),0) AS completed_count FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id WHERE '.$filter['where'].' GROUP BY s.id,u.full_name,d.name,d.code ORDER BY s.work_date ASC,u.full_name',$filter['params']);
+try { $filter=report_filter(true); } catch (InvalidArgumentException $e) { fail(422,$e->getMessage()); }
+$reports=rows('SELECT s.*,u.full_name,d.name AS department_name,d.code AS department_code,COUNT(e.id) AS entry_count,COALESCE(SUM(e.task_status=\'completed\'),0) AS completed_count FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id JOIN departments d ON d.id=s.department_id JOIN daily_work_entries e ON e.submission_id=s.id WHERE '.$filter['where'].' GROUP BY s.id,u.full_name,d.name,d.code ORDER BY s.submitted_at DESC,s.work_date DESC,u.full_name',$filter['params']);
 $queryString=http_build_query(['from_date'=>$filter['from'],'to_date'=>$filter['to'],'all_dates'=>$filter['allDates']?1:0,'department'=>$filter['department'],'employee'=>$filter['employee'],'review_status'=>$filter['reviewStatus']]);
 $employeeList=$filter['department']
     ? rows("SELECT u.id,u.full_name FROM users u WHERE u.role='employee' AND u.deleted_at IS NULL AND (EXISTS (SELECT 1 FROM employee_profiles ep WHERE ep.user_id=u.id AND ep.department_id=?) OR EXISTS (SELECT 1 FROM daily_work_submissions historic WHERE historic.employee_id=u.id AND historic.department_id=?)) ORDER BY u.full_name",[$filter['department'],$filter['department']])
