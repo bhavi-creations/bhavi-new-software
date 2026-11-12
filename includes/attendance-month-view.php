@@ -17,14 +17,20 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
             $amount = money_cents((string) $review['amount']);
             if ($review['status'] === 'pending') $pending[] = $review;
             elseif ($review['status'] === 'approved' && $amount > 0) {
-                if ($review['kind'] === 'overtime') $adds[] = $review + ['paise' => $amount];
-                else $cuts[] = $review + ['paise' => $amount];
+                $item = ['date' => $review['work_date'], 'paise' => $amount, 'reason' => $review['remark'], 'what' => $review['kind'] === 'overtime' ? 'Extra work' : 'Missed logout'];
+                if ($review['kind'] === 'overtime') $adds[] = $item; else $cuts[] = $item;
             }
         }
+        foreach ($day['adjustments'] as $adjustment) {
+            $item = ['date' => $adjustment['adjustment_date'], 'paise' => money_cents((string) $adjustment['amount']), 'reason' => $adjustment['reason'], 'what' => ''];
+            if ($adjustment['kind'] === 'add') $adds[] = $item; else $cuts[] = $item;
+        }
     }
+    $cutTotal = $calc['missed_cut'] + $calc['manual_cut'];
+    $addTotal = $calc['overtime_add'] + $calc['manual_add'];
     $loginAmount = $calc['present'] * $rate;
     $offAmount = $calc['paid_off'] * $rate;
-    $tillToday = max(0, $loginAmount + $offAmount + $calc['overtime_add'] - $calc['missed_cut']);
+    $tillToday = max(0, $loginAmount + $offAmount + $addTotal - $cutTotal);
     $money = static fn(int $p): string => h(paise_label($p));
     $monthLabel = $calc['first']->format('F Y');
     $salaryLink = 'employee-salary.php?' . http_build_query(array_filter(['employee' => $isAdmin ? (int) $employee['id'] : null, 'month' => $calc['month']]));
@@ -54,27 +60,28 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
         </article>
         <article class="am-card is-cut">
             <span>Salary cut by admin</span>
-            <strong>−<?= $money($calc['missed_cut']) ?></strong>
+            <strong>−<?= $money($cutTotal) ?></strong>
             <?php if (!$cuts): ?><p>No cut this month.</p><?php endif; ?>
-            <?php foreach ($cuts as $c): ?><p class="am-item"><b><?= h(date('d M', strtotime($c['work_date']))) ?> · −<?= $money($c['paise']) ?></b><?= $c['remark'] !== '' ? '<br>Reason: ' . h($c['remark']) : '' ?></p><?php endforeach; ?>
+            <?php foreach ($cuts as $c): ?><p class="am-item"><b><?= h(date('d M', strtotime($c['date']))) ?> · −<?= $money($c['paise']) ?></b><?= $c['what'] !== '' ? ' · ' . h($c['what']) : '' ?><?= $c['reason'] !== '' ? '<br>Reason: ' . h($c['reason']) : '' ?></p><?php endforeach; ?>
         </article>
         <article class="am-card is-add">
-            <span>Extra work added by admin</span>
-            <strong>+<?= $money($calc['overtime_add']) ?></strong>
-            <?php if (!$adds): ?><p>No extra work added.</p><?php endif; ?>
-            <?php foreach ($adds as $a): ?><p class="am-item"><b><?= h(date('d M', strtotime($a['work_date']))) ?> · +<?= $money($a['paise']) ?></b><?= $a['remark'] !== '' ? '<br>Reason: ' . h($a['remark']) : '' ?></p><?php endforeach; ?>
+            <span>Added by admin</span>
+            <strong>+<?= $money($addTotal) ?></strong>
+            <?php if (!$adds): ?><p>Nothing added this month.</p><?php endif; ?>
+            <?php foreach ($adds as $a): ?><p class="am-item"><b><?= h(date('d M', strtotime($a['date']))) ?> · +<?= $money($a['paise']) ?></b><?= $a['what'] !== '' ? ' · ' . h($a['what']) : '' ?><?= $a['reason'] !== '' ? '<br>Reason: ' . h($a['reason']) : '' ?></p><?php endforeach; ?>
         </article>
     </div>
     <div class="am-total">
         <div>
             <span><?= $calc['is_current'] ? 'Salary till today' : 'Salary for these days' ?></span>
-            <p><?= $money($loginAmount) ?> login + <?= $money($offAmount) ?> holidays<?= $calc['overtime_add'] ? ' + ' . $money($calc['overtime_add']) . ' extra' : '' ?><?= $calc['missed_cut'] ? ' − ' . $money($calc['missed_cut']) . ' admin cut' : '' ?></p>
+            <p><?= $money($loginAmount) ?> login + <?= $money($offAmount) ?> holidays<?= $addTotal ? ' + ' . $money($addTotal) . ' added by admin' : '' ?><?= $cutTotal ? ' − ' . $money($cutTotal) . ' cut by admin' : '' ?></p>
         </div>
         <strong><?= $money($tillToday) ?></strong>
     </div>
     <p class="am-foot">
         <?= $calc['is_current'] ? 'Full month salary (if no more leave)' : 'Final salary for the month' ?>, after PF <?= $money($calc['pf']) ?> and ESI <?= $money($calc['esi']) ?>: <b><?= $money($calc['net']) ?></b>
         · <a href="<?= h($salaryLink) ?>">Full salary details →</a>
+        <?php if ($isAdmin): ?> · <a href="<?= h($salaryLink) ?>#adjustments">＋ Add / cut amount</a><?php endif; ?>
         <?php if ($pending): ?><br><span class="am-wait"><?= count($pending) ?> day<?= count($pending) === 1 ? ' is' : 's are' ?> waiting for admin approval<?= $isAdmin ? ' · <a href="attendance-approvals.php">Approve now</a>' : '' ?>.</span><?php endif; ?>
     </p>
 </section>
@@ -114,6 +121,9 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
                 <?php else: ?>
                     <p class="am-adj"><b><?= $ot ? 'Extra not approved' : 'No cut' ?></b><?= $review['remark'] !== '' ? '<span>' . h($review['remark']) . '</span>' : '' ?></p>
                 <?php endif; ?>
+            <?php endforeach; ?>
+            <?php foreach ($day['adjustments'] as $adjustment): $isAdd = $adjustment['kind'] === 'add'; ?>
+                <p class="am-adj <?= $isAdd ? 'is-add' : 'is-cut' ?>"><b><?= $isAdd ? 'Admin added +' : 'Admin cut −' ?><?= $money(money_cents((string) $adjustment['amount'])) ?></b><span>Reason: <?= h($adjustment['reason']) ?></span></p>
             <?php endforeach; ?>
         </article>
         <?php endforeach; ?>

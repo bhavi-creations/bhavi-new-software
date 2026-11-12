@@ -9,6 +9,42 @@ $employeeId = $staff ? (int) ($_GET['employee'] ?? ($people[0]['id'] ?? 0)) : (i
 $month = salary_month_input($_GET['month'] ?? null);
 $employee = $employeeId ? salary_employee($employeeId) : null;
 if ($staff && $employeeId && !$employee) fail(404, 'Employee not found.');
+$error = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$staff) fail(403, 'Only management can add or cut salary amounts.');
+    check_csrf();
+    try {
+        if (!$employee) throw new InvalidArgumentException('Choose an employee.');
+        $action = (string) ($_POST['action'] ?? '');
+        if ($action === 'add_adjustment') {
+            $kind = (string) ($_POST['kind'] ?? '');
+            if (!in_array($kind, ['add', 'cut'], true)) throw new InvalidArgumentException('Choose Add amount or Cut amount.');
+            $raw = is_string($_POST['amount'] ?? null) ? trim($_POST['amount']) : '';
+            $amount = money_cents($raw === '' ? '0' : $raw);
+            if ($amount <= 0) throw new InvalidArgumentException('Enter an amount greater than zero.');
+            if ($amount > 99999999) throw new InvalidArgumentException('Amount is too large.');
+            $date = date_input('adjustment_date');
+            if ($date < $employee['joining_date']) throw new InvalidArgumentException('Date must be on or after the joining date.');
+            if ($date > date('Y-m-t')) throw new InvalidArgumentException('Choose a date in this month or earlier.');
+            $reason = text_input('reason', 500, true);
+            query('INSERT INTO salary_adjustments (employee_id,adjustment_date,kind,amount,reason,created_by) VALUES (?,?,?,?,?,?)', [$employee['id'], $date, $kind, decimal_money($amount), $reason, $user['id']]);
+            $title = ($kind === 'add' ? 'Salary: ' . paise_label($amount) . ' added' : 'Salary: ' . paise_label($amount) . ' cut');
+            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)", [$employee['id'], $user['id'], $title, date('d M Y', strtotime($date)) . ' — Reason: ' . $reason]);
+            flash($employee['full_name'] . ': ' . paise_label($amount) . ($kind === 'add' ? ' added to' : ' cut from') . ' the salary. The employee can see it now.');
+            redirect('employee-salary.php?employee=' . (int) $employee['id'] . '&month=' . substr($date, 0, 7) . '#adjustments');
+        } elseif ($action === 'delete_adjustment') {
+            $adjustment = one('SELECT * FROM salary_adjustments WHERE id=? AND employee_id=?', [positive_id($_POST['adjustment_id'] ?? null), $employee['id']]);
+            if (!$adjustment) throw new InvalidArgumentException('This entry was already removed.');
+            query('DELETE FROM salary_adjustments WHERE id=?', [$adjustment['id']]);
+            flash('Entry removed: ' . paise_label(money_cents((string) $adjustment['amount'])) . ' ' . ($adjustment['kind'] === 'add' ? 'add' : 'cut') . ' on ' . date('d M Y', strtotime($adjustment['adjustment_date'])) . '.');
+            redirect('employee-salary.php?employee=' . (int) $employee['id'] . '&month=' . substr($adjustment['adjustment_date'], 0, 7) . '#adjustments');
+        } else {
+            throw new InvalidArgumentException('Invalid request.');
+        }
+    } catch (Throwable $e) {
+        $error = mutation_error($e);
+    }
+}
 if ($employee) attendance_sync_reviews((int) $employee['id']);
 $calc = $employee ? salary_month($employee, $month) : null;
 
@@ -23,6 +59,7 @@ $reviewText = static function (array $review): string {
 };
 
 page_start($staff ? 'Employee salary' : 'My salary', 'employee-salary.php');
+error_message($error);
 ?>
 <div class="emp-page sal-page">
 <header class="emp-header">
@@ -59,6 +96,8 @@ page_start($staff ? 'Employee salary' : 'My salary', 'employee-salary.php');
         <div class="is-cut"><dt>− Leave cut <small><?= $calc['leave'] ?> day<?= $calc['leave'] === 1 ? '' : 's' ?> × <?= h(paise_label($calc['rate'])) ?></small></dt><dd>−<?= h(paise_label($calc['leave_cut'])) ?></dd></div>
         <div class="is-add"><dt>+ Extra work approved by admin</dt><dd>+<?= h(paise_label($calc['overtime_add'])) ?></dd></div>
         <div class="is-cut"><dt>− Missed logout cut by admin</dt><dd>−<?= h(paise_label($calc['missed_cut'])) ?></dd></div>
+        <div class="is-add"><dt>+ Amount added by admin <small>see the list below</small></dt><dd>+<?= h(paise_label($calc['manual_add'])) ?></dd></div>
+        <div class="is-cut"><dt>− Amount cut by admin <small>see the list below</small></dt><dd>−<?= h(paise_label($calc['manual_cut'])) ?></dd></div>
         <?php if ($calc['benefits']): ?><div class="is-add"><dt>+ Benefits <small><?= h($calc['salary']['other_benefits']) ?></small></dt><dd>+<?= h(paise_label($calc['benefits'])) ?></dd></div><?php endif; ?>
         <div class="is-cut"><dt>− PF <small>12% of full salary <?= h(paise_label($calc['full_salary'])) ?></small></dt><dd>−<?= h(paise_label($calc['pf'])) ?></dd></div>
         <div class="is-cut"><dt>− ESI <small>0.75% of full salary <?= h(paise_label($calc['full_salary'])) ?></small></dt><dd>−<?= h(paise_label($calc['esi'])) ?></dd></div>
@@ -83,6 +122,36 @@ page_start($staff ? 'Employee salary' : 'My salary', 'employee-salary.php');
 </section>
 </div>
 
+<?php $adjustments = array_merge(...array_map(static fn($d) => $d['adjustments'], $calc['days'])); ?>
+<section class="emp-card sal-adjust" id="adjustments">
+    <div class="sal-adjust-head">
+        <h3>Amount added / cut by admin · <?= h($calc['first']->format('F Y')) ?></h3>
+        <span><b class="sal-money is-pos">+<?= h(paise_label($calc['manual_add'])) ?></b> · <b class="sal-money is-neg">−<?= h(paise_label($calc['manual_cut'])) ?></b></span>
+    </div>
+    <?php if ($staff): ?>
+    <form method="post" class="sal-adjust-form"><?= csrf_field() ?><input type="hidden" name="action" value="add_adjustment">
+        <fieldset class="sal-kind"><legend class="sr-only">Add or cut</legend>
+            <label class="is-add"><input type="radio" name="kind" value="add" required> + Add amount</label>
+            <label class="is-cut"><input type="radio" name="kind" value="cut" required> − Cut amount</label>
+        </fieldset>
+        <label><span>Amount (₹)</span><input type="number" name="amount" min="0.01" step="0.01" max="999999.99" required placeholder="e.g. 500"></label>
+        <label><span>Date</span><input type="date" name="adjustment_date" value="<?= h($calc['is_current'] ? today() : $calc['first']->modify('last day of this month')->format('Y-m-d')) ?>" min="<?= h($employee['joining_date']) ?>" max="<?= date('Y-m-t') ?>" required></label>
+        <label class="sal-reason"><span>Reason (employee sees this)</span><input name="reason" maxlength="500" required placeholder="e.g. Diwali bonus / Advance taken / Late coming fine"></label>
+        <button class="emp-btn emp-btn-dark" type="submit">Save</button>
+    </form>
+    <?php endif; ?>
+    <?php if (!$adjustments): ?><p class="muted">No amount added or cut this month.</p><?php endif; ?>
+    <div class="sal-adjust-list">
+    <?php foreach (array_reverse($adjustments) as $adj): $amt = money_cents((string) $adj['amount']); $isAdd = $adj['kind'] === 'add'; ?>
+        <article class="sal-adjust-item <?= $isAdd ? 'is-add' : 'is-cut' ?>">
+            <strong class="sal-money <?= $isAdd ? 'is-pos' : 'is-neg' ?>"><?= $isAdd ? '+' : '−' ?><?= h(paise_label($amt)) ?></strong>
+            <div><b><?= $isAdd ? 'Added to salary' : 'Cut from salary' ?></b> · <?= h(date('D, d M Y', strtotime($adj['adjustment_date']))) ?><p>Reason: <?= h($adj['reason']) ?></p><?php if ($staff): ?><small>By <?= h($adj['created_by_name'] ?? 'Admin') ?> · <?= h(date('d M, g:i A', strtotime($adj['created_at']))) ?></small><?php endif; ?></div>
+            <?php if ($staff): ?><form method="post" onsubmit="return confirm('Remove this entry? The salary total will change back.')"><?= csrf_field() ?><input type="hidden" name="action" value="delete_adjustment"><input type="hidden" name="adjustment_id" value="<?= (int) $adj['id'] ?>"><button class="st-btn" type="submit">Remove</button></form><?php endif; ?>
+        </article>
+    <?php endforeach; ?>
+    </div>
+</section>
+
 <section class="emp-card">
     <h3>Day-wise salary</h3>
     <div class="table-scroll"><table class="sal-table">
@@ -97,7 +166,7 @@ page_start($staff ? 'Employee salary' : 'My salary', 'employee-salary.php');
                 <td><?= $day['worked'] ? h(work_duration_label($day['worked'])) : '—' ?></td>
                 <td class="sal-money <?= $day['amount'] < 0 ? 'is-neg' : 'is-pos' ?>"><?= h($signed($day['amount'])) ?><?= $day['amount'] < 0 ? ' <small>cut</small>' : '' ?></td>
                 <td class="sal-money <?= $day['adjust'] < 0 ? 'is-neg' : 'is-pos' ?>"><?= h($signed($day['adjust'])) ?></td>
-                <td class="sal-note-cell"><?php foreach ($day['reviews'] as $review): ?><span><?= h($reviewText($review)) ?><?= $review['remark'] !== '' ? ' — “' . h($review['remark']) . '”' : '' ?></span><?php endforeach; ?></td>
+                <td class="sal-note-cell"><?php foreach ($day['reviews'] as $review): ?><span><?= h($reviewText($review)) ?><?= $review['remark'] !== '' ? ' — “' . h($review['remark']) . '”' : '' ?></span><?php endforeach; ?><?php foreach ($day['adjustments'] as $adj): ?><span><?= $adj['kind'] === 'add' ? 'Admin added +' : 'Admin cut −' ?><?= h(paise_label(money_cents((string) $adj['amount']))) ?> — “<?= h($adj['reason']) ?>”</span><?php endforeach; ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

@@ -2683,15 +2683,22 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
         // This month's salary and the admin's latest add / cut decisions with remarks.
         $edSalaryEmployee = salary_employee((int) $user['id']);
         $edMonth = $edSalaryEmployee ? salary_month($edSalaryEmployee, date('Y-m')) : null;
-        $edDecisions = rows("SELECT work_date,kind,status,amount,remark FROM attendance_reviews WHERE employee_id=? ORDER BY COALESCE(reviewed_at,created_at) DESC LIMIT 3", [$user['id']]);
+        // Latest 3: approval decisions (extra work / missed logout) and amounts the admin added or cut by hand.
+        try {
+            $edDecisions = rows("SELECT work_date,CAST(kind AS CHAR) AS kind,CAST(status AS CHAR) AS status,amount,remark,COALESCE(reviewed_at,created_at) AS at FROM attendance_reviews WHERE employee_id=?
+                UNION ALL SELECT adjustment_date,CAST(kind AS CHAR),'approved',amount,reason,created_at FROM salary_adjustments WHERE employee_id=?
+                ORDER BY at DESC LIMIT 3", [$user['id'], $user['id']]);
+        } catch (Throwable $e) { $edDecisions = []; }
+        $edAdded = $edMonth ? $edMonth['overtime_add'] + $edMonth['manual_add'] : 0;
+        $edCut = $edMonth ? $edMonth['missed_cut'] + $edMonth['manual_cut'] : 0;
         ?>
         <a class="ed-tile ed-salary-tile" href="employee-salary.php">
             <span class="ed-tile-icon is-gold"><?= icon('money') ?></span>
             <span class="ed-tile-text">
                 <h2>My salary · <?= h(date('F')) ?></h2>
                 <strong><?= $edMonth && $edMonth['salary'] ? h(paise_label($edMonth['net'])) : 'No salary set' ?></strong>
-                <?php if ($edMonth && $edMonth['salary']): ?><p><?= $edMonth['present'] ?> present · <?= $edMonth['leave'] ?> leave<?= $edMonth['overtime_add'] ? ' · +' . h(paise_label($edMonth['overtime_add'])) . ' extra' : '' ?><?= $edMonth['missed_cut'] ? ' · −' . h(paise_label($edMonth['missed_cut'])) . ' cut' : '' ?></p><?php endif; ?>
-                <?php foreach ($edDecisions as $edD): $edAmt = money_cents((string) $edD['amount']); $edOt = $edD['kind'] === 'overtime'; ?>
+                <?php if ($edMonth && $edMonth['salary']): ?><p><?= $edMonth['present'] ?> present · <?= $edMonth['leave'] ?> leave<?= $edAdded ? ' · +' . h(paise_label($edAdded)) . ' added' : '' ?><?= $edCut ? ' · −' . h(paise_label($edCut)) . ' cut' : '' ?></p><?php endif; ?>
+                <?php foreach ($edDecisions as $edD): $edAmt = money_cents((string) $edD['amount']); $edOt = in_array($edD['kind'], ['overtime', 'add'], true); ?>
                     <span class="ed-decision is-<?= h($edD['status']==='approved' && $edAmt>0 ? ($edOt?'add':'cut') : $edD['status']) ?>"><b><?= h(date('d M', strtotime($edD['work_date']))) ?></b> <?php if ($edD['status'] === 'pending'): ?><?= $edOt ? 'Extra work' : 'Missed logout' ?> · waiting for admin<?php elseif ($edD['status'] === 'approved' && $edAmt > 0): ?><em class="<?= $edOt ? 'is-pos' : 'is-neg' ?>">Admin <?= $edOt ? 'added +' : 'cut −' ?><?= h(paise_label($edAmt)) ?></em><?php else: ?>Admin: <?= $edOt ? 'extra not approved' : 'no cut' ?><?php endif; ?><?php if ($edD['remark'] !== ''): ?> — “<?= h($edD['remark']) ?>”<?php endif; ?></span>
                 <?php endforeach; ?>
             </span>

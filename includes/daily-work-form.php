@@ -26,7 +26,9 @@ $typeRequired = $creativeWork;
 $editingTypeMap = ['reel' => 'reel', 'poster' => 'poster', 'thumbnail' => 'thumbnail', 'carousel' => 'carousel', 'video_editing' => 'video_editing', 'motion_graphics' => 'motion_graphics', 'image_editing' => 'image_editing', 'other' => 'design_other'];
 
 // ---------- Assigned tasks the employee can report on ----------
-$pickTasks = array_values(array_filter($assignments, static fn($a) => ($a['status'] ?? 'pending') !== 'completed' || in_array((int) $a['id'], $entryAssignmentIds, true)));
+// Only unfinished tasks. A finished task is listed only while editing the entry that reported it.
+$editingAssignmentId = (int) ($editEntry['assignment_id'] ?? 0);
+$pickTasks = array_values(array_filter($assignments, static fn($a) => (($a['status'] ?? 'pending') !== 'completed' && empty($a['completed_at'])) || ($editingAssignmentId && (int) $a['id'] === $editingAssignmentId)));
 $pickTasks = array_slice($pickTasks, 0, 12);
 $selectedAssignment = (string) ($formValues['assignment_id'] ?? '');
 if (!$isEditing && !($error && ($_POST['action'] ?? '') === 'save_entry')) {

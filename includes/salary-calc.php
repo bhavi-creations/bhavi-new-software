@@ -91,6 +91,16 @@ function attendance_sync_reviews(?int $employeeId = null): array
     return $created;
 }
 
+/** Admin add / cut entries for an employee between two dates (oldest first). */
+function salary_adjustment_rows(int $employeeId, string $from, string $to): array
+{
+    try {
+        return rows('SELECT a.*,u.full_name AS created_by_name FROM salary_adjustments a LEFT JOIN users u ON u.id=a.created_by WHERE a.employee_id=? AND a.adjustment_date BETWEEN ? AND ? ORDER BY a.adjustment_date,a.id', [$employeeId, $from, $to]);
+    } catch (Throwable $e) {
+        return []; // table not created yet
+    }
+}
+
 function pending_review_count(): int
 {
     try {
@@ -147,10 +157,13 @@ function salary_month(array $employee, string $month): array
     foreach (rows('SELECT r.*,u.full_name AS reviewer_name FROM attendance_reviews r LEFT JOIN users u ON u.id=r.reviewed_by WHERE r.employee_id=? AND r.work_date BETWEEN ? AND ? ORDER BY r.work_date,r.kind', [$id, $from, $to]) as $review) {
         $reviews[$review['work_date']][] = $review;
     }
+    // Amounts the admin added or cut by hand (bonus, fine, advance…).
+    $manual = [];
+    foreach (salary_adjustment_rows($id, $from, $to) as $adjustment) $manual[$adjustment['adjustment_date']][] = $adjustment;
 
     $days = [];
     $share = 0.0;
-    $totals = ['present' => 0, 'leave' => 0, 'paid_off' => 0, 'leave_cut' => 0, 'overtime_add' => 0, 'missed_cut' => 0, 'pending' => 0];
+    $totals = ['present' => 0, 'leave' => 0, 'paid_off' => 0, 'leave_cut' => 0, 'overtime_add' => 0, 'missed_cut' => 0, 'manual_add' => 0, 'manual_cut' => 0, 'pending' => 0];
     $lastRow = null;
     for ($d = $first; $d <= $last; $d = $d->modify('+1 day')) {
         $date = $d->format('Y-m-d');
@@ -194,17 +207,22 @@ function salary_month(array $employee, string $month): array
             if ($review['kind'] === 'overtime') { $adjust += $value; $totals['overtime_add'] += $value; }
             else { $adjust -= $value; $totals['missed_cut'] += $value; }
         }
+        foreach ($manual[$date] ?? [] as $adjustment) {
+            $value = money_cents((string) $adjustment['amount']);
+            if ($adjustment['kind'] === 'add') { $adjust += $value; $totals['manual_add'] += $value; }
+            else { $adjust -= $value; $totals['manual_cut'] += $value; }
+        }
         $days[] = [
             'date' => $date, 'status' => $status, 'label' => $label, 'rate' => $rate, 'amount' => $amount, 'adjust' => $adjust,
             'login' => $session['first_login'] ?? null, 'logout' => ($session && !(int) $session['open_sessions']) ? $session['last_logout'] : null,
-            'worked' => (int) ($session['worked'] ?? 0), 'reviews' => $reviews[$date] ?? [],
+            'worked' => (int) ($session['worked'] ?? 0), 'reviews' => $reviews[$date] ?? [], 'adjustments' => $manual[$date] ?? [],
         ];
     }
     $monthly = (int) round($share);
     $pf = $lastRow ? money_cents((string) $lastRow['employee_pf']) : 0;
     $esi = $lastRow ? money_cents((string) $lastRow['employee_esi']) : 0;
     $benefits = $lastRow ? money_cents((string) ($lastRow['other_benefit_amount'] ?? '0.00')) : 0;
-    $earned = $monthly - $totals['leave_cut'] + $totals['overtime_add'] - $totals['missed_cut'];
+    $earned = $monthly - $totals['leave_cut'] + $totals['overtime_add'] - $totals['missed_cut'] + $totals['manual_add'] - $totals['manual_cut'];
     return [
         'month' => $month, 'first' => $first, 'days' => $days, 'salary' => $lastRow,
         'full_salary' => $lastRow ? money_cents((string) $lastRow['amount']) : 0,

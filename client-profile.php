@@ -38,7 +38,7 @@ page_start('Client profile','add-client.php');
             <?php foreach (['client_type'=>'Type of client','phone'=>'Phone number','starting_date'=>'Starting date','ending_date'=>'Ending date','created_at'=>'Added on'] as $key=>$label): ?>
                 <dt><?= h($label) ?></dt><dd><?= h($client[$key]?:'—') ?></dd>
             <?php endforeach; ?>
-            <dt>Project age</dt><dd><?= h(project_age($client['starting_date'])) ?></dd><dt>Status</dt><dd><?= status_badge($client['is_active']?'active':'inactive') ?></dd>
+            <dt>Project age</dt><dd><?= h(project_age($client['starting_date'])) ?></dd><dt>Status</dt><dd><?php [$csKey,$csLabel]=client_status_info($client); ?><span class="badge client-status is-<?= h($csKey) ?>"><?= h($csLabel) ?></span></dd>
             <?php if ($staff || $viewer['role']==='client'): ?><dt>Package</dt><dd><?= h($client['package']?:'—') ?></dd><?php endif; ?>
         </dl>
         <?php if ($staff): ?><a class="button" href="admin-add-client.php?id=<?= $id ?>">Edit client</a><?php endif; ?>

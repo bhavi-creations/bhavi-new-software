@@ -74,7 +74,7 @@ $cdHasSecrets=(bool)array_filter($socialLinks,static fn($l)=>!empty($l['password
                 <h2><?= h($cdName) ?></h2>
                 <div class="pd-pills">
                     <?php if ($cdBadge!==''): ?><span class="pd-pill is-gold">★ <?= h($cdBadge) ?></span><?php endif; ?>
-                    <span class="pd-pill">● <?= $client['is_active']?'Active':'Inactive' ?></span>
+                    <?php [$cdStatusKey,$cdStatusLabel]=client_status_info($client); ?><span class="pd-pill client-status is-<?= h($cdStatusKey) ?>">● <?= h($cdStatusLabel) ?></span>
                 </div>
             </div>
             <dl class="pd-facts">

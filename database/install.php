@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 35;
+const PORTAL_SCHEMA_VERSION = 36;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -482,6 +482,21 @@ function portal_install(PDO $pdo, string $database): void
                 WHERE effective_to IS NULL OR effective_to>=CURDATE()");
         }
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (35)');
+        // Amounts the admin adds to or cuts from an employee's salary (bonus, fine, advance…), with a reason.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS salary_adjustments (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            employee_id BIGINT UNSIGNED NOT NULL,
+            adjustment_date DATE NOT NULL,
+            kind ENUM('add','cut') NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            reason VARCHAR(500) NOT NULL,
+            created_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_salary_adjustment (employee_id,adjustment_date),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id) ON DELETE RESTRICT,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (36)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);
