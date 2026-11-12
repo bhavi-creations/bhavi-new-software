@@ -12,7 +12,7 @@ function hosting_expect(bool $condition, string $label): void
     global $checks;
     if (!$condition) throw new RuntimeException($label);
     $checks++;
-}
+}`
 
 $connectionConfig = hosting_config(dirname(__DIR__) . '/config.php');
 $checks = 0;

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 34;
+const PORTAL_SCHEMA_VERSION = 35;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -452,6 +452,36 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('employee_profiles','shift_end','TIME NULL');
         $addColumn('employee_profiles','shift_label',"VARCHAR(60) NOT NULL DEFAULT ''");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (34)');
+        // Day-wise salary: extra hours and missed logouts go to the admin for approval (amount + remark).
+        $pdo->exec("CREATE TABLE IF NOT EXISTS attendance_reviews (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            employee_id BIGINT UNSIGNED NOT NULL,
+            work_date DATE NOT NULL,
+            kind ENUM('overtime','missed_logout') NOT NULL,
+            worked_seconds INT UNSIGNED NOT NULL DEFAULT 0,
+            status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+            amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            remark VARCHAR(500) NOT NULL DEFAULT '',
+            reviewed_by BIGINT UNSIGNED NULL,
+            reviewed_at DATETIME NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_attendance_review (employee_id,work_date,kind),
+            INDEX idx_attendance_review_status (status,work_date),
+            FOREIGN KEY (employee_id) REFERENCES employee_profiles(user_id) ON DELETE RESTRICT,
+            FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec("INSERT IGNORE INTO portal_settings (setting_key,setting_value) VALUES ('duty_hours','8')");
+        // PF and ESI are now taken on the full monthly salary (earlier: half). Recalculate current and future
+        // salary periods once; closed past periods keep the amounts that were actually paid.
+        if (!(int) $pdo->query('SELECT COUNT(*) FROM portal_schema_versions WHERE version=35')->fetchColumn()) {
+            $pdo->exec("UPDATE employee_profiles SET esi_basis='gross'");
+            $pdo->exec("UPDATE employee_salary_history SET esi_basis='gross',pf_base=amount,esi_base=amount,
+                employee_pf=IF(benefit_pf,ROUND(amount*0.12,2),0),company_pf=employee_pf,
+                employee_esi=IF(benefit_esi,ROUND(amount*0.0075,2),0),company_esi=IF(benefit_esi,ROUND(amount*0.0325,2),0),
+                net_salary=GREATEST(0,amount-employee_pf-employee_esi+other_benefit_amount)
+                WHERE effective_to IS NULL OR effective_to>=CURDATE()");
+        }
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (35)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

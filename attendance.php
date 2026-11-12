@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/salary-calc.php';
 $user=require_roles(['employee']);
 check_csrf();
 $action=$_POST['action']??'';
@@ -16,12 +17,28 @@ try {
         query('INSERT INTO employee_attendance_sessions (employee_id) VALUES (?)',[$user['id']]);
         query("INSERT INTO employee_attendance_days (employee_id,attendance_date,status) VALUES (?,CURDATE(),'pending') ON DUPLICATE KEY UPDATE status='pending'",[$user['id']]);
         $message='Login time saved.';
+        $salaryRow=salary_row_on((int)$user['id'],today());
+        if ($salaryRow) $message.=' Today\'s amount: '.paise_label(salary_day_rate($salaryRow)).'.';
     } else {
         if (!$active) throw new InvalidArgumentException('Log in for attendance before logging out.');
         query('UPDATE employee_attendance_sessions SET logout_at=NOW() WHERE id=? AND logout_at IS NULL',[$active['id']]);
         $loginDay=substr((string)$active['login_at'],0,10);
         query("INSERT INTO employee_attendance_days (employee_id,attendance_date,status) VALUES (?,?,'present') ON DUPLICATE KEY UPDATE status='present'",[$user['id'],$loginDay]);
         $message='Logout time saved.';
+        $salaryRow=salary_row_on((int)$user['id'],$loginDay);
+        if ($salaryRow) $message.=' Today\'s amount: '.paise_label(salary_day_rate($salaryRow)).'.';
+    }
+    // Extra hours / a forgotten logout on an earlier day go to the admin for approval.
+    foreach (attendance_sync_reviews((int)$user['id']) as $review) {
+        $day=date('d M Y',strtotime($review['work_date']));
+        if ($review['kind']==='overtime') {
+            $extra=work_duration_label($review['worked_seconds']-(int)round(duty_hours()*3600));
+            notify_staff('general','Extra work approval · '.$user['full_name'],$user['full_name'].' worked '.work_duration_label($review['worked_seconds']).' on '.$day.' ('.$extra.' more than duty). Approve in Attendance approvals.');
+            $message.=' You worked '.$extra.' extra — sent to admin for approval.';
+        } else {
+            notify_staff('general','Missed logout · '.$user['full_name'],$user['full_name'].' did not logout on '.$day.'. Review in Attendance approvals.');
+            $message.=' You did not logout on '.$day.' — sent to admin for review.';
+        }
     }
     db()->commit();
     flash($message);

@@ -41,7 +41,7 @@ error_message($error);
 <?php if ($user['role']==='admin'): $credentials=one('SELECT credential_cipher FROM users WHERE id=?',[$id]); ?><section class="panel"><h2>Login credentials</h2><p>Username: <?= h($employee['username']) ?></p><details><summary>Show password</summary><p><?= h(credential_decrypt($credentials['credential_cipher']) ?: 'Existing password cannot be recovered. Set a new password in Edit employee.') ?></p></details></section><?php endif; ?>
 <section class="panel"><h2>Current monthly salary</h2><?php if (!$current): ?><p>No salary has been set for today.</p><?php else: ?>
 <?php salary_summary($current); salary_benefit_note($current); ?>
-<p class="help">Salary starts on <?= h($current['effective_from']) ?>. Employee receives = salary + benefits amount minus employee PF and ESI.</p>
+<p class="help">Salary starts on <?= h($current['effective_from']) ?>. Employee receives = salary + benefits amount minus employee PF and ESI (on the full salary). <a href="employee-salary.php<?= is_staff()?'?employee='.$id:'' ?>">See day-wise salary, leave cuts and extra work →</a></p>
 <?php if (is_staff()): ?>
 <form method="post" id="current-benefits-form" class="record-form salary-benefits-form" data-salary="<?= h($current['amount']) ?>" data-pf="<?= h($current['employee_pf']) ?>" data-esi="<?= h($current['employee_esi']) ?>">
 <?= csrf_field() ?><input type="hidden" name="action" value="save_benefits"><input type="hidden" name="salary_id" value="<?= (int)$current['id'] ?>">

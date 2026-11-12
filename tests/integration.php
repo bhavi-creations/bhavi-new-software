@@ -921,10 +921,10 @@ try {
     $salaryId = (int)scalar('SELECT id FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from LIMIT 1', [$employeeIds['website']]);
     expect(scalar('SELECT employee_code FROM employee_profiles WHERE user_id=?', [$employeeIds['website']]) === 'BH-001', 'Employee ID saved');
     expect(scalar('SELECT guardian_phone FROM employee_profiles WHERE user_id=?', [$employeeIds['website']]) === '9000022222', 'Guardian phone saved');
-    foreach (['pf_base' => '7000.00', 'esi_base' => '7000.00', 'employee_pf' => '840.00', 'company_pf' => '840.00', 'employee_esi' => '52.50', 'company_esi' => '227.50', 'net_salary' => '13107.50'] as $column => $expected) expect(scalar('SELECT ' . $column . ' FROM employee_salary_history WHERE id=?', [$salaryId]) === $expected, 'Salary calculation ' . $column);
+    foreach (['pf_base' => '14000.00', 'esi_base' => '14000.00', 'employee_pf' => '1680.00', 'company_pf' => '1680.00', 'employee_esi' => '105.00', 'company_esi' => '455.00', 'net_salary' => '12215.00'] as $column => $expected) expect(scalar('SELECT ' . $column . ' FROM employee_salary_history WHERE id=?', [$salaryId]) === $expected, 'Salary calculation ' . $column);
     expect(scalar('SELECT effective_to FROM employee_salary_history WHERE id=?', [$salaryId]) === date('Y-m-d', strtotime(date('Y-m-d', strtotime('+1 month')) . ' -1 day')), 'Increment closes preceding salary period');
-    expect(str_contains($website->request('employee-profile.php')['body'], '13,107.50'), 'Employee sees own take-home salary');
-    expect(str_contains($admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'], '227.50'), 'Admin sees company ESI');
+    expect(str_contains($website->request('employee-profile.php')['body'], '12,215.00'), 'Employee sees own take-home salary');
+    expect(str_contains($admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'], '455.00'), 'Admin sees company ESI');
     $ownProfile = $website->request('employee-profile.php')['body'];
     $staffProfile = $admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'];
     preg_match('/<dl class="details-list">(.*?)<\/dl>/s', $ownProfile, $ownDetails);
@@ -935,7 +935,7 @@ try {
     expect(str_contains($ownDirectory, 'employee-profile.php?id=' . $employeeIds['website']) && !str_contains($ownDirectory, 'Employee seo'), 'Employee directory displays own record and profile link');
     expect(str_contains($website->request($dashboards['website'])['body'], '<h2>My profile &amp; salary</h2>'), 'Dashboard links directly to own saved profile');
     expect($browsers['seo']->request('employee-profile.php?id=' . $employeeIds['website'])['status'] === 403, 'Other employee salary URL forbidden');
-    expect(!str_contains($browsers['seo']->request('employee-profile.php')['body'], '13,107.50'), 'Other profile does not leak salary');
+    expect(!str_contains($browsers['seo']->request('employee-profile.php')['body'], '12,215.00'), 'Other profile does not leak salary');
     expect(!str_contains($website->request('admin-employees.php')['body'], '9000022222'), 'Guardian details excluded from shared directory');
     $adminEmployeeDirectory = $admin->request('admin-employees.php')['body'];
     $staffVisibleFields = ['BH-001', '9000011111', 'PF, ESI, Other', 'employee-photo.php?id=' . $employeeIds['website']];
@@ -948,7 +948,7 @@ try {
     $noBenefits = array_merge($employeeEdit, ['other_benefit_amount' => '500', 'other_benefits' => 'Unchecked allowance', 'salary' => [['amount' => '17000', 'from' => date('Y-m-d', strtotime('+2 months')), 'to' => '']]]);
     expect($admin->post('admin-add-employee.php?id=' . $employeeIds['website'], $noBenefits)['status'] === 303, 'Salary without benefits saved');
     expect(scalar('SELECT net_salary FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1', [$employeeIds['website']]) === '17000.00', 'Unchecked benefits deduct zero');
-    expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13107.50', 'Historical deductions remain unchanged');
+    expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12215.00', 'Historical deductions remain unchanged');
     $badDates = array_merge($employeeEdit, ['relieving_date' => date('Y-m-d', strtotime('-1 day'))]);
     expect($admin->post('admin-add-employee.php?id=' . $employeeIds['website'], $badDates)['status'] === 200, 'Invalid relieving date rejected');
     // Current benefits replace the amount, preserve deductions and do not change future snapshots.
@@ -956,32 +956,32 @@ try {
     $admin->request($benefitsPath);
     $benefitsData = ['action' => 'save_benefits', 'salary_id' => $salaryId, 'other_benefit_amount' => '500.25', 'other_benefits' => 'Performance bonus <approved>'];
     expect($admin->post($benefitsPath, $benefitsData)['status'] === 303, 'Management can save current monthly benefits');
-    expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13607.75', 'Current benefits add after existing PF and ESI deductions');
+    expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12715.25', 'Current benefits add after existing PF and ESI deductions');
     expect(scalar('SELECT other_benefit_amount FROM employee_profiles WHERE user_id=?', [$employeeIds['website']]) === '500.25' && scalar('SELECT other_benefit_amount FROM employee_salary_history WHERE id=?', [$salaryId]) === '500.25', 'Benefit amount persists on profile and salary period');
-    expect(scalar('SELECT employee_pf FROM employee_salary_history WHERE id=?', [$salaryId]) === '840.00' && scalar('SELECT employee_esi FROM employee_salary_history WHERE id=?', [$salaryId]) === '52.50', 'Extra benefits preserve saved PF and ESI deductions');
+    expect(scalar('SELECT employee_pf FROM employee_salary_history WHERE id=?', [$salaryId]) === '1680.00' && scalar('SELECT employee_esi FROM employee_salary_history WHERE id=?', [$salaryId]) === '105.00', 'Extra benefits preserve saved PF and ESI deductions');
     $benefitProfile = $website->request('employee-profile.php')['body'];
     expect(str_contains($benefitProfile, 'class="benefits-note"') && str_contains($benefitProfile, 'INR 500.25') && str_contains($benefitProfile, 'Performance bonus &lt;approved&gt;'), 'Own profile highlights benefit amount and safely escaped reason');
     expect(!str_contains($benefitProfile, 'id="current-benefits-form"'), 'Employee benefits are read-only');
     expect(!str_contains($browsers['seo']->request('employee-profile.php')['body'], 'Performance bonus'), 'Benefits reason is private to the employee and management');
-    expect($admin->post($benefitsPath, $benefitsData)['status'] === 303 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13607.75', 'Repeated benefits save does not add the amount twice');
+    expect($admin->post($benefitsPath, $benefitsData)['status'] === 303 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12715.25', 'Repeated benefits save does not add the amount twice');
     expect((int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?', [$employeeIds['website']]) === 3 && scalar('SELECT net_salary FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1', [$employeeIds['website']]) === '17000.00', 'Current benefits do not duplicate history or change future salary periods');
     expect($website->post($benefitsPath, $benefitsData)['status'] === 403, 'Employee cannot submit own benefits changes');
     expect($browsers['seo']->post($benefitsPath, $benefitsData)['status'] === 403, 'Employee cannot submit another employee benefits changes');
     expect($guest->post($benefitsPath, $benefitsData)['headers']['location'] === 'login.php', 'Benefits changes require sign-in');
     expect($admin->post($benefitsPath, array_merge($benefitsData, ['csrf' => 'invalid']))['status'] === 419, 'Current benefits enforce CSRF');
     foreach (['-1', '1.001', '1e3', '10000000000', '9999999999.99', ['unexpected']] as $invalidAmount) {
-        expect($admin->post($benefitsPath, array_merge($benefitsData, ['other_benefit_amount' => $invalidAmount]))['status'] === 200 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13607.75', 'Invalid or overflowing benefit amount leaves salary unchanged');
+        expect($admin->post($benefitsPath, array_merge($benefitsData, ['other_benefit_amount' => $invalidAmount]))['status'] === 200 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12715.25', 'Invalid or overflowing benefit amount leaves salary unchanged');
     }
     foreach (['', str_repeat('a', 256), ['unexpected']] as $invalidReason) expect($admin->post($benefitsPath, array_merge($benefitsData, ['other_benefits' => $invalidReason]))['status'] === 200 && scalar('SELECT other_benefits FROM employee_salary_history WHERE id=?', [$salaryId]) === $benefitsData['other_benefits'], 'Invalid benefit reason leaves saved note unchanged');
     $futureSalaryId = (int)scalar('SELECT id FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1', [$employeeIds['website']]);
     $foreignSalaryId = (int)scalar('SELECT id FROM employee_salary_history WHERE employee_id=?', [$employeeIds['seo']]);
-    foreach ([$futureSalaryId, $foreignSalaryId, 0] as $invalidSalaryId) expect($admin->post($benefitsPath, array_merge($benefitsData, ['salary_id' => $invalidSalaryId]))['status'] === 200 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13607.75', 'Invalid, future or foreign salary period cannot receive current benefits');
+    foreach ([$futureSalaryId, $foreignSalaryId, 0] as $invalidSalaryId) expect($admin->post($benefitsPath, array_merge($benefitsData, ['salary_id' => $invalidSalaryId]))['status'] === 200 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12715.25', 'Invalid, future or foreign salary period cannot receive current benefits');
     expect($admin->post('employee-profile.php?id=' . $employeeIds['design_video'], $benefitsData)['status'] === 200 && (int)scalar('SELECT COUNT(*) FROM employee_salary_history WHERE employee_id=?', [$employeeIds['design_video']]) === 0, 'Employee without current salary cannot receive an unlinked benefit');
     $manager->request($benefitsPath);
-    expect($manager->post($benefitsPath, array_merge($benefitsData, ['other_benefit_amount' => '250.75', 'other_benefits' => 'Travel allowance']))['status'] === 303 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13358.25', 'Manager retains existing salary management permissions');
+    expect($manager->post($benefitsPath, array_merge($benefitsData, ['other_benefit_amount' => '250.75', 'other_benefits' => 'Travel allowance']))['status'] === 303 && scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12465.75', 'Manager retains existing salary management permissions');
     foreach (['0', ''] as $emptyAmount) {
         expect($admin->post($benefitsPath, array_merge($benefitsData, ['other_benefit_amount' => $emptyAmount, 'other_benefits' => '']))['status'] === 303, 'Zero or blank benefit amount saves successfully');
-        expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '13107.50' && !str_contains($website->request('employee-profile.php')['body'], 'class="benefits-note"'), 'Zero or blank benefit restores normal salary and removes highlighted note');
+        expect(scalar('SELECT net_salary FROM employee_salary_history WHERE id=?', [$salaryId]) === '12215.00' && !str_contains($website->request('employee-profile.php')['body'], 'class="benefits-note"'), 'Zero or blank benefit restores normal salary and removes highlighted note');
     }
     $invalidOtherData = array_merge($employeeEdit, ['benefit_other' => '1', 'other_benefit_amount' => '-1', 'other_benefits' => 'Travel allowance']);
     $admin->request('admin-add-employee.php?id=' . $employeeIds['website']);

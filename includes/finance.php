@@ -32,10 +32,11 @@ function salary_net_amount(int $gross,int $pf,int $esi,int $benefits=0): string 
     return decimal_money($net);
 }
 function salary_breakdown(int $gross,bool $pf,bool $esi,string $basis,int $benefits=0): array {
-    $half=intdiv($gross+1,2); $esiBase=$basis==='half'?$half:$gross;
-    $employeePf=$pf?(int)round($half*12/100):0;
+    // PF and ESI are taken on the full monthly salary ($basis is kept only for older callers).
+    $esiBase=$gross;
+    $employeePf=$pf?(int)round($gross*12/100):0;
     $employeeEsi=$esi?(int)round($esiBase*75/10000):0;
-    return array_merge(array_map('decimal_money',['pf_base'=>$half,'esi_base'=>$esiBase,'employee_pf'=>$employeePf,'company_pf'=>$employeePf,'employee_esi'=>$employeeEsi,'company_esi'=>$esi?(int)round($esiBase*325/10000):0]),['net_salary'=>salary_net_amount($gross,$employeePf,$employeeEsi,$benefits)]);
+    return array_merge(array_map('decimal_money',['pf_base'=>$gross,'esi_base'=>$esiBase,'employee_pf'=>$employeePf,'company_pf'=>$employeePf,'employee_esi'=>$employeeEsi,'company_esi'=>$esi?(int)round($esiBase*325/10000):0]),['net_salary'=>salary_net_amount($gross,$employeePf,$employeeEsi,$benefits)]);
 }
 function salary_rows_input(?string $initialStart = null): array {
     $rows=$_POST['salary']??[];

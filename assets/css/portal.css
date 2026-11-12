@@ -4029,3 +4029,84 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 .pp-item.is-rejected .pp-date{background:#f3d3d0;color:#a12a2a}
 .pp-item.is-rejected .pp-date small{color:#a12a2a}
 .pp-item.is-rejected .pp-item-text small{color:#a12a2a;font-weight:500;overflow-wrap:anywhere}
+
+/* Day-wise salary & attendance approvals */
+.sal-page{display:grid;gap:18px}
+.sal-page .emp-header{margin-bottom:0}
+.sal-page .emp-card h3{margin-bottom:14px}
+.sal-filter{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.sal-filter label{min-width:170px}
+.sal-filter label span{font-size:12px;color:var(--emp-muted)}
+.sal-stats .at-stat strong{font-size:24px}
+.sal-layout{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;align-items:start}
+.sal-breakdown dl{display:grid;gap:0;margin:0}
+.sal-breakdown dl>div{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed var(--emp-line);font-size:13.5px}
+.sal-breakdown dt{color:var(--emp-ink)}
+.sal-breakdown dt small{display:block;color:var(--emp-muted);font-size:11.5px}
+.sal-breakdown dd{margin:0;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sal-breakdown .is-cut dd{color:#b3261e}
+.sal-breakdown .is-add dd{color:#15803d}
+.sal-breakdown .is-total{border-bottom:0;margin-top:6px;padding:14px 16px;border-radius:12px;background:#103d83}
+.sal-breakdown .is-total dt,.sal-breakdown .is-total dd{color:#fff;font-size:15px;font-weight:800}
+.sal-note{margin:12px 0 0;padding:10px 12px;border-radius:10px;background:#f5f8ff;color:var(--emp-muted);font-size:12.5px}
+.sal-note.is-pending{background:#fff8e6;color:#7a5a12}
+.sal-decisions{display:grid;gap:10px}
+.sal-decisions h3{margin-bottom:4px!important}
+.sal-decision{padding:12px 14px;border:1px solid var(--emp-line);border-radius:12px;background:#fafbfe}
+.sal-decision.is-approved{border-color:#cfe8d6;background:#f4fbf6}
+.sal-decision.is-pending{border-color:#ecd59a;background:#fffbef}
+.sal-decision p{margin:6px 0 0;font-size:12.5px;color:var(--emp-ink)}
+.sal-decision small{display:block;margin-top:6px;color:var(--emp-muted);font-size:11.5px}
+.sal-decision-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sal-remark{padding:6px 10px;border-left:3px solid #d6ad48;background:#fff;border-radius:6px}
+.sal-chip{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;background:#edf2fb;color:#103d83;white-space:nowrap}
+.sal-chip.is-approved{background:#dcfce7;color:#166534}
+.sal-chip.is-rejected{background:#fde8e8;color:#9b1c1c}
+.sal-chip.is-pending{background:#fef3c7;color:#854d0e}
+.sal-table{width:100%;border-collapse:collapse;font-size:13px}
+.sal-table th{padding:10px 12px;text-align:left;font-size:11.5px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--emp-muted);border-bottom:1px solid var(--emp-line);white-space:nowrap}
+.sal-table td{padding:10px 12px;border-bottom:1px solid var(--emp-line);vertical-align:top}
+.sal-table td small{color:var(--emp-muted)}
+.sal-table tr.is-leave td,.sal-table tr.is-absent td{background:#fdf6f6}
+.sal-table tr.is-off td,.sal-table tr.is-holiday td{background:#f7f9fd}
+.sal-sub{display:block;margin-top:3px;font-size:11.5px}
+.sal-status{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;background:#edf2fb;color:#40536f;white-space:nowrap}
+.sal-status.is-present,.sal-status.is-working{background:#dcfce7;color:#166534}
+.sal-status.is-leave,.sal-status.is-absent{background:#fde8e8;color:#9b1c1c}
+.sal-status.is-missed_logout{background:#fef3c7;color:#854d0e}
+.sal-status.is-holiday{background:#dbeafe;color:#1e40af}
+.sal-money{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sal-money.is-pos{color:#15803d}
+.sal-money.is-neg{color:#b3261e}
+.sal-bad{color:#b3261e;font-weight:700}
+.sal-note-cell span{display:block;font-size:12px;color:var(--emp-ink);min-width:180px}
+.sal-approvals{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.sal-approval{display:grid;gap:12px;padding:16px;border:1px solid var(--emp-line);border-left:4px solid #15803d;border-radius:14px;background:#fff}
+.sal-approval.is-missed{border-left-color:#d97706}
+.sal-approval-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.sal-approval-head strong{display:block;font-size:14.5px}
+.sal-approval-head small{color:var(--emp-muted);font-size:12px}
+.sal-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin:0}
+.sal-facts div{padding:8px 10px;border-radius:10px;background:#f5f8ff}
+.sal-facts dt{font-size:11px;color:var(--emp-muted)}
+.sal-facts dd{margin:2px 0 0;font-size:13px;font-weight:700}
+.sal-approval-form{display:grid;grid-template-columns:140px minmax(0,1fr);gap:10px;align-items:end}
+.sal-approval-form label span{font-size:12px}
+.sal-approval-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.sal-hint{grid-column:1/-1;color:var(--emp-muted);font-size:11.5px}
+.ed-day-amount{color:#15803d}
+.ot-duty{margin-top:16px;padding-top:16px;border-top:1px dashed #e2e7f0}
+@media (max-width:1100px){.sal-layout{grid-template-columns:1fr}.sal-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.sal-stats .at-stat.is-primary{grid-column:1/-1}}
+@media (max-width:560px){.sal-approval-form{grid-template-columns:1fr}.sal-filter,.sal-filter label{width:100%}.sal-approvals{grid-template-columns:1fr}}
+.side-day-amount{display:block;margin-top:2px;color:#15803d;font-weight:700}
+.ed-salary-tile .ed-tile-text{min-width:0}
+.ed-decision{display:block;margin-top:6px;padding:6px 9px;border-radius:8px;background:#f5f8ff;font-size:12px;line-height:1.4;color:#24334b}
+.ed-decision.is-approved{background:#f4fbf6}
+.ed-decision.is-pending{background:#fffbef}
+.ed-decision em{font-style:normal;font-weight:700}
+.ed-decision .is-pos{color:#15803d}.ed-decision .is-neg{color:#b3261e}
+.attendance-calendar-day .cal-amount{font-weight:700}
+.attendance-calendar-day .cal-amount.is-pos{color:#15803d}
+.attendance-calendar-day .cal-amount.is-neg{color:#b3261e}
+.attendance-calendar-day .cal-review{margin-top:5px;padding:4px 6px;border-radius:6px;background:rgba(255,255,255,.75);color:#24334b;font-weight:600}
+.attendance-calendar-day .cal-review em{display:block;font-weight:400}

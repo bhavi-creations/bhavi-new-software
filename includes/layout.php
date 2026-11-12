@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/salary-calc.php';
 
 function icon(string $name): string
 {
@@ -71,6 +72,7 @@ function page_start(string $title, string $active = ''): void
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
     if (!is_staff()) $nav['employee-profile.php']='My profile & salary';
     if (is_staff()) $nav['payslips.php'] = 'Employee payslips';
+    if (is_staff()) { $reviewCount=pending_review_count(); $nav['attendance-approvals.php']='Attendance approvals'.($reviewCount?' ('.$reviewCount.')':''); $nav['employee-salary.php']='Employee salary'; }
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
@@ -83,11 +85,14 @@ function page_start(string $title, string $active = ''): void
         // New work reports the admin has not seen yet (cleared when the Daily Work Report page is opened).
         $todayReports = count_value("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND notification_type='work_submitted' AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)", [$user['id']]);
         $pendingLeaves = count_value("SELECT COUNT(*) FROM leave_requests WHERE status='pending'");
+        $pendingReviews = pending_review_count();
         $adminNav = [
             'Overview' => [
                 ['href' => $dashboard, 'label' => 'Dashboard', 'icon' => 'dashboard'],
                 ['href' => 'admin-employees.php', 'label' => 'Employees', 'icon' => 'people'],
                 ['href' => 'employee-attendance.php', 'label' => 'Attendance', 'icon' => 'clock'],
+                ['href' => 'attendance-approvals.php', 'label' => 'Attendance Approvals', 'icon' => 'check', 'badge' => $pendingReviews],
+                ['href' => 'employee-salary.php', 'label' => 'Salary', 'icon' => 'money'],
                 ['label' => 'Work Reports', 'icon' => 'document', 'badge' => $todayReports, 'children' => [
                     ['href' => 'manager-dailywork.php', 'label' => 'Daily Work Report'],
                     ['href' => 'admin-client-work-report.php', 'label' => 'Client Work Report'],
@@ -137,6 +142,7 @@ function page_start(string $title, string $active = ''): void
             'Me' => [
                 ['href' => 'employee-profile.php', 'label' => 'Profile & salary', 'icon' => 'user'],
                 ['href' => 'employee-attendance.php', 'label' => 'My attendance', 'icon' => 'clock'],
+                ['href' => 'employee-salary.php', 'label' => 'My salary', 'icon' => 'money'],
                 ['href' => 'apply-leaves.php', 'label' => 'Leave & holidays', 'icon' => 'calendar', 'dot' => $holidaySoon > 0, 'match' => ['apply-leaves.php', 'my-leave-requests.php', 'check-leave.php', 'employee-leave-calendar.php']],
             ],
             'Team' => [
@@ -194,7 +200,7 @@ function page_start(string $title, string $active = ''): void
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= h($title) ?> | Bhavi</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/../assets/css/portal.css') ?>"><?php if ($user['role']==='client'): ?><link rel="stylesheet" href="assets/css/client-portal.css?v=<?= filemtime(__DIR__.'/../assets/css/client-portal.css') ?>"><?php endif; ?></head>
 <body data-role="<?= h($user['role']) ?>"><div class="portal-layout">
 <aside class="portal-sidebar" id="portalSidebar"><button type="button" class="sidebar-close" aria-label="Close menu" title="Close menu">×</button><?php if ($employeeCard): ?><a class="emp-side-card" href="employee-profile.php" title="My profile"><span class="emp-side-avatar"><?= h($employeeCard['initials']) ?></span><span class="emp-side-text"><strong><?= h($employeeCard['name']) ?></strong><small><?= h($employeeCard['sub'] ?: 'Team member') ?></small></span></a><?php elseif ($clientCard): ?><a class="emp-side-card client-side-card" href="client-details.php" title="Project details"><span class="client-side-logo"><?= h($clientCard['initials']) ?><?php if ($clientCard['logo']): ?><img src="<?= h($clientCard['logo']) ?>" alt="" onerror="this.remove()"><?php endif; ?></span><span class="emp-side-text"><strong><?= h($clientCard['name']) ?></strong><?php if ($clientCard['plan'] !== ''): ?><small class="client-side-plan"><?= h($clientCard['plan']) ?></small><?php endif; ?></span></a><?php else: ?><a class="portal-brand" href="<?= h($dashboard) ?>"><span class="brand-icon">B</span><span><strong>bhavi</strong><small>TEAM WORKSPACE</small></span></a><?php endif; ?>
-<?php if ($user['role']==='employee'): ?><form class="attendance-control sidebar-attendance" data-attendance-date="<?= today() ?>" method="post" action="attendance.php"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $attendance?'logout':'login' ?>"><?php if ($attendance): ?><span data-attendance-time>Login saved at <?= h(date('g:i A',strtotime($attendance['login_at']))) ?></span><button class="attendance-button" type="submit"><?= icon('logout') ?>Logout</button><?php else: ?><button class="attendance-button" type="submit"><?= icon('document') ?>Login</button><?php endif; ?></form><?php endif; ?>
+<?php if ($user['role']==='employee'): ?><form class="attendance-control sidebar-attendance" data-attendance-date="<?= today() ?>" method="post" action="attendance.php"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $attendance?'logout':'login' ?>"><?php if ($attendance): ?><span data-attendance-time>Login saved at <?= h(date('g:i A',strtotime($attendance['login_at']))) ?><?php $sideSalary=salary_row_on((int)$user['id'],today()); if ($sideSalary): ?><b class="side-day-amount">Today's amount <?= h(paise_label(salary_day_rate($sideSalary))) ?></b><?php endif; ?></span><button class="attendance-button" type="submit"><?= icon('logout') ?>Logout</button><?php else: ?><button class="attendance-button" type="submit"><?= icon('document') ?>Login</button><?php endif; ?></form><?php endif; ?>
 <?php if ($adminNav): ?><nav aria-label="Main navigation" class="sectioned-nav"><?php foreach ($adminNav as $section => $items): ?><?php if ($section !== ''): ?><p class="nav-section-title"><?= h($section) ?></p><?php endif; ?><?php foreach ($items as $item): $badge=(int)($item['badge'] ?? 0); if (isset($item['children'])): $groupActive=in_array($active, array_column($item['children'],'href'), true); ?><details class="nav-group"<?= $groupActive ? ' open' : '' ?>><summary class="<?= $groupActive ? 'group-active' : '' ?>"><?= icon($item['icon']) ?><span><?= h($item['label']) ?></span><?php if ($badge): ?><em class="nav-badge"><?= $badge ?></em><?php endif; ?><i class="nav-chevron"><?= icon('chevron') ?></i></summary><div class="nav-sub"><?php foreach ($item['children'] as $child): ?><a href="<?= h($child['href']) ?>" class="<?= $active === $child['href'] ? 'active' : '' ?>" <?= $active === $child['href'] ? 'aria-current="page"' : '' ?>><span><?= h($child['label']) ?></span></a><?php endforeach; ?></div></details><?php else: $isActive=in_array($active, $item['match'] ?? [$item['href']], true); ?><a href="<?= h($item['href']) ?>" class="<?= $isActive ? 'active' : '' ?>" <?= $isActive ? 'aria-current="page"' : '' ?>><?= icon($item['icon']) ?><span><?= h($item['label']) ?></span><?php if ($badge): ?><em class="nav-badge"><?= $badge ?></em><?php elseif (!empty($item['dot'])): ?><i class="nav-dot" title="<?= h($item['dotTitle'] ?? 'Holiday this week') ?>"></i><?php endif; ?></a><?php endif; endforeach; endforeach; ?></nav><?php else: ?>
 <nav aria-label="Main navigation"><?php foreach ($nav as $href => $label): ?><a href="<?= h($href) ?>" class="<?= $active === $href || str_starts_with($active,explode('#',$href)[0]) && str_contains($href,'#') ? 'active' : '' ?>" <?= $active === $href ? 'aria-current="page"' : '' ?>><?= icon(str_contains($href,'dashboard')?'dashboard':(str_contains($href,'employee') && !str_contains($href,'work') && !str_contains($href,'brands')?'people':(str_contains($href,'notification')?'bell':(str_contains($href,'password')?'lock':(str_contains($href,'leave') || str_contains($href,'holiday')?'calendar':(str_contains($href,'client') || str_contains($href,'department')?'briefcase':'document')))))) ?><span><?= h($label) ?></span></a><?php endforeach; ?></nav><?php endif; ?>
 <form class="signout" method="post" action="logout.php"><?= csrf_field() ?><button type="submit"><?= icon('logout') ?>Sign out</button></form></aside>

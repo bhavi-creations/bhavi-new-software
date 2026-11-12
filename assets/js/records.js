@@ -46,7 +46,7 @@
       preview.replaceChildren();
       document.querySelectorAll('#salary-rows input[type="number"]').forEach((el, i) => {
         if (!el.value) return;
-        const gross = cents(el.value), base = Math.round(gross / 2);
+        const gross = cents(el.value), base = gross; // PF / ESI on the full salary
         const employeePf = pf ? Math.round(base * 12 / 100) : 0;
         const employeeEsi = esi ? Math.round(base * 75 / 10000) : 0;
         const companyEsi = esi ? Math.round(base * 325 / 10000) : 0;
@@ -67,7 +67,7 @@
         }
         // Always-visible, line-by-line breakdown so it is clear what PF / ESI cut from the salary.
         const lines = [['Monthly salary', gross, '']];
-        if (pf || esi) lines.push(['PF / ESI are calculated on half the salary', base, 'is-note']);
+        if (pf || esi) lines.push(['PF / ESI are calculated on the full salary', base, 'is-note']);
         if (pf) lines.push(['− PF (employee 12% of ' + format(base) + ')', -employeePf, 'is-cut']);
         if (esi) lines.push(['− ESI (employee 0.75% of ' + format(base) + ')', -employeeEsi, 'is-cut']);
         if (extra > 0) lines.push(['+ Other benefits', extra, 'is-add']);

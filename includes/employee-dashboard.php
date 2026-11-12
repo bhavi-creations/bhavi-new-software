@@ -3,6 +3,7 @@
 require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/work.php';
 require_once __DIR__ . '/office-timing.php';
+require_once __DIR__ . '/salary-calc.php';
 
 
 $user = require_roles(['employee']);
@@ -2651,10 +2652,10 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
             <span class="ed-tile-icon is-green"><?= icon('clock') ?></span>
             <span class="ed-tile-text">
                 <h2>Attendance</h2>
-                <strong><?= $todayAttendance?'In at '.h(date('g:i A',strtotime($todayAttendance['login_at']))):'Not logged in' ?></strong>
+                <strong><?= $todayAttendance?'In at '.h(date('g:i A',strtotime($todayAttendance['login_at']))):'Not logged in' ?></strong><?php $edSalary=salary_row_on((int)$user['id'],today()); if ($todayAttendance && !$todayAttendance['logout_at'] && $edSalary): ?><p class="ed-day-amount">Today's amount · <?= h(paise_label(salary_day_rate($edSalary))) ?></p><?php endif; ?>
                 <p><?= $todayAttendance?'View day-wise attendance':'Use Login in the sidebar to record today’s time' ?></p>
                 <?php $edTiming=employee_timing(one('SELECT shift_start,shift_end,shift_label FROM employee_profiles WHERE user_id=?',[$user['id']])?:[]); ?><p class="ed-timing">Your timing · <?= h($edTiming['text']) ?><?= $edTiming['custom']?' ('.h($edTiming['label']).')':'' ?></p>
-                <?php if ($todayAttendance && $todayAttendance['logout_at']): ?><p data-attendance-logout>Logout time · <?= h(date('g:i A',strtotime($todayAttendance['logout_at']))) ?></p><?php endif; ?>
+                <?php if ($todayAttendance && $todayAttendance['logout_at']): ?><p data-attendance-logout>Logout time · <?= h(date('g:i A',strtotime($todayAttendance['logout_at']))) ?><?php $edSalary=salary_row_on((int)$user['id'],today()); if ($edSalary): ?> · <b class="ed-day-amount">Today's amount <?= h(paise_label(salary_day_rate($edSalary))) ?></b><?php endif; ?></p><?php $edReview=one("SELECT kind,status,worked_seconds FROM attendance_reviews WHERE employee_id=? AND work_date=? AND kind='overtime'",[$user['id'],today()]); if ($edReview && $edReview['status']==='pending'): ?><p class="ed-timing">Extra <?= h(work_duration_label((int)$edReview['worked_seconds']-(int)round(duty_hours()*3600))) ?> · waiting for admin approval</p><?php endif; ?><?php endif; ?>
             </span>
             <span class="ed-tile-arrow">→</span>
         </a>
@@ -2673,6 +2674,24 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
                 <h2>Next holiday</h2>
                 <strong><?= h($nextHoliday?date('j M',strtotime($nextHoliday['holiday_date'])):'None scheduled') ?></strong>
                 <p><?= h($nextHoliday['holiday_name']??'View holiday calendar') ?></p>
+            </span>
+            <span class="ed-tile-arrow">→</span>
+        </a>
+        <?php
+        // This month's salary and the admin's latest add / cut decisions with remarks.
+        $edSalaryEmployee = salary_employee((int) $user['id']);
+        $edMonth = $edSalaryEmployee ? salary_month($edSalaryEmployee, date('Y-m')) : null;
+        $edDecisions = rows("SELECT work_date,kind,status,amount,remark FROM attendance_reviews WHERE employee_id=? ORDER BY COALESCE(reviewed_at,created_at) DESC LIMIT 3", [$user['id']]);
+        ?>
+        <a class="ed-tile ed-salary-tile" href="employee-salary.php">
+            <span class="ed-tile-icon is-gold"><?= icon('money') ?></span>
+            <span class="ed-tile-text">
+                <h2>My salary · <?= h(date('F')) ?></h2>
+                <strong><?= $edMonth && $edMonth['salary'] ? h(paise_label($edMonth['net'])) : 'No salary set' ?></strong>
+                <?php if ($edMonth && $edMonth['salary']): ?><p><?= $edMonth['present'] ?> present · <?= $edMonth['leave'] ?> leave<?= $edMonth['overtime_add'] ? ' · +' . h(paise_label($edMonth['overtime_add'])) . ' extra' : '' ?><?= $edMonth['missed_cut'] ? ' · −' . h(paise_label($edMonth['missed_cut'])) . ' cut' : '' ?></p><?php endif; ?>
+                <?php foreach ($edDecisions as $edD): $edAmt = money_cents((string) $edD['amount']); $edOt = $edD['kind'] === 'overtime'; ?>
+                    <span class="ed-decision is-<?= h($edD['status']) ?>"><b><?= h(date('d M', strtotime($edD['work_date']))) ?></b> <?php if ($edD['status'] === 'pending'): ?><?= $edOt ? 'Extra work' : 'Missed logout' ?> · waiting for admin<?php elseif ($edD['status'] === 'approved' && $edAmt > 0): ?><em class="<?= $edOt ? 'is-pos' : 'is-neg' ?>">Admin <?= $edOt ? 'added +' : 'cut −' ?><?= h(paise_label($edAmt)) ?></em><?php else: ?>Admin: <?= $edOt ? 'extra not approved' : 'no cut' ?><?php endif; ?><?php if ($edD['remark'] !== ''): ?> — “<?= h($edD['remark']) ?>”<?php endif; ?></span>
+                <?php endforeach; ?>
             </span>
             <span class="ed-tile-arrow">→</span>
         </a>

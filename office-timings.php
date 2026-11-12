@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/office-timing.php';
+require_once __DIR__ . '/includes/salary-calc.php';
 $user = require_roles(['admin']);
 $error = null;
 
@@ -27,6 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $label = text_input('shift_label', 60, false) ?: 'Own shift';
             query('UPDATE employee_profiles SET shift_start=?,shift_end=?,shift_label=?,work_timings=? WHERE user_id=?', [$start, $end, $label, office_range_label($start, $end), $employee]);
             flash('Shift saved for ' . (one('SELECT full_name FROM users WHERE id=?', [$employee])['full_name'] ?? 'employee') . ': ' . office_range_label($start, $end) . '.');
+        } elseif ($action === 'save_duty') {
+            // Working more than this sends the day to Attendance approvals as extra work.
+            $hours = is_string($_POST['duty_hours'] ?? null) ? trim($_POST['duty_hours']) : '';
+            if (!preg_match('/^\d{1,2}(\.\d{1,2})?$/D', $hours) || (float) $hours < 1 || (float) $hours > 16) throw new InvalidArgumentException('Enter duty hours between 1 and 16.');
+            query('INSERT INTO portal_settings (setting_key,setting_value,updated_by) VALUES (?,?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),updated_by=VALUES(updated_by)', ['duty_hours', (string) (float) $hours, $user['id']]);
+            flash('Duty hours saved: ' . duty_hours_label((float) $hours) . ' a day. More than this goes to Attendance approvals as extra work.');
         } elseif ($action === 'reset_shift') {
             $employee = positive_id($_POST['employee_id'] ?? null);
             query("UPDATE employee_profiles SET shift_start=NULL,shift_end=NULL,shift_label='',work_timings='' WHERE user_id=?", [$employee]);
@@ -68,6 +75,10 @@ error_message($error);
                 </div>
                 <button class="ot-gold" type="submit">Save office timing</button>
                 <small><?= count($people) - count($customPeople) ?> of <?= count($people) ?> employees follow this timing.</small>
+            </form>
+            <form method="post" class="ot-form ot-duty"><?= csrf_field() ?><input type="hidden" name="action" value="save_duty">
+                <label><span>Duty hours per day <small>(more than this goes to admin approval as extra work)</small></span><input type="number" name="duty_hours" min="1" max="16" step="0.25" value="<?= h((string) duty_hours()) ?>" required></label>
+                <button class="ot-dark" type="submit">Save duty hours</button>
             </form>
         </section>
 
