@@ -1263,7 +1263,7 @@ if (
 
                 'priority' =>
                     in_array((string) ($task['priority'] ?? 'normal'), ['normal', 'high', 'urgent'], true)
-                        ? (string) $task['priority']
+                        ? (string) ($task['priority'] ?? 'normal')
                         : 'normal',
 
                 'upload_index' =>

@@ -12,8 +12,9 @@ $isAdmin=$user['role']==='admin';
 if (!$isAdmin && isset($_GET['employee']) && (int)$_GET['employee']!==(int)$user['id']) fail(403,'You can only view your own attendance.');
 $selectedEmployeeId=$isAdmin?(isset($_GET['employee'])?positive_id($_GET['employee']):null):(int)$user['id'];
 if ($isAdmin && $selectedEmployeeId===null) {
-    $officeTime='09:30:00';
-    $workTargetSeconds=9*3600;
+    // Late is measured against each employee's own office time / shift (Office timings page).
+    $officeDefault=office_timing_default();
+    $workTargetSeconds=(int)round(duty_hours()*3600);
     $initials=static function(string $name): string { $o=''; foreach (array_slice(preg_split('/\s+/',trim($name))?:[],0,2) as $p) $o.=mb_strtoupper(mb_substr($p,0,1)); return $o?:'?'; };
     $durationLabel=static function(int $seconds): string { $m=max(0,intdiv($seconds,60)); return intdiv($m,60).'h '.($m%60).'m'; };
     $viewDate=$_GET['date']??today();
@@ -34,7 +35,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
         redirect('employee-attendance.php?'.http_build_query(array_filter(['date'=>$viewDate===today()?null:$viewDate,'cal'=>(int)($_POST['cal']??0)?:null])));
     }
 
-    $directory=rows("SELECT u.id,u.full_name,ep.employee_code,ep.department_id,ep.joining_date,d.name AS department_name,
+    $directory=rows("SELECT u.id,u.full_name,ep.employee_code,ep.department_id,ep.joining_date,ep.shift_start,ep.shift_end,ep.shift_label,d.name AS department_name,
         (SELECT MIN(a.login_at) FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND a.login_at>=? AND a.login_at<?+INTERVAL 1 DAY) AS day_login,
         (SELECT CASE WHEN SUM(a.logout_at IS NULL)>0 THEN NULL ELSE MAX(a.logout_at) END FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND a.login_at>=? AND a.login_at<?+INTERVAL 1 DAY) AS day_logout,
         (SELECT SUM(TIMESTAMPDIFF(SECOND,a.login_at,COALESCE(a.logout_at,IF(DATE(a.login_at)=CURDATE(),NOW(),DATE(a.login_at)+INTERVAL 1 DAY)))) FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND a.login_at>=? AND a.login_at<?+INTERVAL 1 DAY) AS day_seconds,
@@ -47,7 +48,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
     $stats=['logged'=>0,'on_time'=>0,'late'=>0,'absent'=>0,'logged_out'=>0];
     foreach ($directory as &$employee) {
         $login=$employee['day_login'];
-        $lateSeconds=$login?max(0,strtotime($login)-strtotime($viewDate.' '.$officeTime)):0;
+        $lateSeconds=$login?login_late_seconds($login,employee_timing($employee)):0;
         $employee['state']=$login?($lateSeconds>0?'late':'on_time'):'absent';
         $employee['late_seconds']=$lateSeconds;
         if ($login) { $stats['logged']++; $stats[$employee['state']]++; if ($employee['day_logout']) $stats['logged_out']++; }
@@ -76,7 +77,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
         for ($d=$calFirst;$d<=$calLast;$d=$d->modify('+1 day')) {
             $date=$d->format('Y-m-d');
             $working=(bool)($schedule[(int)$d->format('N')]??((int)$d->format('N')!==7)) && !isset($holidays[$date]);
-            if (isset($logins[$date])) $status=strtotime($logins[$date])>strtotime($date.' '.$officeTime)?'late':'present';
+            if (isset($logins[$date])) $status=login_late_seconds($logins[$date],employee_timing($calEmployee))>0?'late':'present';
             elseif (($marks[$date]??'')==='leave' || isset($leaveDays[$date])) $status='leave';
             elseif (($marks[$date]??'')==='absent') $status='absent';
             elseif (!$working) $status='off';
@@ -93,7 +94,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
     ?>
 <div class="emp-page at-page" data-at-page>
 <header class="emp-header">
-    <div><p class="emp-crumb">Dashboard / Attendance</p><h2 class="emp-title">Employee attendance</h2><p class="emp-sub">Office time <?= h(date('g:i A',strtotime($officeTime))) ?> · <?= $viewDate===today()?'Live status for today':'Attendance for '.h(date('d M Y',strtotime($viewDate))) ?></p></div>
+    <div><p class="emp-crumb">Dashboard / Attendance</p><h2 class="emp-title">Employee attendance</h2><p class="emp-sub">Office time <?= h(office_range_label($officeDefault['start'],$officeDefault['end'])) ?> · duty <?= h(duty_hours_label()) ?> · <?= $viewDate===today()?'Live status for today':'Attendance for '.h(date('d M Y',strtotime($viewDate))) ?></p></div>
     <div class="st-head-actions">
         <div class="at-date-nav"><a href="<?= h($link(['date'=>$prevDate])) ?>" aria-label="Previous day">‹</a><span><?= $viewDate===today()?'Today · ':'' ?><?= h(date('D, d M Y',strtotime($viewDate))) ?></span><?php if ($viewDate<today()): ?><a href="<?= h($link(['date'=>$nextDate===today()?null:$nextDate])) ?>" aria-label="Next day">›</a><?php else: ?><span class="at-disabled" aria-hidden="true">›</span><?php endif; ?></div>
         <a class="emp-btn emp-btn-outline" href="download-attendance.php"><?= icon('download') ?> Monthly report</a>
@@ -130,7 +131,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
                     </form>
                 </div>
             <?php endif; ?>
-            <div class="at-row-action"><a class="st-btn st-btn-dark" href="employee-attendance.php?employee=<?= (int)$employee['id'] ?>&amp;month=<?= h(substr($viewDate,0,7)) ?>">Open calendar</a><?php if (!$sel): ?><a class="st-btn at-preview" href="<?= h($link(['cal'=>(int)$employee['id']])) ?>#at-calendar">Preview</a><?php endif; ?></div>
+            <div class="at-row-action"><a class="st-btn st-btn-dark" href="employee-attendance.php?employee=<?= (int)$employee['id'] ?>&amp;month=<?= h(substr($viewDate,0,7)) ?>">Open calendar</a><?php if ($sel): ?><span class="at-viewing">Viewing →</span><?php else: ?><a class="st-btn at-preview" href="<?= h($link(['cal'=>(int)$employee['id']])) ?>#at-calendar">Preview</a><?php endif; ?></div>
         </article>
     <?php endforeach; ?>
     </div>

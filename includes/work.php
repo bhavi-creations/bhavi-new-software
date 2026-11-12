@@ -235,3 +235,9 @@ function report_filter(bool $recentByDefault=false): array
     elseif ($reviewStatus!=='') { $where.=' AND s.review_status=?'; $params[]=$reviewStatus; }
     return compact('from','to','allDates','department','employee','reviewStatus','where','params');
 }
+
+/** Task priority label as the admin picked it when assigning: normal, high, urgent. */
+function assignment_priority_label(?string $priority): string
+{
+    return ['urgent' => 'Urgent — today', 'high' => 'High', 'normal' => 'Normal'][(string) $priority] ?? 'Normal';
+}

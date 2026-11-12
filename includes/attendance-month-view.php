@@ -9,12 +9,10 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
 {
     $rate = $calc['rate'];
     $timing = employee_timing(one('SELECT shift_start,shift_end,shift_label FROM employee_profiles WHERE user_id=?', [$employee['id']]) ?: []);
-    $leaveDates = [];
     $cuts = [];
     $adds = [];
     $pending = [];
     foreach ($calc['days'] as $day) {
-        if (in_array($day['status'], ['leave', 'absent'], true)) $leaveDates[] = $day;
         foreach ($day['reviews'] as $review) {
             $amount = money_cents((string) $review['amount']);
             if ($review['status'] === 'pending') $pending[] = $review;
@@ -53,7 +51,6 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
             <span>Leave days (salary cut)</span>
             <strong><?= $calc['leave'] ?> day<?= $calc['leave'] === 1 ? '' : 's' ?></strong>
             <p><?= $calc['leave'] ?> × <?= $money($rate) ?> = <b>−<?= $money($calc['leave_cut']) ?></b></p>
-            <?php if ($leaveDates): ?><div class="am-dates"><?php foreach ($leaveDates as $d): ?><em><?= h(date('d M', strtotime($d['date']))) ?></em><?php endforeach; ?></div><?php endif; ?>
         </article>
         <article class="am-card is-cut">
             <span>Salary cut by admin</span>
@@ -102,7 +99,7 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
             if ($status === 'present' && $late) $class = 'late';
             $isToday = $day['date'] === today();
         ?>
-        <article class="am-day is-<?= h($class) ?><?= $isToday ? ' is-today' : '' ?><?= in_array($status, ['upcoming', 'not_joined'], true) ? ' is-empty' : '' ?>">
+        <article class="am-day is-<?= h($class) ?><?= $isToday ? ' is-today' : '' ?><?= in_array($status, ['upcoming', 'not_joined'], true) && $day['label'] === '' ? ' is-empty' : '' ?><?= $status === 'upcoming' && $day['label'] !== '' ? ' is-planned' : '' ?>">
             <header><b><?= (int) date('j', strtotime($day['date'])) ?></b><small><?= h(date('D, d M', strtotime($day['date']))) ?></small><?php if ($statusText[$status] !== ''): ?><i><?= h($status === 'present' && $late ? 'Late login' : $statusText[$status]) ?></i><?php endif; ?></header>
             <?php if ($day['label'] !== ''): ?><p class="am-label"><?= h($day['label']) ?></p><?php endif; ?>
             <?php if ($day['login']): ?>

@@ -45,6 +45,25 @@ function employee_timing(array $profile): array
     ];
 }
 
+/**
+ * Seconds late for a first login against an employee's timing (0 when on time).
+ * Night shifts (start after end, e.g. 21:00–06:00) are late after the start or after midnight.
+ */
+function login_late_seconds(string $loginAt, array $timing): int
+{
+    $time = strtotime($loginAt);
+    if ($time === false) return 0;
+    $login = (int) date('G', $time) * 3600 + (int) date('i', $time) * 60 + (int) date('s', $time);
+    [$sh, $sm] = array_map('intval', explode(':', $timing['start']));
+    [$eh, $em] = array_map('intval', explode(':', $timing['end']));
+    $start = $sh * 3600 + $sm * 60;
+    $end = $eh * 3600 + $em * 60;
+    if ($start < $end) return max(0, $login - $start);
+    if ($login >= $start) return $login - $start;
+    if ($login < $end) return $login + 86400 - $start;
+    return 0; // before a night shift starts
+}
+
 /** Valid "HH:MM" from a form field, or an error. */
 function office_time_input(string $value, string $label): string
 {

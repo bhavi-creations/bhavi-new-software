@@ -4206,3 +4206,16 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 .sal-approvals{grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}
 .sal-breakdown .is-total dt,.sal-breakdown .is-total dd{color:#fff!important}
 @media (max-width:560px){.sal-page .emp-card{padding:14px}.sal-stats .at-stat strong{font-size:20px}}
+.ed-decision.is-add{background:#f2fbf5}
+.ed-decision.is-cut{background:#fff3f3}
+.am-day.is-planned{background:#fdf6ee;border-style:dashed;border-color:#f0b4b4}
+.am-day.is-planned .am-label{color:#9b1c1c;font-weight:700}
+
+/* Task priority set by the admin (Urgent — today / High) */
+.aw-priority{display:inline-flex;align-items:center;width:max-content;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.01em;vertical-align:middle}
+.aw-priority.is-urgent{background:#fde2e2;color:#b3261e;border:1px solid #f3b4b4}
+.aw-priority.is-high{background:#fff1dc;color:#9a5b00;border:1px solid #f5cf8f}
+.aw-priority.is-big{margin-top:6px;padding:4px 12px;font-size:12px}
+.aw-priority-text.is-urgent{color:#b3261e;font-weight:800}
+.aw-priority-text.is-high{color:#9a5b00;font-weight:800}
+.aw-item.active .aw-priority.is-urgent{background:#fff;color:#b3261e}

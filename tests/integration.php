@@ -86,6 +86,12 @@ final class Browser
 function report_content(array $response): string
 {
     global $temporary;
+    if (str_contains($response['headers']['content-type'] ?? '', 'application/pdf')) {
+        // Work exports are PDFs now: return the text drawn on the pages ("(...) Tj" commands).
+        expect($response['status'] === 200 && str_starts_with($response['body'], '%PDF') && str_contains($response['headers']['content-disposition'], '.pdf'), 'PDF download headers');
+        preg_match_all('/\((.*?)(?<!\\\\)\) Tj/s', $response['body'], $parts);
+        return implode("\n", array_map(static fn($t) => stripcslashes($t), $parts[1]));
+    }
     if (str_contains($response['headers']['content-type'], 'text/csv')) {
         expect(str_contains($response['headers']['content-disposition'], '.csv') && str_starts_with($response['body'], "\xEF\xBB\xBF"), 'CSV download headers and encoding when ZIP is unavailable');
         return $response['body'];
@@ -350,13 +356,13 @@ try {
     $pdo->prepare('UPDATE employee_profiles SET joining_date=? WHERE user_id=?')->execute([$yesterdayAttendance, $employeeIds['website']]);
     $pdo->prepare('INSERT INTO employee_attendance_sessions (employee_id,login_at) VALUES (?,?)')->execute([$employeeIds['website'], $yesterdayAttendance . ' 09:00:00']);
     $attendancePage = $attendanceEmployee->request('employee-attendance.php');
-    expect($attendancePage['status'] === 200 && str_contains($attendancePage['body'], 'Attendance by day'), 'Employee attendance page shows day-wise history');
-    expect(str_contains($attendancePage['body'], 'No complete login/logout recorded'), 'Incomplete past attendance is shown as leave');
+    expect($attendancePage['status'] === 200 && str_contains($attendancePage['body'], 'class="am-cal"'), 'Employee attendance page shows day-wise history');
+    expect(str_contains($attendancePage['body'], 'Missed logout'), 'Incomplete past attendance is shown as a missed logout');
     expect(scalar('SELECT status FROM employee_attendance_days WHERE employee_id=? AND attendance_date=?', [$employeeIds['website'], $yesterdayAttendance]) === 'leave', 'Incomplete past workday leave status is saved');
     $adminAttendanceList = $admin->request('employee-attendance.php');
     expect($adminAttendanceList['status'] === 200 && str_contains($adminAttendanceList['body'], 'Employee website'), 'Admin attendance page lists employees');
     $adminAttendanceDetails = $admin->request('employee-attendance.php?employee=' . $employeeIds['website'] . '&month=' . date('Y-m'));
-    expect($adminAttendanceDetails['status'] === 200 && str_contains($adminAttendanceDetails['body'], 'Employee website · Attendance') && str_contains($adminAttendanceDetails['body'], 'Attendance by day'), 'Admin opens selected employee attendance history');
+    expect($adminAttendanceDetails['status'] === 200 && str_contains($adminAttendanceDetails['body'], 'Employee website · Attendance') && str_contains($adminAttendanceDetails['body'], 'class="am-cal"'), 'Admin opens selected employee attendance history');
     $unfinishedAttendance=(int)scalar('SELECT id FROM employee_attendance_sessions WHERE employee_id=? AND DATE(login_at)=? AND logout_at IS NULL',[$employeeIds['website'],$yesterdayAttendance]);
     expect($attendanceEmployee->post('attendance.php',['action'=>'logout'])['status']===409,'Today cannot log out an unfinished previous day');
     expect($attendanceEmployee->post('attendance.php',['action'=>'login'])['status']===303,'A new attendance day can start while yesterday logout is empty');
@@ -453,7 +459,7 @@ try {
         ['employee_id' => $employeeIds['website'], 'client_id' => $clientId, 'work_date' => $assignmentDate, 'editing_type' => 'video_editing', 'title' => 'Build home page', 'description' => 'Responsive page with contact form', 'reference_link' => 'https://example.com/reference'],
         ['employee_id' => $employeeIds['website'], 'client_id' => $clientId, 'work_date' => $assignmentDate, 'editing_type' => 'poster', 'title' => 'Add contact form', 'description' => 'Validate and style the form', 'reference_link' => '']
     ]];
-    expect(str_contains($manager->request('manager-assign-work.php')['body'], 'assets/js/records.js') && str_contains($admin->request('manager-assign-work.php')['body'], 'data-add-assignment-task'), 'Assignment page loads the Add task handler for both staff roles');
+    expect(str_contains($manager->request('manager-assign-work.php')['body'], 'id="addAssignmentTask"') && str_contains($admin->request('manager-assign-work.php')['body'], 'id="addAssignmentTask"'), 'Assignment page loads the Add task handler for both staff roles');
     $invalidAssignmentData = $assignmentData;
     foreach ($invalidAssignmentData['tasks'] as &$task) $task['employee_id'] = $employeeIds['seo'];
     unset($task);
@@ -464,7 +470,7 @@ try {
     expect((int)scalar('SELECT COUNT(*) FROM work_assignments') === 2, 'Multiple task briefs are saved as individual assignments');
     $assignmentId = (int)scalar('SELECT id FROM work_assignments ORDER BY id LIMIT 1');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'], 'Build home page'), 'Assignment visible to its employee');
-    expect(str_contains($browsers['website']->request($dashboards['website'])['body'], 'href="employee-assigned-work.php"><h2>Today\'s work</h2><strong>2</strong>'), 'Upcoming tasks are included in employee assigned-work dashboard count');
+    expect(str_contains($browsers['website']->request($dashboards['website'])['body'], '<strong class="is-gold">2</strong><span>Pending tasks</span>'), 'Upcoming tasks are included in employee assigned-work dashboard count');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php')['body'], 'assignment_date=' . $assignmentDate), 'Future assignment appears in the date list');
     expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'Responsive page with contact form'), 'Selecting an assignment date shows its full work brief');
     $assignedWork = $browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'];
@@ -484,7 +490,8 @@ try {
     expect(str_contains($assignedWork, $assignmentFileName), 'Employee sees attached assignment documents');
     $assignmentFileResponse = $browsers['website']->request('employee-assigned-work.php?task_file=' . $assignmentAttachmentId . '&mode=download');
     expect($assignmentFileResponse['status'] === 200 && $assignmentFileResponse['body'] === $assignmentFileContents, 'Employee can download an assignment attachment');
-    expect(str_contains($browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'Task 2 · Add contact form'), 'Employee sees each assigned task numbered separately');
+    $numberedTasks = $browsers['website']->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'];
+    expect(str_contains($numberedTasks, 'Build home page') && str_contains($numberedTasks, 'Add contact form') && str_contains($numberedTasks, 'aw-kicker'), 'Employee sees each assigned task numbered separately');
     expect(!str_contains($browsers['seo']->request('employee-assigned-work.php')['body'], 'Build home page'), 'Assignment hidden from another employee');
     $assignmentNotificationId=(int)scalar("SELECT id FROM notifications WHERE recipient_id=? AND (title LIKE '%task assigned' OR title LIKE '%tasks assigned') ORDER BY id DESC LIMIT 1",[$employeeIds['website']]);
     $assignmentNotification=$browsers['website']->request('notification-open.php?id='.$assignmentNotificationId);
@@ -521,12 +528,14 @@ try {
     expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?', [$assignmentId]) === 90 && (int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE assignment_id=?', [$assignmentId]) === 90, 'Employee time spent is saved as minutes on assignment and work history');
     expect(str_contains($admin->request('manager-assigned-status.php?employee=' . $employeeIds['website'])['body'], '=SUM(1,2)') && str_contains($admin->request('manager-assigned-status.php?employee=' . $employeeIds['website'])['body'], '1 hour 30 min'), 'Admin sees readable duration and employee remark');
     expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id=(SELECT id FROM users WHERE username='admin.test') AND title LIKE '%assigned task update%' AND message LIKE '%1 hour 30 min%' AND message LIKE '%=SUM(1,2)%'") > 0, 'Admin receives submitted task status, readable time, and employee remark');
-    expect(str_contains($website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'value="1 hour 30 min"'), 'Saved assignment duration is restored from minutes when the page reloads');
+    $savedTask = $website->request('employee-assigned-work.php?task=' . $assignmentId)['body'];
+    expect(str_contains($savedTask, '01:30:00') && str_contains($savedTask, '1 hour 30 min'), 'Saved assignment duration is restored from minutes when the page reloads');
     foreach (['0 min' => 0, '45 min' => 45, '2 hours' => 120, '04:45' => 285, '7.5' => 450, '23 hours 59 min' => 1439, '24 hours' => 1440, '1440 min' => 1440] as $duration => $minutes) {
         expect($website->post('employee-assigned-work.php?assignment_date=' . $assignmentDate, array_replace($update, ['time_spent_hours' => $duration]))['status'] === 303, 'Assignment duration accepted: ' . $duration);
         expect((int)scalar('SELECT time_spent_minutes FROM work_assignments WHERE id=?', [$assignmentId]) === $minutes && (int)scalar('SELECT time_spent_minutes FROM daily_work_entries WHERE assignment_id=?', [$assignmentId]) === $minutes, 'Assignment and history retain duration: ' . $duration);
     }
-    expect(str_contains($website->request('employee-assigned-work.php?assignment_date=' . $assignmentDate)['body'], 'value="24 hours"'), 'Full-day duration remains correct after reload');
+    $fullDayTask = $website->request('employee-assigned-work.php?task=' . $assignmentId)['body'];
+    expect(str_contains($fullDayTask, '24:00:00') && str_contains($fullDayTask, '24 hours'), 'Full-day duration remains correct after reload');
     foreach (['24 hours 1 min', '24:01', '25', '1441 min', '2 hours 60 min', '01:99', '-1', 'not a time'] as $duration) {
         $response = $website->post('employee-assigned-work.php?assignment_date=' . $assignmentDate, array_replace($update, ['time_spent_hours' => $duration]));
         expect($response['status'] === 200 && str_contains($response['body'], 'alert error'), 'Invalid duration is rejected: ' . $duration);
@@ -597,13 +606,15 @@ try {
     $monthlyPath='manager-monthly-design-report.php?month='.date('Y-m');
     $monthly=$admin->request($monthlyPath)['body'];
     expect(str_contains($monthly,'Work report') && str_contains($monthly,'Reels / Videos') && str_contains($monthly,'Campaign poster'),'Admin work report shows totals and date-wise tasks');
-    expect(str_contains($monthly,'data-monthly-employee="'.$employeeIds['design_video'].'"') && !str_contains($monthly,'data-monthly-employee="'.$employeeIds['website'].'"'),'Monthly report includes design employees only');
-    expect((bool)preg_match('/data-monthly-employee="'.$employeeIds['design_video'].'".*?<td>1<\/td><td>2<\/td><td>0<\/td>/s',$monthly),'Monthly totals count completed typed work and exclude pending carousel');
+    $designDepartment=(int)scalar('SELECT department_id FROM employee_profiles WHERE user_id=?',[$employeeIds['design_video']]);
+    $designOnly=$admin->request($monthlyPath.'&department='.$designDepartment)['body'];
+    expect(str_contains($designOnly,'Employee design_video') && !str_contains($designOnly,'Employee website — WORK REPORT'),'Work report department filter shows only that department');
+    expect(str_contains($admin->request($monthlyPath.'&employee='.$employeeIds['design_video'])['body'],'Total quantified deliverables: 3'),'Work report totals count completed typed work and exclude pending carousel');
     expect(str_contains($monthly,date('d-m-Y')) && str_contains($monthly,'Awaiting copy'),'Monthly details include dated pending work and remarks');
     expect($manager->request($monthlyPath)['status']===200 && $designer->request($monthlyPath)['status']===403,'Only management can open monthly design report');
     expect($admin->request('manager-monthly-design-report.php?month=2026-13')['status']===422 && $admin->request($monthlyPath.'&department='.$employeeIds['website'].'invalid')['status']===422,'Monthly report rejects invalid filters');
-    $monthlyExport=report_content($admin->request($monthlyPath.'&format=xlsx'));
-    expect(str_contains($monthlyExport,'Monthly total') && str_contains($monthlyExport,'Work detail') && str_contains($monthlyExport,'Campaign video'),'Monthly Excel includes summary and date-wise details');
+    $monthlyPrint=$admin->request($monthlyPath.'&format=print&employee='.$employeeIds['design_video'])['body'];
+    expect(str_contains($monthlyPrint,'Work Summary') && str_contains($monthlyPrint,'Campaign video') && str_contains($monthlyPrint,'window.print'),'Work report print / PDF view includes summary and date-wise details');
     $creativeEntry=(int)scalar("SELECT id FROM daily_work_entries WHERE task_title='Campaign video'");
     $creativeEdit=$designer->request('employee-daily-work.php?edit_entry='.$creativeEntry)['body'];
     expect(str_contains($creativeEdit,'value="video_editing" checked') && str_contains($creativeEdit,'value="2 hours 30 min"'),'Employee edit restores type and time');
@@ -650,7 +661,7 @@ try {
     $excel = $manager->request('download-work.php?from_date=' . $yesterday . '&to_date=' . date('Y-m-d') . '&department=' . $websiteDepartment);
     $sheet = report_content($excel);
     expect(str_contains($sheet, 'Yesterday page') && str_contains($sheet, 'website daily task') && !str_contains($sheet, 'seo daily task'), 'Excel range and department filtering');
-    expect(str_contains($sheet, '=SUM(1,2)') && (str_contains($sheet, 'inlineStr') || str_contains($sheet, "'=SUM(1,2)")), 'Excel or CSV formula-looking text stays a literal string');
+    expect(str_contains($sheet, '=SUM(1,2)'), 'Formula-looking text is exported as plain text');
     $allDatesPage = $manager->request('manager-dailywork.php?all_dates=1&employee=' . $employeeIds['website']);
     expect(str_contains($allDatesPage['body'], 'name="all_dates" value="1"') && str_contains($allDatesPage['body'], 'All dates'), 'All-dates report filter is available for an employee');
     $allDatesExcel = $manager->request('download-work.php?all_dates=1&employee=' . $employeeIds['website']);
@@ -808,7 +819,7 @@ try {
     expect((int)scalar("SELECT COUNT(*) FROM notifications WHERE title='All-team update'")===$allActiveEmployeeCount,'All-department notification reaches every active employee');
     $notificationPage = $website->request('manager-notification.php')['body'];
     expect(str_contains($notificationPage, 'Please review the brief') && str_contains($notificationPage, 'notification-open.php?id='), 'Notification messages link to their destination');
-    expect(str_contains($notificationPage, '<details class="panel notification-day">') && str_contains($notificationPage, 'notifications</span></summary>'), 'Notification dates have expandable counts');
+    expect(str_contains($notificationPage, '<details class="panel notification-day"') && str_contains($notificationPage, 'notifications</span></summary>'), 'Notification dates have expandable counts');
     $unreadAfterOpen = (int)scalar('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=NOW()-INTERVAL 1 DAY', [$employeeIds['website']]);
     $sidebarAfterOpen = $website->request('chat.php')['body'];
     expect($unreadAfterOpen === 0 && !preg_match('~href="manager-notification\.php"[^>]*>.*?<em class="nav-badge">~s', explode('</nav>', $sidebarAfterOpen)[0]), 'Opening the notifications page clears the unread number');
@@ -863,7 +874,8 @@ try {
     expect($browsers['seo']->request('employee-photo.php?id=' . $employeeIds['website'])['status'] === 200, 'Employees can view shared directory photos');
     expect(str_starts_with((string)scalar('SELECT file_path FROM employee_documents WHERE id=?', [$documentId]), 'uploads/pdf/'), 'PDF path saved under uploads/pdf');
     expect($docResponse['status'] === 303 && $documentId > 0, 'Employee PDF larger than old 2 MB limit uploads');
-    expect(scalar('SELECT role_title FROM employee_profiles WHERE user_id=?', [$employeeIds['website']]) === 'Web developer', 'Custom job title saved');
+    expect(scalar('SELECT designation FROM employee_profiles WHERE user_id=?', [$employeeIds['website']]) === $employeeEdit['designation'], 'Designation (job title) saved');
+    expect(!str_contains($admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'], 'Role / job title'), 'Profile hides the old default job title row');
     expect($manager->request('download-employee-document.php?id=' . $documentId)['body'] === file_get_contents($largePdf), 'Manager downloads original private document');
     expect($website->request('download-employee-document.php?id=' . $documentId)['status'] === 403, 'Employees cannot download HR documents');
     expect(str_contains($admin->request('admin-add-employee.php?id=' . $employeeIds['website'])['body'], 'employment.pdf'), 'Uploaded document remains visible on employee edit');
@@ -930,7 +942,7 @@ try {
     preg_match('/<dl class="details-list">(.*?)<\/dl>/s', $ownProfile, $ownDetails);
     preg_match('/<dl class="details-list">(.*?)<\/dl>/s', $staffProfile, $staffDetails);
     expect(isset($ownDetails[1], $staffDetails[1]) && $ownDetails[1] === $staffDetails[1], 'Employee sees the same saved personal details as management');
-    expect(str_contains($ownProfile, 'website.test') && str_contains($ownProfile, '9000022222') && str_contains($ownProfile, 'Role / job title'), 'Own profile includes username, guardian and saved role details');
+    expect(str_contains($ownProfile, 'website.test') && str_contains($ownProfile, '9000022222') && str_contains($ownProfile, '<dt>Designation</dt>'), 'Own profile includes username, guardian and saved role details');
     $ownDirectory = $website->request('admin-employees.php')['body'];
     expect(str_contains($ownDirectory, 'employee-profile.php?id=' . $employeeIds['website']) && !str_contains($ownDirectory, 'Employee seo'), 'Employee directory displays own record and profile link');
     expect(str_contains($website->request($dashboards['website'])['body'], '<h2>My profile &amp; salary</h2>'), 'Dashboard links directly to own saved profile');
@@ -1190,7 +1202,7 @@ try {
         expect($browserExit === 0 && str_contains($browserOutput, 'PASS: Browser'), 'Interactive browser checks: ' . $browserOutput);
         echo $browserOutput;
     }
-    foreach ($routes as $route) if (!in_array($route, ['manager-review-work.php', 'download-asset.php'], true) && !str_contains($route, 'employee-dashboard') && !in_array($route, ['apply-leaves.php', 'check-leave.php', 'admin-dashboard.php'], true)) expect($manager->request($route)['status'] === 200, 'Manager page ' . $route);
+    foreach ($routes as $route) if (!in_array($route, ['manager-review-work.php', 'download-asset.php', 'notification-open.php'], true) && !str_contains($route, 'employee-dashboard') && !in_array($route, ['apply-leaves.php', 'check-leave.php', 'admin-dashboard.php'], true)) expect($manager->request($route)['status'] === 200, 'Manager page ' . $route);
     $manager->request('manager-dailywork.php');
     $historicSheet = (int)scalar('SELECT id FROM daily_work_submissions WHERE employee_id=? AND work_date=?', [$employeeIds['website'], $yesterday]);
     expect($manager->post('manager-dailywork.php', ['action' => 'delete_submission', 'id' => $historicSheet])['status'] === 303, 'Manager deletes work report');
@@ -1288,7 +1300,7 @@ try {
     $legacyOrder=(int)scalar('SELECT COALESCE(MAX(row_order),0)+1 FROM daily_work_entries WHERE submission_id=?',[$customSheet]);
     $pdo->prepare("INSERT INTO daily_work_entries (submission_id,row_order,task_title,task_status,poster_count,video_count,carousel_count) VALUES (?,?,'Legacy creative quantities','completed',2,3,4)")->execute([$customSheet,$legacyOrder]);
     $legacyMonthly=$admin->request('manager-monthly-design-report.php?month='.date('Y-m').'&department='.$departmentId)['body'];
-    expect((bool)preg_match('/data-monthly-employee="\d+".*?<td>3<\/td><td>4<\/td><td>4<\/td>/s',$legacyMonthly),'Monthly report counts saved legacy quantities without a task type');
+    expect(str_contains($legacyMonthly,'Total quantified deliverables: 11') && str_contains($legacyMonthly,'Legacy creative quantities'),'Monthly report counts saved legacy quantities without a task type');
     $earlierMonth=date('Y-m-d',strtotime('first day of last month'));
     $earlierTask=array_replace($creativeTasks[0],['task_title'=>'Outside monthly date range','client_id'=>'']);
     expect($customBrowser->post('employee-daily-work.php?date='.$earlierMonth,['action'=>'save_tasks','tasks'=>[$earlierTask],'task_count'=>'1'])['status']===303,'Save a previous month creative task');

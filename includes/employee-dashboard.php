@@ -455,6 +455,11 @@ if (
              * Page refresh chesthe timer reset avvakudadhu.
              */
 
+            $pausedOthers = rows('SELECT id,title FROM work_assignments WHERE employee_id=? AND id<>? AND deleted_at IS NULL AND completed_at IS NULL AND timer_resumed_at IS NOT NULL FOR UPDATE', [$user['id'], $assignmentId]);
+            foreach ($pausedOthers as $other) {
+                query('UPDATE work_assignments SET timer_accumulated_seconds=timer_accumulated_seconds+GREATEST(0,TIMESTAMPDIFF(SECOND,timer_resumed_at,NOW())), timer_resumed_at=NULL WHERE id=?', [$other['id']]);
+            }
+
             if (empty($assignment['started_at'])) {
                 // First start: the clock begins now.
                 query("UPDATE work_assignments SET started_at=NOW(), timer_resumed_at=NOW(), timer_accumulated_seconds=0, completed_at=NULL, time_spent_seconds=NULL, time_spent_minutes=0, status='pending' WHERE id=?", [$assignmentId]);
@@ -468,6 +473,7 @@ if (
             }
 
             db()->commit();
+            if ($pausedOthers) $timerMessage .= ' "' . implode('", "', array_column($pausedOthers, 'title')) . '" was paused — you can resume it later.';
             flash($timerMessage);
             redirect('employee-assigned-work.php?task=' . $assignmentId);
         }
@@ -849,13 +855,9 @@ if (
 
 
 
-            flash(
-                'Task finished and submitted successfully.'
-            );
-
-
-
-            redirect('employee-assigned-work.php?task=' . $assignmentId);
+            $nextTask = one("SELECT id,title FROM work_assignments WHERE employee_id=? AND deleted_at IS NULL AND status<>'completed' AND completed_at IS NULL ORDER BY started_at IS NULL, FIELD(priority,'urgent','high','normal'), work_date, id LIMIT 1", [$user['id']]);
+            flash('Task finished and submitted successfully.' . ($nextTask ? ' Next task: "' . $nextTask['title'] . '" — click Start work when you begin.' : ' All your tasks are done.'));
+            redirect('employee-assigned-work.php?task=' . ($nextTask ? (int) $nextTask['id'] : $assignmentId));
 
         }
 
@@ -2637,11 +2639,11 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
             <article class="ed-task <?= $dueClass ?>">
                 <span class="ed-task-icon<?= $video?' is-video':'' ?>"><?= icon($video?'video':'document') ?></span>
                 <div class="ed-task-text">
-                    <strong><?= h($task['title']) ?></strong>
+                    <strong><?= h($task['title']) ?><?php if (in_array($task['priority'] ?? 'normal', ['urgent', 'high'], true) && $dueClass !== 'is-done'): ?> <span class="aw-priority is-<?= h($task['priority']) ?>"><?= h(assignment_priority_label($task['priority'])) ?></span><?php endif; ?></strong>
                     <small><?= h(implode(' · ',array_filter([$task['client_name']??'',$type]))) ?><?php if ($refOk): ?> · <a href="<?= h($ref) ?>" target="_blank" rel="noopener noreferrer">Reference ↗</a><?php endif; ?></small>
                 </div>
                 <span class="ed-chip <?= $dueClass ?>"><?= h($dueLabel) ?></span>
-                <?php if ($dueClass!=='is-done'): ?><a class="ed-task-btn" href="employee-assigned-work.php?assignment_date=<?= h($task['work_date']) ?>">Submit work</a><?php endif; ?>
+                <?php if ($dueClass!=='is-done'): ?><a class="ed-task-btn" href="employee-assigned-work.php?task=<?= (int) $task['id'] ?>">Open task</a><?php endif; ?>
             </article>
         <?php endforeach; ?>
         <?php if (count($assignments)>count($taskList)): ?><a class="ed-more" href="employee-assigned-work.php">+ <?= count($assignments)-count($taskList) ?> more tasks</a><?php endif; ?>
@@ -2690,7 +2692,7 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
                 <strong><?= $edMonth && $edMonth['salary'] ? h(paise_label($edMonth['net'])) : 'No salary set' ?></strong>
                 <?php if ($edMonth && $edMonth['salary']): ?><p><?= $edMonth['present'] ?> present · <?= $edMonth['leave'] ?> leave<?= $edMonth['overtime_add'] ? ' · +' . h(paise_label($edMonth['overtime_add'])) . ' extra' : '' ?><?= $edMonth['missed_cut'] ? ' · −' . h(paise_label($edMonth['missed_cut'])) . ' cut' : '' ?></p><?php endif; ?>
                 <?php foreach ($edDecisions as $edD): $edAmt = money_cents((string) $edD['amount']); $edOt = $edD['kind'] === 'overtime'; ?>
-                    <span class="ed-decision is-<?= h($edD['status']) ?>"><b><?= h(date('d M', strtotime($edD['work_date']))) ?></b> <?php if ($edD['status'] === 'pending'): ?><?= $edOt ? 'Extra work' : 'Missed logout' ?> · waiting for admin<?php elseif ($edD['status'] === 'approved' && $edAmt > 0): ?><em class="<?= $edOt ? 'is-pos' : 'is-neg' ?>">Admin <?= $edOt ? 'added +' : 'cut −' ?><?= h(paise_label($edAmt)) ?></em><?php else: ?>Admin: <?= $edOt ? 'extra not approved' : 'no cut' ?><?php endif; ?><?php if ($edD['remark'] !== ''): ?> — “<?= h($edD['remark']) ?>”<?php endif; ?></span>
+                    <span class="ed-decision is-<?= h($edD['status']==='approved' && $edAmt>0 ? ($edOt?'add':'cut') : $edD['status']) ?>"><b><?= h(date('d M', strtotime($edD['work_date']))) ?></b> <?php if ($edD['status'] === 'pending'): ?><?= $edOt ? 'Extra work' : 'Missed logout' ?> · waiting for admin<?php elseif ($edD['status'] === 'approved' && $edAmt > 0): ?><em class="<?= $edOt ? 'is-pos' : 'is-neg' ?>">Admin <?= $edOt ? 'added +' : 'cut −' ?><?= h(paise_label($edAmt)) ?></em><?php else: ?>Admin: <?= $edOt ? 'extra not approved' : 'no cut' ?><?php endif; ?><?php if ($edD['remark'] !== ''): ?> — “<?= h($edD['remark']) ?>”<?php endif; ?></span>
                 <?php endforeach; ?>
             </span>
             <span class="ed-tile-arrow">→</span>
@@ -3263,7 +3265,7 @@ $awTasks = rows("SELECT a.*, c.client_name, c.logo_path AS client_logo, u.full_n
     JOIN users u ON u.id=a.assigned_by
     WHERE a.employee_id=? AND a.deleted_at IS NULL
       AND (a.status<>'completed' OR a.work_date>=DATE_SUB(CURDATE(), INTERVAL 30 DAY))
-    ORDER BY a.work_date, a.id", [$user['id']]);
+    ORDER BY a.work_date, FIELD(a.priority,'urgent','high','normal'), a.id", [$user['id']]);
 $awTodayTs = strtotime(today());
 $awGroup = static fn(array $t): string => ($t['status'] === 'completed' || !empty($t['completed_at'])) ? 'done' : (!empty($t['started_at']) ? 'progress' : 'todo');
 $awCounts = ['todo' => 0, 'progress' => 0, 'done' => 0];
@@ -3360,6 +3362,7 @@ $awBrief = static function (?string $text): string {
                     <span class="aw-num"><?= $g === 'done' ? '✓' : $awNum ?></span>
                     <span class="aw-item-text">
                         <strong><?= h($t['title']) ?></strong>
+                        <?php if (in_array($t['priority'] ?? 'normal', ['urgent', 'high'], true) && $g !== 'done'): ?><span class="aw-priority is-<?= h($t['priority']) ?>"><?= h(assignment_priority_label($t['priority'])) ?></span><?php endif; ?>
                         <small><?= h(implode(' · ', array_filter([$t['client_name'] ?: 'Internal work', $awTypeLabel($t['editing_type'] ?? null)]))) ?></small>
                         <em class="aw-state is-<?= $g ?>"><?= $g === 'done' ? 'Done' : ($g === 'progress' ? (empty($t['timer_resumed_at']) ? 'Paused' : 'Working') : 'Not started') ?></em>
                     </span>
@@ -3381,6 +3384,7 @@ $awBrief = static function (?string $text): string {
                     <div>
                         <p class="aw-kicker">Task <?= $awPosition ?> of <?= count($awTasks) ?></p>
                         <h2 class="aw-task-title"><?= h($sel['title']) ?></h2>
+                        <?php if (in_array($sel['priority'] ?? 'normal', ['urgent', 'high'], true) && $g !== 'done'): ?><span class="aw-priority is-<?= h($sel['priority']) ?> is-big"><?= $sel['priority'] === 'urgent' ? '⚠ ' : '' ?><?= h(assignment_priority_label($sel['priority'])) ?></span><?php endif; ?>
                     </div>
                     <?php if ($g === 'done'): ?><span class="aw-chip is-done">Completed</span><?php elseif ($late): ?><span class="aw-chip is-late">Overdue · <?= $late ?> <?= $late === 1 ? 'day' : 'days' ?></span><?php elseif ($sel['work_date'] === today()): ?><span class="aw-chip is-today">Due today</span><?php else: ?><span class="aw-chip">Due <?= h(date('j M', strtotime($sel['work_date']))) ?></span><?php endif; ?>
                 </div>
@@ -3388,7 +3392,7 @@ $awBrief = static function (?string $text): string {
                     <div><dt>Client</dt><dd><?= h($sel['client_name'] ?: 'Internal work') ?></dd></div>
                     <div><dt>Type</dt><dd><?= h($awTypeLabel($sel['editing_type'] ?? null) ?: 'Not specified') ?></dd></div>
                     <div><dt>Work date</dt><dd><?= h(date('j M Y', strtotime($sel['work_date']))) ?></dd></div>
-                    <div><dt>Assigned by</dt><dd><?= h($sel['assigned_by_name']) ?></dd></div>
+                    <div><dt>Priority</dt><dd class="aw-priority-text is-<?= h($sel['priority'] ?? 'normal') ?>"><?= h(assignment_priority_label($sel['priority'] ?? null)) ?></dd></div>
                 </dl>
             </section>
 
@@ -3440,7 +3444,7 @@ $awBrief = static function (?string $text): string {
                     </section>
 
                     <section class="aw-card aw-finish">
-                        <h3><?= $g === 'done' ? 'Submitted' : 'Finished?' ?></h3>
+                        <h3><?= $g === 'done' ? 'Submitted' : (!empty($sel['started_at']) ? 'Finished this task?' : 'Step 1: click Start work') ?></h3>
                         <?php if ($g === 'done'): ?>
                             <p class="aw-done-note">✓ Sent to your manager<?= $elapsed ? ' · ' . h(employee_assignment_duration($elapsed)) : '' ?></p>
                         <?php elseif (!empty($sel['started_at'])): ?>
@@ -3448,11 +3452,12 @@ $awBrief = static function (?string $text): string {
                                 <input type="hidden" name="action" value="end_assignment"><input type="hidden" name="assignment_id" value="<?= (int) $sel['id'] ?>">
                                 <label class="sr-only" for="aw-remark">Remark</label>
                                 <textarea id="aw-remark" name="remark" maxlength="5000" placeholder="Output link, what you finished, or anything your manager should know"><?= h($sel['employee_remark'] ?? '') ?></textarea>
-                                <button class="aw-primary-btn" type="submit">Submit this task</button>
+                                <button class="aw-primary-btn" type="submit">✓ Complete &amp; submit</button>
                             </form>
+                            <p class="aw-hint">After you submit, your next task opens automatically.</p>
                         <?php else: ?>
-                            <a class="aw-primary-btn" href="employee-daily-work.php?assignment=<?= (int) $sel['id'] ?>#add-work">Submit this task</a>
-                            <p class="aw-hint">Didn’t use the timer? Submit with your own time on the daily work page.</p>
+                            <p class="aw-hint">Click <b>▶ Start work</b> when you begin. When the work is done, click <b>✓ Complete &amp; submit</b> here.</p>
+                            <a class="aw-outline-btn" href="employee-daily-work.php?assignment=<?= (int) $sel['id'] ?>#add-work">Already done without the timer? Submit with your own time</a>
                         <?php endif; ?>
                         <a class="aw-outline-btn" href="chat.php">Ask manager a question</a>
                     </section>

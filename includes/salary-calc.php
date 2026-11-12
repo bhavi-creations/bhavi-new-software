@@ -162,18 +162,17 @@ function salary_month(array $employee, string $month): array
         $label = '';
         if ($date < $employee['joining_date'] || ($employee['relieving_date'] && $date > $employee['relieving_date'])) {
             $status = 'not_joined';
-        } elseif (!$row) {
-            $status = 'no_salary';
         } elseif ($session) {
             $status = (int) $session['open_sessions'] ? ($date < $today ? 'missed_logout' : 'working') : 'present';
         } elseif ($date > $today) {
             $status = 'upcoming';
+            if (isset($leaves[$date])) $label = $leaves[$date] . ' · approved leave';
         } elseif (!$isWorking) {
             $status = isset($holidays[$date]) ? 'holiday' : 'off';
             $label = $holidays[$date] ?? '';
         } elseif (isset($leaves[$date]) || in_array($marks[$date] ?? '', ['leave', 'absent'], true)) {
             $status = 'leave';
-            $label = $leaves[$date] ?? (($marks[$date] ?? '') === 'absent' ? 'Marked absent' : 'Marked leave');
+            $label = isset($leaves[$date]) ? $leaves[$date] . ' · approved leave' : (($marks[$date] ?? '') === 'absent' ? 'Marked absent' : 'Marked leave');
         } elseif ($date === $today) {
             $status = 'today';
         } else {
