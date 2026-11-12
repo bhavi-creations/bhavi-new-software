@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 36;
+const PORTAL_SCHEMA_VERSION = 37;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -497,6 +497,28 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (36)');
+        // My desk (admin): richer to-dos, money to pay, and the daily WhatsApp summary settings.
+        $addColumn('todo_tasks', 'category', "VARCHAR(10) NOT NULL DEFAULT 'office'");
+        $addColumn('todo_tasks', 'client_id', 'BIGINT UNSIGNED NULL');
+        $addColumn('todo_tasks', 'due_time', 'TIME NULL');
+        $addColumn('todo_tasks', 'is_urgent', 'TINYINT(1) NOT NULL DEFAULT 0');
+        $addColumn('todo_tasks', 'auto_key', 'VARCHAR(80) NULL');
+        if (!$pdo->query("SHOW INDEX FROM todo_tasks WHERE Key_name='uq_todo_auto'")->fetch()) $pdo->exec('ALTER TABLE todo_tasks ADD UNIQUE KEY uq_todo_auto (user_id,auto_key)');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS office_payments (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(200) NOT NULL,
+            category ENUM('vendor','freelancer','rent','utility','salary','other') NOT NULL DEFAULT 'other',
+            note VARCHAR(255) NOT NULL DEFAULT '',
+            amount DECIMAL(12,2) NOT NULL,
+            due_date DATE NOT NULL,
+            paid_at DATETIME NULL,
+            created_by BIGINT UNSIGNED NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_office_payment_due (paid_at,due_date),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB");
+        $pdo->exec("INSERT IGNORE INTO portal_settings (setting_key,setting_value) VALUES ('wa_summary_enabled','1'),('wa_summary_time','20:00'),('wa_summary_items','work,late,overdue,money')");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (37)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

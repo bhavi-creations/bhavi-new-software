@@ -73,7 +73,7 @@ $formatMinutes=static function(int $minutes): string { return intdiv($minutes,60
         <a class="admin-metric-card" href="admin-employees.php"><span class="admin-metric-icon">♙</span><span class="admin-metric-label">Active employees</span><strong><?= $activeEmployeeCount ?></strong><small>View employee team</small></a>
         <a class="admin-metric-card" href="manager-assigned-status.php"><span class="admin-metric-icon">▣</span><span class="admin-metric-label">Active projects</span><strong><?= $activeProjectCount ?></strong><small>Clients with unfinished tasks</small></a>
         <a class="admin-metric-card" href="manager-assigned-status.php"><span class="admin-metric-icon">✓</span><span class="admin-metric-label">Tasks completed</span><strong><?= (int)$todayWork['completed_count'] ?><small class="admin-metric-total"> / <?= (int)$todayWork['task_count'] ?></small></strong><span class="admin-metric-progress"><i style="width:<?= (int)$todayWork['task_count']?min(100,(int)round(100*(int)$todayWork['completed_count']/(int)$todayWork['task_count'])):0 ?>%"></i></span></a>
-        <a class="admin-metric-card" href="admin-todo.php"><span class="admin-metric-icon">☑</span><span class="admin-metric-label">To Do</span><strong><?= count_value("SELECT COUNT(*) FROM todo_tasks WHERE user_id=? AND status='open'",[$user['id']]) ?></strong><small>Pending tasks · open your list</small></a>
+        <a class="admin-metric-card" href="admin-desk.php"><span class="admin-metric-icon">☑</span><span class="admin-metric-label">To Do</span><strong><?= count_value("SELECT COUNT(*) FROM todo_tasks WHERE user_id=? AND status='open'",[$user['id']]) ?></strong><small>Pending tasks · open your list</small></a>
     </section>
 
     <div class="admin-dashboard-main-grid">

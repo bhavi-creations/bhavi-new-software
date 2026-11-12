@@ -212,7 +212,7 @@ try {
     $adminDashboard=$admin->request('admin-dashboard.php')['body'];
     expect(str_contains($adminDashboard, 'href="employee-attendance.php"'), 'Admin sidebar links to employee attendance');
     expect(str_contains($adminDashboard,'Today at Bhavi') && str_contains($adminDashboard,'admin-metric-grid') && str_contains($adminDashboard,'Project progress') && str_contains($adminDashboard,'Announcements'),'Admin dashboard renders the image-inspired management overview');
-    expect(str_contains($adminDashboard,'href="admin-todo.php"') && str_contains($adminDashboard,'To Do') && str_contains($adminDashboard,'Daily Work Report'),'Admin dashboard shows To Do card and sectioned sidebar');
+    expect(str_contains($adminDashboard,'href="admin-desk.php"') && str_contains($adminDashboard,'To Do') && str_contains($adminDashboard,'Daily Work Report'),'Admin dashboard shows To Do card and sectioned sidebar');
     $admin->request('admin-todo.php');
     expect($admin->post('admin-todo.php',['action'=>'save','tasks'=>[['id'=>'','title'=>'Regression todo one','expected_date'=>'2026-01-10','end_date'=>'2026-01-12','remark'=>'Needs follow-up'],['id'=>'','title'=>'Regression todo two','expected_date'=>'','end_date'=>'','remark'=>'']]])['status']===303,'To Do tasks save');
     $todoOneId=(int)scalar("SELECT id FROM todo_tasks WHERE title='Regression todo one'");
