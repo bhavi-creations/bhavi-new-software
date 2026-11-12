@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/includes/layout.php';
 require_once __DIR__.'/includes/salary-calc.php';
+require_once __DIR__.'/includes/attendance-month-view.php';
 $user=require_roles(['admin','employee']);
 function attendance_duration_label($seconds): string
 {
@@ -116,7 +117,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
     <div class="at-rows">
     <?php foreach ($directory as $employee): $sel=(int)$employee['id']===$calId; $seconds=(int)$employee['day_seconds']; $pct=min(100,(int)round(100*$seconds/$workTargetSeconds)); $lateMin=intdiv((int)$employee['late_seconds'],60); ?>
         <article class="at-row at-<?= $employee['state'] ?><?= $sel?' is-selected':'' ?>" data-at-row data-state="<?= $employee['state'] ?>">
-            <div class="at-person"><span class="aw-avatar"><?= h($initials($employee['full_name'])) ?></span><div><strong><?= h($employee['full_name']) ?></strong><small><?= h($employee['department_name']) ?><?= $employee['employee_code']?' · '.h($employee['employee_code']):'' ?></small></div></div>
+            <div class="at-person"><span class="aw-avatar"><?= h($initials($employee['full_name'])) ?></span><div><a class="at-name-link" href="employee-attendance.php?employee=<?= (int)$employee['id'] ?>&amp;month=<?= h(substr($viewDate,0,7)) ?>"><strong><?= h($employee['full_name']) ?></strong></a><small><?= h($employee['department_name']) ?><?= $employee['employee_code']?' · '.h($employee['employee_code']):'' ?></small></div></div>
             <?php if ($employee['day_login']): ?>
                 <div class="at-time"><strong><?= h(date('g:i A',strtotime($employee['day_login']))) ?></strong><?php if ($lateMin>0): ?><span class="at-badge <?= $lateMin>=60?'is-bad':'' ?>">Late <?= $lateMin>=60?intdiv($lateMin,60).'h '.($lateMin%60).'m':$lateMin.'m' ?></span><?php else: ?><span class="at-badge is-ok">On time</span><?php endif; ?></div>
                 <div class="at-work"><span class="at-work-top"><span class="at-dot <?= $employee['day_logout']?'is-out':'' ?>"><?= $employee['day_logout']?'Logged out '.h(date('g:i A',strtotime($employee['day_logout']))):($viewDate===today()?'Working':'No logout') ?></span><b><?= h($durationLabel($seconds)) ?></b></span><span class="at-bar <?= $lateMin>0?'is-late':'' ?>"><i style="width:<?= $pct ?>%"></i></span></div>
@@ -129,7 +130,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
                     </form>
                 </div>
             <?php endif; ?>
-            <div class="at-row-action"><?php if ($sel): ?><span class="at-viewing">Viewing →</span><?php else: ?><a class="st-btn" href="<?= h($link(['cal'=>(int)$employee['id']])) ?>#at-calendar">Calendar</a><?php endif; ?></div>
+            <div class="at-row-action"><a class="st-btn st-btn-dark" href="employee-attendance.php?employee=<?= (int)$employee['id'] ?>&amp;month=<?= h(substr($viewDate,0,7)) ?>">Open calendar</a><?php if (!$sel): ?><a class="st-btn at-preview" href="<?= h($link(['cal'=>(int)$employee['id']])) ?>#at-calendar">Preview</a><?php endif; ?></div>
         </article>
     <?php endforeach; ?>
     </div>
@@ -137,7 +138,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
 
 <?php if ($calEmployee): $prevMonth=$calFirst->modify('-1 month')->format('Y-m'); $nextMonth=$calFirst->modify('+1 month')->format('Y-m'); ?>
 <aside class="emp-card at-cal" id="at-calendar">
-    <div class="at-cal-person"><span class="aw-avatar"><?= h($initials($calEmployee['full_name'])) ?></span><div><strong><?= h($calEmployee['full_name']) ?></strong><small>Monthly attendance · <a href="employee-attendance.php?employee=<?= $calId ?>&amp;month=<?= h($calMonth) ?>">Full history</a></small></div></div>
+    <div class="at-cal-person"><span class="aw-avatar"><?= h($initials($calEmployee['full_name'])) ?></span><div><strong><?= h($calEmployee['full_name']) ?></strong><small>Monthly attendance · <a href="employee-attendance.php?employee=<?= $calId ?>&amp;month=<?= h($calMonth) ?>">Open full calendar with login, logout &amp; salary →</a></small></div></div>
     <div class="at-cal-nav"><a href="<?= h($link(['cal_month'=>$prevMonth])) ?>#at-calendar" aria-label="Previous month">‹</a><h3><?= h($calFirst->format('F Y')) ?></h3><?php if ($nextMonth<=date('Y-m')): ?><a href="<?= h($link(['cal_month'=>$nextMonth])) ?>#at-calendar" aria-label="Next month">›</a><?php else: ?><span class="at-disabled">›</span><?php endif; ?></div>
     <div class="at-cal-grid">
         <?php foreach (['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as $i=>$wd): ?><span class="at-cal-wd<?= $i===0?' is-sun':'' ?>"><?= $wd ?></span><?php endforeach; ?>
@@ -165,88 +166,41 @@ if ($isAdmin && $selectedEmployeeId===null) {
 <?php page_end(); exit;
 }
 $attendanceEmployee=$isAdmin
-    ?one("SELECT u.id,u.full_name,ep.joining_date,ep.department_id FROM users u JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.role='employee' AND u.deleted_at IS NULL",[$selectedEmployeeId])
-    :['id'=>$user['id'],'full_name'=>$user['full_name'],'joining_date'=>one('SELECT joining_date FROM employee_profiles WHERE user_id=?',[$user['id']])['joining_date']??null,'department_id'=>$user['department_id']];
+    ?salary_employee((int)$selectedEmployeeId)
+    :salary_employee((int)$user['id']);
 if (!$attendanceEmployee || !$attendanceEmployee['joining_date']) fail(404,'Employee not found.');
 $currentMonth=date('Y-m');
 $month=$_GET['month']??$currentMonth;
 if (!is_string($month) || !preg_match('/^\d{4}-\d{2}$/D',$month) || DateTimeImmutable::createFromFormat('!Y-m',$month)?->format('Y-m')!==$month || $month>$currentMonth) {
     fail(422,'Choose a valid attendance month.');
 }
-$first=new DateTimeImmutable($month.'-01');
-$last=$first->modify('last day of this month');
-$end=$last;
-$joinDate=new DateTimeImmutable($attendanceEmployee['joining_date']);
-$start=$first;
-$schedule=array_column(rows('SELECT iso_weekday,is_working_day FROM department_weekly_schedule WHERE department_id=?',[$attendanceEmployee['department_id']]),'is_working_day','iso_weekday');
-$holidays=array_fill_keys(array_column(rows('SELECT holiday_date FROM holidays WHERE is_published=1 AND holiday_date BETWEEN ? AND ?',[$start->format('Y-m-d'),$end->format('Y-m-d')]),'holiday_date'),true);
-$sessions=rows("SELECT DATE(login_at) AS attendance_date,MIN(login_at) AS first_login,CASE WHEN SUM(logout_at IS NULL)>0 THEN NULL ELSE MAX(logout_at) END AS last_logout,SUM(logout_at IS NULL) AS open_sessions,SUM(TIMESTAMPDIFF(SECOND,login_at,COALESCE(logout_at,IF(DATE(login_at)=CURDATE(),NOW(),DATE(login_at)+INTERVAL 1 DAY)))) AS total_seconds FROM employee_attendance_sessions WHERE employee_id=? AND login_at>=? AND login_at<? GROUP BY DATE(login_at) ORDER BY attendance_date",[$attendanceEmployee['id'],$start->format('Y-m-d 00:00:00'),$end->modify('+1 day')->format('Y-m-d 00:00:00')]);
-$sessionByDate=[];
-foreach ($sessions as $session) $sessionByDate[$session['attendance_date']]=$session;
-$leaveRequests=rows("SELECT l.from_date,l.to_date,l.status,t.name AS leave_type FROM leave_requests l JOIN leave_types t ON t.id=l.leave_type_id WHERE l.employee_id=? AND l.status<>'cancelled' AND l.from_date<=? AND l.to_date>=? ORDER BY l.from_date,l.id",[$attendanceEmployee['id'],$end->format('Y-m-d'),$start->format('Y-m-d')]);
-$leaveByDate=[];
-foreach ($leaveRequests as $leave) {
-    $from=max($start->format('Y-m-d'),$leave['from_date']);
-    $to=min($end->format('Y-m-d'),$leave['to_date']);
-    for ($day=new DateTimeImmutable($from);$day<=new DateTimeImmutable($to);$day=$day->modify('+1 day')) $leaveByDate[$day->format('Y-m-d')][]=$leave;
+attendance_sync_reviews((int)$attendanceEmployee['id']);
+$calc=salary_month($attendanceEmployee,$month);
+// Keep the saved day status in step with the calendar (used by reports).
+foreach ($calc['days'] as $day) {
+    $saved=['present'=>'present','leave'=>'leave','absent'=>'leave','missed_logout'=>'leave','today'=>'pending','working'=>'pending'][$day['status']]??null;
+    if ($saved) query('INSERT INTO employee_attendance_days (employee_id,attendance_date,status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status)',[$attendanceEmployee['id'],$day['date'],$saved]);
 }
-$dayRows=[];
-$presentCount=0;
-$leaveCount=0;
-$pendingCount=0;
-if ($start<=$end) {
-    for ($day=$start;$day<=$end;$day=$day->modify('+1 day')) {
-        $date=$day->format('Y-m-d');
-        $session=$sessionByDate[$date]??null;
-        $isWorking=(bool)($schedule[(int)$day->format('N')]??((int)$day->format('N')!==7)) && !isset($holidays[$date]);
-        if ($date<$joinDate->format('Y-m-d')) {
-            $status='not_joined';
-        } elseif ($date>today()) {
-            $status='upcoming';
-        } elseif ($session && $session['first_login'] && $session['last_logout'] && !(int)$session['open_sessions']) {
-            $status='present';
-        } elseif ($date<today() && $isWorking) {
-            $status='leave';
-        } elseif ($date===today() && $session && (int)$session['open_sessions']) {
-            $status='pending';
-        } elseif ($date===today()) {
-            $status='pending';
-        } elseif (!$isWorking) {
-            $status=isset($holidays[$date])?'holiday':'weekly_off';
-        } else {
-            $status='leave';
-        }
-        if (in_array($status,['present','leave','pending'],true)) {
-            query('INSERT INTO employee_attendance_days (employee_id,attendance_date,status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status)',[$attendanceEmployee['id'],$date,$status]);
-        }
-        if ($status==='present') $presentCount++;
-        if ($status==='leave') $leaveCount++;
-        if ($status==='pending') $pendingCount++;
-        $dayRows[]=['date'=>$date,'session'=>$session,'status'=>$status,'leaves'=>$leaveByDate[$date]??[]];
-    }
-}
-// Day amount and admin add / cut for each calendar day.
-$salaryDays=[];
-$salaryEmployee=salary_employee((int)$attendanceEmployee['id']);
-if ($salaryEmployee) { attendance_sync_reviews((int)$salaryEmployee['id']); foreach (salary_month($salaryEmployee,$month)['days'] as $salaryDay) $salaryDays[$salaryDay['date']]=$salaryDay; }
+$first=$calc['first'];
 $previousMonth=$first->modify('-1 month')->format('Y-m');
 $nextMonth=$first->modify('+1 month')->format('Y-m');
+$monthLink=static fn(string $m): string => 'employee-attendance.php?'.http_build_query(array_filter(['employee'=>$isAdmin?(int)$attendanceEmployee['id']:null,'month'=>$m]));
 page_start($isAdmin?$attendanceEmployee['full_name'].' · Attendance':'My attendance','employee-attendance.php');
 ?>
-<?php if ($isAdmin): ?><p><a class="button secondary" href="employee-attendance.php">← All employees</a></p><?php endif; ?>
-<p class="muted">Daily login/logout times, total hours worked, leave requests, and working days without a complete attendance record.</p>
-<div class="stats-grid">
-    <article class="stat-card"><h2>Present</h2><strong><?= $presentCount ?></strong><p>Login and logout recorded</p></article>
-    <article class="stat-card"><h2>Leave</h2><strong><?= $leaveCount ?></strong><p>Past working days with missing login/logout</p></article>
-    <article class="stat-card"><h2>Pending</h2><strong><?= $pendingCount ?></strong><p>Today is not marked as leave before the day ends</p></article>
+<div class="emp-page am-page">
+<header class="emp-header">
+    <div>
+        <p class="emp-crumb"><?php if ($isAdmin): ?><a href="employee-attendance.php">← All employees</a><?php else: ?>Dashboard / My attendance<?php endif; ?></p>
+        <h2 class="emp-title"><?= $isAdmin?h($attendanceEmployee['full_name']):'My attendance' ?></h2>
+        <p class="emp-sub"><?= h($attendanceEmployee['department_name']) ?><?= $attendanceEmployee['employee_code']?' · '.h($attendanceEmployee['employee_code']):'' ?> · Login / logout time, day amount and salary cuts for every date.</p>
+    </div>
+    <div class="am-month-nav">
+        <a href="<?= h($monthLink($previousMonth)) ?>" aria-label="Previous month">‹</a>
+        <form method="get"><?php if ($isAdmin): ?><input type="hidden" name="employee" value="<?= (int)$attendanceEmployee['id'] ?>"><?php endif; ?><input type="month" name="month" value="<?= h($month) ?>" max="<?= h($currentMonth) ?>" onchange="this.form.submit()" aria-label="Month"><noscript><button type="submit">View</button></noscript></form>
+        <?php if ($nextMonth<=$currentMonth): ?><a href="<?= h($monthLink($nextMonth)) ?>" aria-label="Next month">›</a><?php else: ?><span aria-hidden="true">›</span><?php endif; ?>
+    </div>
+</header>
+<?php attendance_month_view($attendanceEmployee,$calc,$isAdmin); ?>
+<?php if (!$isAdmin): ?><p class="am-actions"><a class="emp-btn emp-btn-outline" href="apply-leaves.php">Apply for leave</a> <a class="emp-btn emp-btn-outline" href="my-leave-requests.php">View leave requests</a></p><?php endif; ?>
 </div>
-<section class="panel">
-    <div class="panel-heading"><h2>Attendance calendar · <?= h($first->format('F Y')) ?></h2><form method="get" class="filters" style="margin:0"><?php if ($isAdmin): ?><input type="hidden" name="employee" value="<?= (int)$attendanceEmployee['id'] ?>"><?php endif; ?><div class="field"><label for="month">Month and year</label><input type="month" id="month" name="month" value="<?= h($month) ?>" max="<?= h($currentMonth) ?>" required></div><button class="primary" type="submit">View</button></form></div>
-    <style>.attendance-calendar{display:grid;grid-template-columns:repeat(7,minmax(100px,1fr));gap:7px}.attendance-calendar-head{font-weight:700;text-align:center;padding:8px;background:#eef2f7}.attendance-calendar-day{min-height:112px;padding:9px;border-radius:10px;background:#f2f4f7;border:1px solid #e4e7ec}.attendance-calendar-day strong{display:block;margin-bottom:7px}.attendance-calendar-day span{display:block;font-size:12px;margin-top:3px}.attendance-calendar-day.present{background:#dcfce7;border-color:#86efac;color:#166534}.attendance-calendar-day.late{background:#fee2e2;border-color:#fca5a5;color:#991b1b}.attendance-calendar-day.leave{background:#ffedd5;border-color:#fdba74;color:#9a3412}.attendance-calendar-day.permission{background:#f3e8ff;border-color:#d8b4fe;color:#6b21a8}.attendance-calendar-day.holiday{background:#dbeafe;border-color:#93c5fd;color:#1e40af}.attendance-calendar-day.pending{background:#fef9c3;border-color:#fde047;color:#854d0e}.attendance-calendar-day.upcoming{background:#f8fafc}.attendance-legend{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}.attendance-legend span{padding:5px 10px;border-radius:99px;background:#eee}@media(max-width:800px){.attendance-calendar{grid-template-columns:repeat(2,minmax(120px,1fr))}.attendance-calendar-head{display:none}}</style>
-    <div class="attendance-legend"><span class="present">On time</span><span class="late">Late login (after 9:30 AM)</span><span class="leave">Leave</span><span class="permission">Permission</span><span class="holiday">Holiday</span><span class="pending">Pending</span></div>
-    <div class="attendance-calendar"><?php foreach (['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as $weekday): ?><div class="attendance-calendar-head"><?= $weekday ?></div><?php endforeach; for ($blank=1;$blank<(int)$first->format('N');$blank++): ?><div></div><?php endfor; foreach ($dayRows as $row): $session=$row['session']; $hasLogin=$session&&$session['first_login']; $late=$hasLogin&&date('H:i:s',strtotime($session['first_login']))>'09:30:00'; $hasPermission=false; foreach ($row['leaves'] as $leave) if (stripos($leave['leave_type'],'permission')!==false) $hasPermission=true; $class=$hasPermission?'permission':($late?'late':($hasLogin?'present':$row['status'])); ?><article class="attendance-calendar-day <?= h($class) ?>"><strong><?= h(date('d-m-Y',strtotime($row['date']))) ?></strong><span><?= $hasPermission?'Permission':($late?'Late login':($hasLogin?'On time':ucfirst(str_replace('_',' ',$row['status'])))) ?></span><?php if ($session&&$session['first_login']): ?><span>Login <?= h(date('g:i A',strtotime($session['first_login']))) ?></span><?php endif; if ($session&&$session['last_logout']): ?><span>Logout <?= h(date('g:i A',strtotime($session['last_logout']))) ?></span><?php endif; foreach ($row['leaves'] as $leave): ?><span><?= h($leave['leave_type']) ?> · <?= h(ucfirst($leave['status'])) ?></span><?php endforeach; $sd=$salaryDays[$row['date']]??null; if ($sd && $sd['amount']!==0): ?><span class="cal-amount <?= $sd['amount']<0?'is-neg':'is-pos' ?>"><?= $sd['amount']<0?'Cut −'.h(paise_label(-$sd['amount'])):'Amount '.h(paise_label($sd['amount'])) ?></span><?php endif; if ($sd) foreach ($sd['reviews'] as $rv): $rvAmount=money_cents((string)$rv['amount']); ?><span class="cal-review is-<?= h($rv['status']) ?>"><?php if ($rv['status']==='pending'): ?><?= $rv['kind']==='overtime'?'Extra work':'Missed logout' ?> · waiting for admin<?php elseif ($rv['status']==='approved' && $rvAmount>0): ?>Admin <?= $rv['kind']==='overtime'?'added +':'cut −' ?><?= h(paise_label($rvAmount)) ?><?php else: ?>Admin: <?= $rv['kind']==='overtime'?'extra not approved':'no cut' ?><?php endif; ?><?php if ($rv['remark']!==''): ?><em>“<?= h($rv['remark']) ?>”</em><?php endif; ?></span><?php endforeach; ?></article><?php endforeach; ?></div>
-    <p><a class="button secondary" href="employee-salary.php<?= $isAdmin?'?employee='.(int)$attendanceEmployee['id'].'&amp;month='.h($month):'?month='.h($month) ?>">View salary for this month →</a></p>
-    <p class="help">Login at 9:30 AM or earlier is on time. A login after 9:30 AM appears red for the administrator. Past working days without a complete login/logout are shown as leave.</p>
-</section>
-<?php if (!$isAdmin): ?><p><a class="button secondary" href="apply-leaves.php">Apply for leave</a> <a class="button secondary" href="my-leave-requests.php">View leave requests</a></p><?php endif; ?>
 <?php page_end(); ?>
