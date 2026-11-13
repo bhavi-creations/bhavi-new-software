@@ -4545,3 +4545,4 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 @media(max-width:560px){.wish-dock{right:auto;bottom:auto;padding:12px}}
 .wish-dock{top:0;left:0;right:0;bottom:0}
 @media(max-width:560px){.wish-dock{top:0;left:0;right:0;bottom:0}}
+.to-do-section .td-addpay-form [hidden]{display:none!important}

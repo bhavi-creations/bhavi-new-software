@@ -52,7 +52,7 @@ $statusLabels = ['present' => 'Present', 'working' => 'Working now', 'missed_log
 $signed = static fn(int $paise): string => $paise === 0 ? '—' : ($paise > 0 ? '+' : '−') . paise_label(abs($paise));
 $reviewText = static function (array $review): string {
     $kind = $review['kind'] === 'overtime' ? 'Extra work ' . work_duration_label(max(0, (int) $review['worked_seconds'] - (int) round(duty_hours((int) $review['employee_id']) * 3600))) : 'Missed logout';
-    if ($review['status'] === 'pending') return $kind . ' · waiting for admin approval';
+    if ($review['status'] === 'pending') return $kind . ' · waiting for Managing Director approval';
     $amount = money_cents((string) $review['amount']);
     if ($review['status'] === 'rejected') return $kind . ' · ' . ($review['kind'] === 'overtime' ? 'not approved' : 'no cut');
     return $kind . ' · ' . ($review['kind'] === 'overtime' ? 'approved +' : 'cut −') . paise_label($amount);
@@ -78,7 +78,7 @@ error_message($error);
 <?php if (!$employee): ?>
     <section class="emp-card"><p class="muted">No active employees found.</p></section>
 <?php elseif (!$calc['salary']): ?>
-    <section class="emp-card"><h3>No salary set for <?= h($calc['first']->format('F Y')) ?></h3><p class="muted">The admin has not added a salary for this month yet.<?php if ($staff): ?> <a href="admin-add-employee.php?id=<?= (int) $employee['id'] ?>">Add salary in Edit employee</a>.<?php endif; ?></p></section>
+    <section class="emp-card"><h3>No salary set for <?= h($calc['first']->format('F Y')) ?></h3><p class="muted">The Managing Director has not added a salary for this month yet.<?php if ($staff): ?> <a href="admin-add-employee.php?id=<?= (int) $employee['id'] ?>">Add salary in Edit employee</a>.<?php endif; ?></p></section>
 <?php else: ?>
 <section class="at-stats sal-stats">
     <div class="at-stat"><span>Monthly salary</span><strong><?= h(paise_label($calc['full_salary'])) ?></strong></div>
@@ -94,16 +94,16 @@ error_message($error);
     <dl>
         <div><dt>Monthly salary<?= $calc['monthly'] !== $calc['full_salary'] ? ' <small>(only the days employed this month)</small>' : '' ?></dt><dd><?= h(paise_label($calc['monthly'])) ?></dd></div>
         <div class="is-cut"><dt>− Leave cut <small><?= $calc['leave'] ?> day<?= $calc['leave'] === 1 ? '' : 's' ?> × <?= h(paise_label($calc['rate'])) ?></small></dt><dd>−<?= h(paise_label($calc['leave_cut'])) ?></dd></div>
-        <div class="is-add"><dt>+ Extra work approved by admin</dt><dd>+<?= h(paise_label($calc['overtime_add'])) ?></dd></div>
-        <div class="is-cut"><dt>− Missed logout cut by admin</dt><dd>−<?= h(paise_label($calc['missed_cut'])) ?></dd></div>
-        <div class="is-add"><dt>+ Amount added by admin <small>see the list below</small></dt><dd>+<?= h(paise_label($calc['manual_add'])) ?></dd></div>
-        <div class="is-cut"><dt>− Amount cut by admin <small>see the list below</small></dt><dd>−<?= h(paise_label($calc['manual_cut'])) ?></dd></div>
+        <div class="is-add"><dt>+ Extra work approved by Managing Director</dt><dd>+<?= h(paise_label($calc['overtime_add'])) ?></dd></div>
+        <div class="is-cut"><dt>− Missed logout cut by Managing Director</dt><dd>−<?= h(paise_label($calc['missed_cut'])) ?></dd></div>
+        <div class="is-add"><dt>+ Amount added by Managing Director <small>see the list below</small></dt><dd>+<?= h(paise_label($calc['manual_add'])) ?></dd></div>
+        <div class="is-cut"><dt>− Amount cut by Managing Director <small>see the list below</small></dt><dd>−<?= h(paise_label($calc['manual_cut'])) ?></dd></div>
         <?php if ($calc['benefits']): ?><div class="is-add"><dt>+ Benefits <small><?= h($calc['salary']['other_benefits']) ?></small></dt><dd>+<?= h(paise_label($calc['benefits'])) ?></dd></div><?php endif; ?>
         <div class="is-cut"><dt>− PF <small>12% of full salary <?= h(paise_label($calc['full_salary'])) ?></small></dt><dd>−<?= h(paise_label($calc['pf'])) ?></dd></div>
         <div class="is-cut"><dt>− ESI <small>0.75% of full salary <?= h(paise_label($calc['full_salary'])) ?></small></dt><dd>−<?= h(paise_label($calc['esi'])) ?></dd></div>
         <div class="is-total"><dt>Employee receives</dt><dd><?= h(paise_label($calc['net'])) ?></dd></div>
     </dl>
-    <?php if ($calc['pending']): ?><p class="sal-note is-pending"><?= $calc['pending'] ?> day<?= $calc['pending'] === 1 ? ' is' : 's are' ?> waiting for admin approval. The amount changes after the admin decides.<?php if ($staff): ?> <a href="attendance-approvals.php">Open approvals →</a><?php endif; ?></p><?php endif; ?>
+    <?php if ($calc['pending']): ?><p class="sal-note is-pending"><?= $calc['pending'] ?> day<?= $calc['pending'] === 1 ? ' is' : 's are' ?> waiting for Managing Director approval. The amount changes after the Managing Director decides.<?php if ($staff): ?> <a href="attendance-approvals.php">Open approvals →</a><?php endif; ?></p><?php endif; ?>
     <?php if ($calc['is_current']): ?><p class="sal-note">Remaining days of this month are counted as present. Each leave from now cuts <?= h(paise_label($calc['rate'])) ?>.</p><?php endif; ?>
 </section>
 
@@ -125,7 +125,7 @@ error_message($error);
 <?php $adjustments = array_merge(...array_map(static fn($d) => $d['adjustments'], $calc['days'])); ?>
 <section class="emp-card sal-adjust" id="adjustments">
     <div class="sal-adjust-head">
-        <h3>Amount added / cut by admin · <?= h($calc['first']->format('F Y')) ?></h3>
+        <h3>Amount added / cut by Managing Director · <?= h($calc['first']->format('F Y')) ?></h3>
         <span><b class="sal-money is-pos">+<?= h(paise_label($calc['manual_add'])) ?></b> · <b class="sal-money is-neg">−<?= h(paise_label($calc['manual_cut'])) ?></b></span>
     </div>
     <?php if ($staff): ?>
@@ -145,7 +145,7 @@ error_message($error);
     <?php foreach (array_reverse($adjustments) as $adj): $amt = money_cents((string) $adj['amount']); $isAdd = $adj['kind'] === 'add'; ?>
         <article class="sal-adjust-item <?= $isAdd ? 'is-add' : 'is-cut' ?>">
             <strong class="sal-money <?= $isAdd ? 'is-pos' : 'is-neg' ?>"><?= $isAdd ? '+' : '−' ?><?= h(paise_label($amt)) ?></strong>
-            <div><b><?= $isAdd ? 'Added to salary' : 'Cut from salary' ?></b> · <?= h(date('D, d M Y', strtotime($adj['adjustment_date']))) ?><p>Reason: <?= h($adj['reason']) ?></p><?php if ($staff): ?><small>By <?= h($adj['created_by_name'] ?? 'Admin') ?> · <?= h(date('d M, g:i A', strtotime($adj['created_at']))) ?></small><?php endif; ?></div>
+            <div><b><?= $isAdd ? 'Added to salary' : 'Cut from salary' ?></b> · <?= h(date('D, d M Y', strtotime($adj['adjustment_date']))) ?><p>Reason: <?= h($adj['reason']) ?></p><?php if ($staff): ?><small>By <?= h($adj['created_by_name'] ?? 'Managing Director') ?> · <?= h(date('d M, g:i A', strtotime($adj['created_at']))) ?></small><?php endif; ?></div>
             <?php if ($staff): ?><form method="post" onsubmit="return confirm('Remove this entry? The salary total will change back.')"><?= csrf_field() ?><input type="hidden" name="action" value="delete_adjustment"><input type="hidden" name="adjustment_id" value="<?= (int) $adj['id'] ?>"><button class="st-btn" type="submit">Remove</button></form><?php endif; ?>
         </article>
     <?php endforeach; ?>
@@ -166,7 +166,7 @@ error_message($error);
                 <td><?= $day['worked'] ? h(work_duration_label($day['worked'])) : '—' ?></td>
                 <td class="sal-money <?= $day['amount'] < 0 ? 'is-neg' : 'is-pos' ?>"><?= h($signed($day['amount'])) ?><?= $day['amount'] < 0 ? ' <small>cut</small>' : '' ?></td>
                 <td class="sal-money <?= $day['adjust'] < 0 ? 'is-neg' : 'is-pos' ?>"><?= h($signed($day['adjust'])) ?></td>
-                <td class="sal-note-cell"><?php foreach ($day['reviews'] as $review): ?><span><?= h($reviewText($review)) ?><?= $review['remark'] !== '' ? ' — “' . h($review['remark']) . '”' : '' ?></span><?php endforeach; ?><?php foreach ($day['adjustments'] as $adj): ?><span><?= $adj['kind'] === 'add' ? 'Admin added +' : 'Admin cut −' ?><?= h(paise_label(money_cents((string) $adj['amount']))) ?> — “<?= h($adj['reason']) ?>”</span><?php endforeach; ?></td>
+                <td class="sal-note-cell"><?php foreach ($day['reviews'] as $review): ?><span><?= h($reviewText($review)) ?><?= $review['remark'] !== '' ? ' — “' . h($review['remark']) . '”' : '' ?></span><?php endforeach; ?><?php foreach ($day['adjustments'] as $adj): ?><span><?= $adj['kind'] === 'add' ? 'Managing Director added +' : 'Managing Director cut −' ?><?= h(paise_label(money_cents((string) $adj['amount']))) ?> — “<?= h($adj['reason']) ?>”</span><?php endforeach; ?></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

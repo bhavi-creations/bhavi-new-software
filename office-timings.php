@@ -99,7 +99,7 @@ error_message($error);
                 <small><?= count($people) - count($customPeople) ?> of <?= count($people) ?> employees follow this timing.</small>
             </form>
             <form method="post" class="ot-form ot-duty"><?= csrf_field() ?><input type="hidden" name="action" value="save_duty">
-                <label><span>Duty hours per day <small>(more than this goes to admin approval as extra work)</small></span><input type="number" name="duty_hours" min="1" max="16" step="0.25" value="<?= h((string) duty_hours()) ?>" required></label>
+                <label><span>Duty hours per day <small>(more than this goes to Managing Director approval as extra work)</small></span><input type="number" name="duty_hours" min="1" max="16" step="0.25" value="<?= h((string) duty_hours()) ?>" required></label>
                 <button class="ot-dark" type="submit">Save duty hours</button>
             </form>
         </section>

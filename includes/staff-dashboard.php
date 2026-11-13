@@ -14,7 +14,7 @@ if ($user['role']!=='admin') {
     $pending=rows("SELECT u.full_name,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM daily_work_submissions s WHERE s.employee_id=u.id AND s.work_date=? AND s.submission_status='submitted' AND EXISTS (SELECT 1 FROM daily_work_entries e WHERE e.submission_id=s.id)) ORDER BY u.full_name",[today()]);
     $notifications=rows('SELECT n.id,n.title,n.message,n.created_at FROM notifications n WHERE n.recipient_id=? AND n.created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY) ORDER BY n.created_at DESC,n.id DESC LIMIT 5',[$user['id']]);
 }
-page_start(ucfirst($user['role']).' dashboard',dashboard_path($user));
+page_start(role_label($user['role']).' dashboard',dashboard_path($user));
 if ($user['role']==='admin'):
 $activeEmployeeCount=count_value("SELECT COUNT(*) FROM users WHERE role='employee' AND account_status='active' AND deleted_at IS NULL");
 $todayWork=one("SELECT COUNT(e.id) AS task_count,COALESCE(SUM(e.task_status='completed'),0) AS completed_count FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id AND u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL JOIN daily_work_entries e ON e.submission_id=s.id WHERE s.work_date=? AND s.submission_status='submitted'",[today()]);

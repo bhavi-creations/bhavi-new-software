@@ -67,6 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $anchor = '#money-out';
             $title = text_input('title', 200);
             $category = in_array($_POST['category'] ?? '', ['vendor', 'freelancer', 'rent', 'utility', 'other'], true) ? $_POST['category'] : 'other';
+            if ($category === 'vendor' && !empty($_POST['vendor_id'])) {
+                $vendor = one('SELECT vendor_name FROM vendors WHERE id=? AND deleted_at IS NULL', [positive_id($_POST['vendor_id'])]);
+                if (!$vendor) throw new InvalidArgumentException('Choose a valid vendor.');
+                if (mb_strtolower(trim($title)) !== mb_strtolower($vendor['vendor_name']) && !str_starts_with(mb_strtolower(trim($title)), mb_strtolower($vendor['vendor_name']))) $title = mb_substr($vendor['vendor_name'] . ' · ' . $title, 0, 200);
+            }
             $amount = money_cents(is_string($_POST['amount'] ?? null) ? trim($_POST['amount']) : '');
             if ($amount <= 0 || $amount > 99999999999) throw new InvalidArgumentException('Enter an amount greater than zero.');
             $due = date_input('due_date');
@@ -187,6 +192,7 @@ $summaryText = implode("\n", $summaryLines);
 
 $money = static fn(int $paise): string => h(rupees_label($paise / 100));
 $todoTag = static fn(array $t): string => ['client' => 'Client', 'team' => 'Team'][$t['category']] ?? 'Office';
+try { $vendorList = rows("SELECT id,vendor_name,service_type,payment_total,paid_amount FROM vendors WHERE deleted_at IS NULL AND vendor_status<>'inactive' ORDER BY vendor_name"); } catch (Throwable $e) { $vendorList = []; }
 $payCats = ['vendor' => 'Vendor', 'freelancer' => 'Freelancer', 'rent' => 'Rent', 'utility' => 'Utility bill', 'salary' => 'Salaries', 'other' => 'Other'];
 $initials = static fn(string $n): string => strtoupper(implode('', array_map(static fn($w) => mb_substr($w, 0, 1), array_slice(preg_split('/\s+/', trim($n)) ?: [], 0, 2)))) ?: '?';
 
@@ -201,7 +207,7 @@ error_message($error);
             <p class="td-sub">Your to-dos, money in &amp; out, and reminders — in one place. <?= h(date('D, j M Y')) ?></p>
         </div>
         <nav class="td-jump" aria-label="Jump to section">
-            <a href="#todo">☑ To-do</a><a href="#money">₹ Money</a><a href="#reminders">⏰ Reminders</a><span class="td-private">🔒 Admin only</span>
+            <a href="#todo">☑ To-do</a><a href="#money">₹ Money</a><a href="#reminders">⏰ Reminders</a><span class="td-private">🔒 Managing Director only</span>
         </nav>
     </header>
 
@@ -280,7 +286,7 @@ error_message($error);
             <section class="td-card" id="summary">
                 <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_summary">
                     <div class="td-card-head"><h2>Daily WhatsApp summary</h2><label class="td-check"><input type="checkbox" name="wa_enabled" value="1" <?= $waEnabled ? 'checked' : '' ?>> On</label></div>
-                    <p class="td-note">To the admin, every evening</p>
+                    <p class="td-note">To the Managing Director, every evening</p>
                     <label class="td-inline"><span>Every day at</span><?= time12_field('wa_time', $waTime, true, 'Every day at') ?></label>
                     <div class="td-checks">
                         <?php foreach (['work' => 'Work submitted', 'late' => 'Late & absent', 'overdue' => 'Overdue tasks', 'money' => 'Money to collect & pay'] as $key => $label): ?><label class="td-check"><input type="checkbox" name="wa_items[]" value="<?= $key ?>" <?= in_array($key, $waItems, true) ? 'checked' : '' ?>> <?= h($label) ?></label><?php endforeach; ?>
@@ -339,7 +345,9 @@ error_message($error);
                 <details class="td-addpay"><summary class="td-btn-gold">+ Add payment</summary>
                     <form method="post" class="td-addpay-form"><?= csrf_field() ?><input type="hidden" name="action" value="add_payment">
                         <label><span>For</span><input name="title" maxlength="200" required placeholder="e.g. Printing press"></label>
-                        <label><span>Type</span><select name="category"><?php foreach (['vendor', 'freelancer', 'rent', 'utility', 'other'] as $k): ?><option value="<?= $k ?>"><?= h($payCats[$k]) ?></option><?php endforeach; ?></select></label>
+                        <label><span>Type</span><select name="category" data-pay-type><?php foreach (['vendor', 'freelancer', 'rent', 'utility', 'other'] as $k): ?><option value="<?= $k ?>"><?= h($payCats[$k]) ?></option><?php endforeach; ?></select></label>
+                        <label data-pay-vendor><span>Vendor</span><select name="vendor_id"><option value=""><?= $vendorList ? 'Select vendor' : 'No vendors yet — add in Vendors' ?></option><?php foreach ($vendorList as $vd): $vdDue = max(0, (float) $vd['payment_total'] - (float) $vd['paid_amount']); ?><option value="<?= (int) $vd['id'] ?>" data-name="<?= h($vd['vendor_name']) ?>" data-due="<?= h(number_format($vdDue, 2, '.', '')) ?>"><?= h($vd['vendor_name']) ?><?= $vd['service_type'] !== '' ? ' · ' . h($vd['service_type']) : '' ?><?= $vdDue > 0 ? ' · ₹' . h(number_format($vdDue, 0)) . ' due' : '' ?></option><?php endforeach; ?></select></label>
+                        <script>(() => { const f = document.currentScript.closest('form'), type = f.querySelector('[data-pay-type]'), box = f.querySelector('[data-pay-vendor]'), pick = box.querySelector('select'), title = f.querySelector('[name=title]'), amount = f.querySelector('[name=amount]'); const sync = () => { box.hidden = type.value !== 'vendor'; if (box.hidden) pick.value = ''; }; type.addEventListener('change', sync); pick.addEventListener('change', () => { const o = pick.selectedOptions[0]; if (!o || !o.value) return; title.value = o.dataset.name; if (!amount.value && parseFloat(o.dataset.due) > 0) amount.value = o.dataset.due; }); sync(); })();</script>
                         <label><span>Amount (₹)</span><input type="number" name="amount" min="0.01" step="0.01" required></label>
                         <label><span>Due date</span><input type="date" name="due_date" value="<?= h($today) ?>" required></label>
                         <label class="td-wide"><span>Note</span><input name="note" maxlength="255" placeholder="e.g. Brochure print · 1,000 copies"></label>

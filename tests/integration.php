@@ -285,7 +285,7 @@ try {
     $atPage=$admin->request('employee-attendance.php?cal='.$employeeIds['seo'])['body'];
     expect(str_contains($atPage,'Logged in') && str_contains($atPage,'Not logged in') && str_contains($atPage,'Monthly attendance') && str_contains($atPage,'Viewing →') && str_contains($atPage,'Mark absent'),'Attendance page shows live stats, list and monthly calendar');
     expect($admin->post('employee-attendance.php',['employee_id'=>$employeeIds['seo'],'mark'=>'absent','cal'=>$employeeIds['seo']])['status']===303 && scalar('SELECT marked_status FROM employee_attendance_days WHERE employee_id=? AND attendance_date=CURDATE()',[$employeeIds['seo']])==='absent','Mark absent saves to the database');
-    expect(str_contains($admin->request('employee-attendance.php')['body'],'Marked by admin'),'Marked attendance shows on the list');
+    expect(str_contains($admin->request('employee-attendance.php')['body'],'Marked by Managing Director'),'Marked attendance shows on the list');
     $admin->post('employee-attendance.php',['employee_id'=>$employeeIds['seo'],'mark'=>'clear']);
     expect(scalar('SELECT marked_status FROM employee_attendance_days WHERE employee_id=? AND attendance_date=CURDATE()',[$employeeIds['seo']])===null,'Undo removes the attendance mark');
     $admin->request('chat.php');

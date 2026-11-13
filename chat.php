@@ -157,7 +157,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $removeId=positive_id($_POST['user_id']??null);
             $group=one("SELECT c.id,c.created_by FROM chat_conversations c JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=? WHERE c.id=? AND c.conversation_type='group'",[$user['id'],$conversationId]);
             if (!$group) throw new InvalidArgumentException('You can only manage a group you are in.');
-            if (!in_array($user['role'],['admin','manager'],true) && (int)$group['created_by']!==(int)$user['id']) throw new InvalidArgumentException('Only the group creator, admins and managers can remove members.');
+            if (!in_array($user['role'],['admin','manager'],true) && (int)$group['created_by']!==(int)$user['id']) throw new InvalidArgumentException('Only the group creator, the Managing Director and managers can remove members.');
             if ($removeId===(int)$user['id']) throw new InvalidArgumentException('You cannot remove yourself.');
             $removed=one('SELECT u.full_name FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=? AND p.user_id=?',[$conversationId,$removeId]);
             if (!$removed) throw new InvalidArgumentException('This person is no longer in the group.');

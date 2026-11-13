@@ -34,10 +34,10 @@ try {
         if ($review['kind']==='overtime') {
             $extra=work_duration_label($review['worked_seconds']-(int)round(duty_hours((int)$user['id'])*3600));
             notify_staff('general','Extra work approval · '.$user['full_name'],$user['full_name'].' worked '.work_duration_label($review['worked_seconds']).' on '.$day.' ('.$extra.' more than duty). Approve in Attendance approvals.');
-            $message.=' You worked '.$extra.' extra — sent to admin for approval.';
+            $message.=' You worked '.$extra.' extra — sent to the Managing Director for approval.';
         } else {
             notify_staff('general','Missed logout · '.$user['full_name'],$user['full_name'].' did not logout on '.$day.'. Review in Attendance approvals.');
-            $message.=' You did not logout on '.$day.' — sent to admin for review.';
+            $message.=' You did not logout on '.$day.' — sent to the Managing Director for review.';
         }
     }
     db()->commit();

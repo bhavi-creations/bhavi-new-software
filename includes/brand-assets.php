@@ -89,7 +89,7 @@ page_start('Brand assets', 'employee-brands-assets.php');
         </section>
     <?php endif; ?>
 
-    <p class="ba-note">Logo missing or outdated? Message your manager in <a href="chat.php">Chat</a> — only admins can add or change client details.</p>
+    <p class="ba-note">Logo missing or outdated? Message your manager in <a href="chat.php">Chat</a> — only the Managing Director can add or change client details.</p>
 </div>
 <script>
 (() => {

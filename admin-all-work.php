@@ -593,7 +593,7 @@ page_start(
 
         <p class="muted">
 
-            View work assigned by admin and updates submitted by employees.
+            View work assigned by the Managing Director and updates submitted by employees.
 
         </p>
 
@@ -958,7 +958,7 @@ page_start(
         </strong>
 
         <p>
-            Tasks assigned by admin
+            Tasks assigned by the Managing Director
         </p>
 
     </article>

@@ -73,6 +73,12 @@ try {
     $list = $admin->req('vendors.php')['body'];
     ok(str_contains($list, 'Sai Printers') && str_contains($list, '₹3,500'), 'vendor list shows balance');
     ok($admin->req('vendors.php?id=' . $v['id'])['status'] === 200, 'vendor edit page renders');
+    $desk = $admin->req('admin-desk.php')['body'];
+    ok(str_contains($desk, 'name="vendor_id"') && str_contains($desk, 'data-name="Sai Printers"') && str_contains($desk, '₹3,500 due'), 'My desk payment Type=Vendor lists saved vendors');
+    $r = $admin->post('admin-desk.php', ['action' => 'add_payment', 'title' => 'Sai Printers', 'category' => 'vendor', 'vendor_id' => $v['id'], 'amount' => '3500', 'due_date' => date('Y-m-d'), 'note' => 'Brochures']);
+    ok($r['status'] === 303 && val("SELECT title FROM office_payments WHERE category='vendor'") === 'Sai Printers', 'payment to vendor saved');
+    $bad = $admin->post('admin-desk.php', ['action' => 'add_payment', 'title' => 'X', 'category' => 'vendor', 'vendor_id' => 99999, 'amount' => '10', 'due_date' => date('Y-m-d')]);
+    ok(!val("SELECT COUNT(*) FROM office_payments WHERE title LIKE '%X%'"), 'unknown vendor rejected');
 
     echo "Office timings (12-hour + split)\n";
     $ot = $admin->req('office-timings.php')['body'];
