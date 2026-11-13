@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 39;
+const PORTAL_SCHEMA_VERSION = 40;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -608,6 +608,21 @@ function portal_install(PDO $pdo, string $database): void
         // Wish popups show on the first 5 visits (log-ins), then stop.
         $addColumn('wish_recipients', 'show_count', 'TINYINT UNSIGNED NOT NULL DEFAULT 0');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (39)');
+        // References: new clients referred by an existing client or by someone else.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS client_references (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            referrer_client_id BIGINT UNSIGNED NULL,
+            referrer_name VARCHAR(150) NOT NULL DEFAULT '',
+            client_name VARCHAR(150) NOT NULL,
+            client_phone VARCHAR(30) NOT NULL,
+            note VARCHAR(500) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_reference_referrer (referrer_client_id),
+            FOREIGN KEY (referrer_client_id) REFERENCES clients(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (40)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

@@ -80,6 +80,19 @@ try {
     $bad = $admin->post('admin-desk.php', ['action' => 'add_payment', 'title' => 'X', 'category' => 'vendor', 'vendor_id' => 99999, 'amount' => '10', 'due_date' => date('Y-m-d')]);
     ok(!val("SELECT COUNT(*) FROM office_payments WHERE title LIKE '%X%'"), 'unknown vendor rejected');
 
+    echo "References\n";
+    ok(str_contains($dash['body'], 'href="references.php"'), 'sidebar has References');
+    $rf = $admin->req('references.php')['body'];
+    ok(str_contains($rf, '>Kiran Raju</option>') && str_contains($rf, 'value="other"'), 'Referred by lists clients + Other');
+    $r = $admin->post('references.php', ['action' => 'save_reference', 'referred_by' => $clientId0 = (int) val('SELECT id FROM clients LIMIT 1'), 'client_name' => 'Lakshmi Jewellers', 'client_phone' => '9876543210']);
+    ok($r['status'] === 303 && val("SELECT referrer_client_id FROM client_references WHERE client_name='Lakshmi Jewellers'") == $clientId0, 'reference from a client saved');
+    $r = $admin->post('references.php', ['action' => 'save_reference', 'referred_by' => 'other', 'referrer_name' => 'Suresh', 'client_name' => 'Ganesh Motors', 'client_phone' => '+91 90000 11111', 'note' => 'website']);
+    ok($r['status'] === 303 && val("SELECT referrer_name FROM client_references WHERE client_name='Ganesh Motors'") === 'Suresh', 'reference from Other (typed name) saved');
+    $bad = $admin->post('references.php', ['action' => 'save_reference', 'referred_by' => 'other', 'referrer_name' => '', 'client_name' => 'X', 'client_phone' => '999999']);
+    ok(str_contains($bad['body'], 'name of the person who referred'), 'Other without a name rejected');
+    $rf = $admin->req('references.php')['body'];
+    ok(str_contains($rf, 'Ganesh Motors') && str_contains($rf, 'Suresh') && str_contains($rf, 'Lakshmi Jewellers'), 'saved references listed');
+
     echo "Office timings (12-hour + split)\n";
     $ot = $admin->req('office-timings.php')['body'];
     ok(str_contains($ot, 'name="office_start[ap]"') && !str_contains($ot, 'type="time"'), 'office timings use 12-hour picker');

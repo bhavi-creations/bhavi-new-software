@@ -118,6 +118,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'office-timings.php', 'label' => 'Office Timings', 'icon' => 'clock'],
                 ['href' => 'manager-notification.php', 'label' => 'Announcements', 'icon' => 'megaphone', 'badge' => $unread],
                 ['href' => 'wishes.php', 'label' => 'Wishes', 'icon' => 'gift'],
+                ['href' => 'references.php', 'label' => 'References', 'icon' => 'people'],
                 ['href' => 'tools.php', 'label' => 'Tools / Apps', 'icon' => 'key'],
                 ['href' => 'manager-monthly-design-report.php', 'label' => 'Reports & Analytics', 'icon' => 'chart'],
                 ['href' => 'change-password.php', 'label' => 'Settings', 'icon' => 'settings'],

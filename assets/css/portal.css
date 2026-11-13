@@ -4546,3 +4546,11 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 .wish-dock{top:0;left:0;right:0;bottom:0}
 @media(max-width:560px){.wish-dock{top:0;left:0;right:0;bottom:0}}
 .to-do-section .td-addpay-form [hidden]{display:none!important}
+/* References */
+.rf-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr)}
+.ot-form label[hidden]{display:none}
+.ot-page .rf-divider{margin-top:4px;padding-top:12px;border-top:1px dashed var(--ot-line);color:var(--ot-brand);font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.rf-table td{vertical-align:top;white-space:normal}
+.rf-tag{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:#eef0f3;color:#5b6474;font-size:10.5px;font-weight:800}
+.rf-tag.is-client{background:#e4f2e9;color:#07563f}
+@media(max-width:1000px){.rf-grid{grid-template-columns:minmax(0,1fr)}}
