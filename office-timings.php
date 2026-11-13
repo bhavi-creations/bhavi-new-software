@@ -15,6 +15,24 @@ function shift_hours_input(): ?string
     return number_format((float) $hours, 2, '.', '');
 }
 
+/** Monthly hours for an hours employee from the form, 1–744. */
+function monthly_hours_input(): string
+{
+    $hours = is_string($_POST['monthly_hours'] ?? null) ? trim($_POST['monthly_hours']) : '';
+    if (!preg_match('/^\d{1,3}(\.\d{1,2})?$/D', $hours) || (float) $hours < 1 || (float) $hours > 744) throw new InvalidArgumentException('Enter the hours per month (for example 150).');
+    return number_format((float) $hours, 2, '.', '');
+}
+
+/** Seconds worked this month (closed sessions + today's running one) for each employee id. */
+function month_worked_seconds(array $ids): array
+{
+    if (!$ids) return [];
+    $marks = implode(',', array_fill(0, count($ids), '?'));
+    $rows = rows("SELECT employee_id,SUM(CASE WHEN logout_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND,login_at,logout_at) WHEN DATE(login_at)=CURDATE() THEN TIMESTAMPDIFF(SECOND,login_at,NOW()) ELSE 0 END) AS worked
+        FROM employee_attendance_sessions WHERE employee_id IN ($marks) AND login_at>=? GROUP BY employee_id", array_merge($ids, [date('Y-m-01') . ' 00:00:00']));
+    return array_map('intval', array_column($rows, 'worked', 'employee_id'));
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
     try {
@@ -32,6 +50,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Own timing for one employee: one shift (e.g. night shift) or split timings (e.g. 7–10 PM + 5–8 AM).
             $employee = positive_id($_POST['employee_id'] ?? null);
             if (!one("SELECT u.id FROM users u JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.role='employee' AND u.deleted_at IS NULL", [$employee])) throw new InvalidArgumentException('Choose an employee.');
+            if (($_POST['work_type'] ?? 'full_time') === 'hours') {
+                // Hours employee: logs in any time, paid for the hours worked out of the monthly hours.
+                $monthly = monthly_hours_input();
+                $label = text_input('shift_label', 60, false) ?: 'Hours';
+                $timing = employee_timing(['monthly_hours' => $monthly, 'shift_label' => $label]);
+                query('UPDATE employee_profiles SET shift_start=NULL,shift_end=NULL,shift_label=?,shift_slots=NULL,shift_hours=NULL,monthly_hours=?,work_timings=? WHERE user_id=?', [$label, $monthly, mb_substr($timing['text'], 0, 100), $employee]);
+                flash('Saved for ' . (one('SELECT full_name FROM users WHERE id=?', [$employee])['full_name'] ?? 'employee') . ': ' . $timing['text'] . '. Salary is paid for the hours worked.');
+                redirect('office-timings.php');
+            }
             $posted = is_array($_POST['slots'] ?? null) ? array_slice(array_values($_POST['slots']), 0, SHIFT_MAX_SLOTS) : [];
             if (isset($_POST['shift_start'])) $posted = [['start' => $_POST['shift_start'], 'end' => $_POST['shift_end'] ?? '']]; // older form
             $slots = [];
@@ -46,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $hours = shift_hours_input();
             $label = text_input('shift_label', 60, false) ?: (count($slots) > 1 ? 'Split timing' : 'Own shift');
             $timing = employee_timing(['shift_start' => $slots[0][0], 'shift_end' => $slots[0][1], 'shift_label' => $label, 'shift_slots' => json_encode($slots), 'shift_hours' => $hours]);
-            query('UPDATE employee_profiles SET shift_start=?,shift_end=?,shift_label=?,shift_slots=?,shift_hours=?,work_timings=? WHERE user_id=?', [$slots[0][0], $slots[0][1], $label, count($slots) > 1 ? json_encode($slots) : null, $hours, mb_substr($timing['text'], 0, 100), $employee]);
+            query('UPDATE employee_profiles SET shift_start=?,shift_end=?,shift_label=?,shift_slots=?,shift_hours=?,monthly_hours=NULL,work_timings=? WHERE user_id=?', [$slots[0][0], $slots[0][1], $label, count($slots) > 1 ? json_encode($slots) : null, $hours, mb_substr($timing['text'], 0, 100), $employee]);
             flash('Timing saved for ' . (one('SELECT full_name FROM users WHERE id=?', [$employee])['full_name'] ?? 'employee') . ': ' . $timing['text'] . '.');
         } elseif ($action === 'save_duty') {
             // Working more than this sends the day to Attendance approvals as extra work.
@@ -56,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Duty hours saved: ' . duty_hours_label((float) $hours) . ' a day. More than this goes to Attendance approvals as extra work.');
         } elseif ($action === 'reset_shift') {
             $employee = positive_id($_POST['employee_id'] ?? null);
-            query("UPDATE employee_profiles SET shift_start=NULL,shift_end=NULL,shift_label='',shift_slots=NULL,shift_hours=NULL,work_timings='' WHERE user_id=?", [$employee]);
+            query("UPDATE employee_profiles SET shift_start=NULL,shift_end=NULL,shift_label='',shift_slots=NULL,shift_hours=NULL,monthly_hours=NULL,work_timings='' WHERE user_id=?", [$employee]);
             flash('Employee moved back to the office timing.');
         } else {
             throw new InvalidArgumentException('Invalid request.');
@@ -68,12 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $default = office_timing_default();
-$people = rows("SELECT u.id,u.full_name,d.name AS department_name,ep.designation,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours FROM users u JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name");
-$customPeople = array_values(array_filter($people, static fn($p) => !empty($p['shift_start']) && !empty($p['shift_end'])));
+$people = rows("SELECT u.id,u.full_name,d.name AS department_name,ep.designation,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours,ep.monthly_hours FROM users u JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name");
+$customPeople = array_values(array_filter($people, static fn($p) => (!empty($p['shift_start']) && !empty($p['shift_end'])) || employee_monthly_hours($p) !== null));
+$hoursWorked = month_worked_seconds(array_map(static fn($p) => (int) $p['id'], array_values(array_filter($people, static fn($p) => employee_monthly_hours($p) !== null))));
 $editId = (int) ($_GET['edit'] ?? 0);
 $editing = null; foreach ($people as $p) if ((int) $p['id'] === $editId) $editing = $p;
 $editTiming = $editing && !empty($editing['shift_start']) ? employee_timing($editing) : null;
-$formSlots = $editTiming ? $editTiming['slots'] : [['21:00', '06:00']];
+$formSlots = $editTiming && $editTiming['slots'] ? $editTiming['slots'] : [['21:00', '06:00']];
+$editHours = $editing ? employee_monthly_hours($editing) : null;
+$workType = $editHours !== null ? 'hours' : 'full_time';
 $initials = static fn(string $n): string => strtoupper(implode('', array_map(static fn($w) => mb_substr($w, 0, 1), array_slice(preg_split('/\s+/', trim($n)) ?: [], 0, 2)))) ?: '?';
 
 page_start('Office timings', 'office-timings.php');
@@ -106,9 +136,15 @@ error_message($error);
 
         <section class="ot-card" id="shift-form">
             <h2><?= $editing ? 'Change timing · ' . h($editing['full_name']) : 'Different timing for an employee' ?></h2>
-            <p class="ot-help">One shift (e.g. night shift) or split timings — add a second timing for people who work at night and again in the morning. Everyone else keeps the office timing.</p>
+            <p class="ot-help"><b>Full time</b>: one shift (e.g. night shift) or split timings — add a second timing for people who work at night and again in the morning. Everyone else keeps the office timing. <b>Hours</b>: paid per hour out of a monthly hours plan.</p>
             <form method="post" class="ot-form" data-shift-form><?= csrf_field() ?><input type="hidden" name="action" value="save_shift">
                 <label><span>Employee</span><select name="employee_id" required><option value="">Select employee</option><?php foreach ($people as $p): ?><option value="<?= (int) $p['id'] ?>" <?= $editing && (int) $editing['id'] === (int) $p['id'] ? 'selected' : '' ?>><?= h($p['full_name']) ?><?= $p['department_name'] ? ' · ' . h($p['department_name']) : '' ?></option><?php endforeach; ?></select></label>
+                <label><span>Work type</span><select name="work_type" data-work-type><option value="full_time" <?= $workType === 'full_time' ? 'selected' : '' ?>>Full time</option><option value="hours" <?= $workType === 'hours' ? 'selected' : '' ?>>Hours</option></select></label>
+                <div class="ot-hours" data-hours-fields<?= $workType === 'hours' ? '' : ' hidden' ?>>
+                    <label><span>Hours per month</span><input type="number" name="monthly_hours" min="1" max="744" step="0.5" value="<?= h($editHours !== null ? rtrim(rtrim(number_format($editHours, 2, '.', ''), '0'), '.') : '') ?>" placeholder="e.g. 150" data-monthly-hours></label>
+                    <p class="ot-help">Logs in any time. Every login → logout is taken from these hours (e.g. 150 − 4 = 146 hrs remaining). Salary = monthly salary ÷ hours per month × hours worked.</p>
+                </div>
+                <div class="ot-fulltime" data-fulltime-fields<?= $workType === 'hours' ? ' hidden' : '' ?>>
                 <div class="ot-slots" data-slots>
                     <?php for ($i = 0; $i < SHIFT_MAX_SLOTS; $i++): $slot = $formSlots[$i] ?? null; ?>
                         <div class="ot-slot" data-slot<?= $slot || $i === 0 ? '' : ' hidden' ?>>
@@ -126,6 +162,7 @@ error_message($error);
                     <label><span>Name of the shift <small>(optional)</small></span><input name="shift_label" maxlength="60" value="<?= h($editing['shift_label'] ?? '') ?>" placeholder="e.g. Night + morning"></label>
                 </div>
                 <p class="ot-help" data-hours-hint></p>
+                </div>
                 <div class="ot-actions"><button class="ot-dark" type="submit">Save timing</button><?php if ($editing): ?><a href="office-timings.php">Cancel</a><?php endif; ?></div>
             </form>
         </section>
@@ -139,7 +176,7 @@ error_message($error);
                 <div class="ot-row<?= $t['custom'] ? ' is-custom' : '' ?>">
                     <span class="ot-avatar"><?= h($initials($p['full_name'])) ?></span>
                     <span class="ot-who"><strong><?= h($p['full_name']) ?></strong><small><?= h(implode(' · ', array_filter([$p['designation'], $p['department_name']]))) ?: 'Team member' ?></small></span>
-                    <span class="ot-when"><strong><?= h($t['text']) ?></strong><em><?= h($t['label']) ?></em></span>
+                    <span class="ot-when"><strong><?= h($t['text']) ?></strong><em><?= h($t['label']) ?></em><?php if (!empty($t['hourly'])): $done = $hoursWorked[(int) $p['id']] ?? 0; $left = (int) round($t['monthly_hours'] * 3600) - $done; ?><small class="ot-hours-left">This month: <?= h(work_duration_label($done)) ?> worked · <?= $left >= 0 ? h(work_duration_label($left)) . ' remaining' : h(work_duration_label(-$left)) . ' over' ?></small><?php endif; ?></span>
                     <span class="ot-row-actions">
                         <a href="office-timings.php?edit=<?= (int) $p['id'] ?>#shift-form"><?= $t['custom'] ? 'Change' : 'Set own timing' ?></a>
                         <?php if ($t['custom']): ?><form method="post" data-confirm="Move <?= h($p['full_name']) ?> back to the office timing?"><?= csrf_field() ?><input type="hidden" name="action" value="reset_shift"><input type="hidden" name="employee_id" value="<?= (int) $p['id'] ?>"><button type="submit">Use office timing</button></form><?php endif; ?>
@@ -175,6 +212,16 @@ error_message($error);
         slot.querySelectorAll('select').forEach(s => { s.value = s.name.endsWith('[ap]') ? 'AM' : ''; });
         slot.hidden = true; update();
     });
+    const type = form.querySelector('[data-work-type]'), hoursBox = form.querySelector('[data-hours-fields]'), fullBox = form.querySelector('[data-fulltime-fields]');
+    const syncType = () => {
+        const hours = type.value === 'hours';
+        hoursBox.hidden = !hours;
+        fullBox.hidden = hours;
+        hoursBox.querySelector('[data-monthly-hours]').required = hours;
+        // Timing 1 is required only for full time.
+        slots[0].querySelectorAll('.time12 select:not([name$="[ap]"])').forEach(s => { s.required = !hours; });
+    };
+    type.addEventListener('change', syncType); syncType();
     form.addEventListener('change', update); update();
 })();
 </script>

@@ -7,7 +7,7 @@ require_once __DIR__.'/employee-accounts.php';
 $user = require_roles(['admin','manager']);
 $id = (int) ($_GET['id'] ?? 0);
 if (!$id && $user['role'] !== 'admin') { fail(403,'Only an administrator can create accounts.'); }
-$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis,ep.pf_number,ep.esi_number,ep.date_of_birth,ep.gender,ep.address,ep.work_timings,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours,ep.employment_type FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
+$record = $id ? one('SELECT u.id,u.full_name,u.email,u.username,u.role,u.avatar_path,u.account_status,ep.department_id,ep.designation,ep.joining_date,ep.manager_id,ep.role_title,ep.employee_code,ep.phone,ep.guardian_phone,ep.relieving_date,ep.benefit_pf,ep.benefit_esi,ep.benefit_other,ep.other_benefits,ep.other_benefit_amount,ep.esi_basis,ep.pf_number,ep.esi_number,ep.date_of_birth,ep.gender,ep.address,ep.work_timings,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours,ep.monthly_hours,ep.employment_type FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.deleted_at IS NULL',[$id]) : null;
 if ($id && (!$record || !in_array($record['role'],['employee'],true))) { fail(403,'You cannot edit this account.'); }
 $error = null;
 const EMPLOYEE_GENDERS = ['male'=>'Male','female'=>'Female','other'=>'Other','na'=>'Prefer not to say'];
@@ -68,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($shiftStart===$shiftEnd) throw new InvalidArgumentException('Shift start and end time cannot be the same.');
             $shift=[$shiftStart,$shiftEnd,optional_text('shift_label',60)?:'Own shift'];
             $workTimings=office_range_label($shiftStart,$shiftEnd);
-        } elseif ($timingMode==='split') {
-            // Split timing is managed on the Office timings page: keep it as saved.
+        } elseif ($timingMode==='split' || $timingMode==='hours') {
+            // Split timing and monthly hours are managed on the Office timings page: keep them as saved.
             $workTimings=(string)($record['work_timings']??'');
         } elseif ($timingMode==='office') {
             $workTimings='';
@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         query('UPDATE employee_profiles SET employee_code=?,phone=?,guardian_phone=?,relieving_date=?,benefit_pf=?,benefit_esi=?,benefit_other=?,other_benefits=?,other_benefit_amount=?,esi_basis=? WHERE user_id=?',array_merge([$employeeCode?:null,$phone,$guardian,$relieving],array_values($benefits),[$id]));
         query('UPDATE employee_profiles SET pf_number=?,esi_number=? WHERE user_id=?',[optional_text('pf_number',100),optional_text('esi_number',100),$id]);
         query('UPDATE employee_profiles SET date_of_birth=?,gender=?,address=?,work_timings=?,employment_type=? WHERE user_id=?',[$dateOfBirth,$gender,$address,$workTimings,$employmentType,$id]);
-        if ($timingMode!==null && $timingMode!=='split') query('UPDATE employee_profiles SET shift_start=?,shift_end=?,shift_label=?,shift_slots=NULL,shift_hours=NULL WHERE user_id=?',[$shift[0]??null,$shift[1]??null,$shift[2]??'',$id]);
+        if ($timingMode!==null && $timingMode!=='split' && $timingMode!=='hours') query('UPDATE employee_profiles SET shift_start=?,shift_end=?,shift_label=?,shift_slots=NULL,shift_hours=NULL,monthly_hours=NULL WHERE user_id=?',[$shift[0]??null,$shift[1]??null,$shift[2]??'',$id]);
         if (isset($_POST['access_role'])) {
             query('UPDATE departments SET head_user_id=NULL WHERE head_user_id=? AND id<>?',[$id,$makeHead?$department:0]);
             if ($makeHead) query('UPDATE departments SET head_user_id=? WHERE id=?',[$id,$department]);
@@ -186,8 +186,8 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
             <label>Department *<select id="department_id" name="department_id" required data-card-src="dept"><option value="">Select department</option><?= options($departmentsList,'name',$selectedDepartment) ?></select></label>
             <label>Designation *<input id="designation" name="designation" required value="<?= h($value('designation')) ?>" maxlength="150" placeholder="e.g. Senior Graphic Designer" data-card-src="designation"></label>
             <label>Joining date *<input type="date" id="joining_date" name="joining_date" required value="<?= h($joinedValue) ?>" data-card-src="joined"></label>
-            <?php $officeDefault=office_timing_default(); $recordSplit=$record?employee_shift_slots($record):[]; $timingMode=$isPost?(string)($_POST['timing_mode']??'office'):(count($recordSplit)>1?'split':(!empty($record['shift_start'])?'custom':'office')); ?>
-            <label>Work timings<select name="timing_mode" data-timing-mode><option value="office" <?= $timingMode!=='custom'?'selected':'' ?>>Office timing · <?= h(office_range_label($officeDefault['start'],$officeDefault['end'])) ?></option><option value="custom" <?= $timingMode==='custom'?'selected':'' ?>>Different shift (e.g. night shift)</option><?php if (count($recordSplit)>1): ?><option value="split" <?= $timingMode==='split'?'selected':'' ?>>Split timing · <?= h(employee_timing($record)['text']) ?></option><?php endif; ?></select><small>Split timings (e.g. 7–10 PM + 5–8 AM) and hours: <a href="office-timings.php<?= $id?'?edit='.(int)$id.'#shift-form':'' ?>">Office timings</a></small></label>
+            <?php $officeDefault=office_timing_default(); $recordSplit=$record?employee_shift_slots($record):[]; $recordHours=$record&&!empty($record['monthly_hours'])?(float)$record['monthly_hours']:0; $timingMode=$isPost?(string)($_POST['timing_mode']??'office'):($recordHours?'hours':(count($recordSplit)>1?'split':(!empty($record['shift_start'])?'custom':'office'))); ?>
+            <label>Work timings<select name="timing_mode" data-timing-mode><option value="office" <?= $timingMode!=='custom'?'selected':'' ?>>Office timing · <?= h(office_range_label($officeDefault['start'],$officeDefault['end'])) ?></option><option value="custom" <?= $timingMode==='custom'?'selected':'' ?>>Different shift (e.g. night shift)</option><?php if (count($recordSplit)>1): ?><option value="split" <?= $timingMode==='split'?'selected':'' ?>>Split timing · <?= h(employee_timing($record)['text']) ?></option><?php endif; ?><?php if ($recordHours): ?><option value="hours" <?= $timingMode==='hours'?'selected':'' ?>>Hours · <?= h(office_hours_label($recordHours)) ?> a month</option><?php endif; ?></select><small>Split timings (e.g. 7–10 PM + 5–8 AM) and hours: <a href="office-timings.php<?= $id?'?edit='.(int)$id.'#shift-form':'' ?>">Office timings</a></small></label>
             <div class="emp-shift" data-shift-fields<?= $timingMode==='custom'?'':' hidden' ?>>
                 <label>Shift starts<?= time12_field('shift_start',$isPost?(time12_value($_POST['shift_start']??null)?:null):substr((string)($record['shift_start']??'21:00'),0,5),false,'Shift starts') ?></label>
                 <label>Shift ends<?= time12_field('shift_end',$isPost?(time12_value($_POST['shift_end']??null)?:null):substr((string)($record['shift_end']??'06:00'),0,5),false,'Shift ends') ?></label>

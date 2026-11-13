@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 41;
+const PORTAL_SCHEMA_VERSION = 42;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -634,6 +634,9 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (41)');
+        // Hours employees: a monthly hours target (e.g. 150) instead of full-time office timing; paid per hour worked.
+        $addColumn('employee_profiles', 'monthly_hours', 'DECIMAL(6,2) NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (42)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

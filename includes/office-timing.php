@@ -59,10 +59,27 @@ function office_hours_label(float $hours): string
     return intdiv($minutes, 60) . ' hrs' . ($minutes % 60 ? ' ' . ($minutes % 60) . ' min' : '');
 }
 
-/** Timing that applies to one employee: own shift / split timings if set, else the office default. */
+/** Monthly hours target for an hours employee (e.g. 150), or null for a full-time employee. */
+function employee_monthly_hours(array $profile): ?float
+{
+    $hours = $profile['monthly_hours'] ?? null;
+    return is_numeric($hours) && (float) $hours > 0 ? (float) $hours : null;
+}
+
+/** Timing that applies to one employee: hours per month, own shift / split timings if set, else the office default. */
 function employee_timing(array $profile): array
 {
     $default = office_timing_default();
+    $monthly = employee_monthly_hours($profile);
+    if ($monthly !== null) {
+        // Hours employee: logs in any time; no late marks, paid for the hours worked.
+        return [
+            'start' => $default['start'], 'end' => $default['end'], 'slots' => [], 'hours' => null, 'slot_hours' => 0.0,
+            'custom' => true, 'split' => false, 'hourly' => true, 'monthly_hours' => $monthly,
+            'label' => trim((string) ($profile['shift_label'] ?? '')) ?: 'Hours',
+            'text' => office_hours_label($monthly) . ' a month · any time',
+        ];
+    }
     $slots = employee_shift_slots($profile);
     $custom = !empty($profile['shift_start']) && !empty($profile['shift_end']);
     if (!$slots) $slots = $custom ? [[substr((string) $profile['shift_start'], 0, 5), substr((string) $profile['shift_end'], 0, 5)]] : [[$default['start'], $default['end']]];
@@ -92,7 +109,7 @@ function employee_timing(array $profile): array
 function login_late_seconds(string $loginAt, array $timing): int
 {
     $time = strtotime($loginAt);
-    if ($time === false) return 0;
+    if ($time === false || !empty($timing['hourly'])) return 0;
     if (count($timing['slots'] ?? []) > 1) {
         $late = null;
         foreach ($timing['slots'] as $slot) {

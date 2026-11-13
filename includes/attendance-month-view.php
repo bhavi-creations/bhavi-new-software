@@ -8,7 +8,7 @@ require_once __DIR__ . '/office-timing.php';
 function attendance_month_view(array $employee, array $calc, bool $isAdmin): void
 {
     $rate = $calc['rate'];
-    $timing = employee_timing(one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours FROM employee_profiles WHERE user_id=?', [$employee['id']]) ?: []);
+    $timing = employee_timing(one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours,monthly_hours FROM employee_profiles WHERE user_id=?', [$employee['id']]) ?: []);
     $cuts = [];
     $adds = [];
     $pending = [];
@@ -34,9 +34,52 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
     $money = static fn(int $p): string => h(paise_label($p));
     $monthLabel = $calc['first']->format('F Y');
     $salaryLink = 'employee-salary.php?' . http_build_query(array_filter(['employee' => $isAdmin ? (int) $employee['id'] : null, 'month' => $calc['month']]));
-    $statusText = ['present' => 'Present', 'working' => 'Working now', 'missed_logout' => 'Missed logout', 'leave' => 'Leave', 'absent' => 'Absent', 'off' => 'Sunday / week off', 'holiday' => 'Holiday', 'today' => 'Not logged in yet', 'upcoming' => '', 'not_joined' => 'Not joined', 'no_salary' => 'No salary set'];
+    $statusText = ['present' => 'Present', 'working' => 'Working now', 'missed_logout' => 'Missed logout', 'leave' => 'Leave', 'absent' => 'Absent', 'off' => 'Sunday / week off', 'holiday' => 'Holiday', 'today' => 'Not logged in yet', 'upcoming' => '', 'not_joined' => 'Not joined', 'free' => 'No work', 'no_salary' => 'No salary set'];
     ?>
-<?php if ($calc['salary']): ?>
+<?php if ($calc['salary'] && $calc['hourly']): $hp = $calc['hourly']; $tillToday = max(0, $calc['monthly'] + $addTotal - $cutTotal); ?>
+<section class="am-sum" aria-label="Salary for <?= h($monthLabel) ?>">
+    <div class="am-sum-head">
+        <h3>Salary calculation · <?= h($monthLabel) ?></h3>
+        <p>Monthly salary <?= $money($calc['full_salary']) ?> ÷ <?= h(office_hours_label($hp['monthly_hours'])) ?> = <b><?= $money($hp['hour_rate']) ?> per hour</b></p>
+    </div>
+    <div class="am-cards">
+        <article class="am-card is-login">
+            <span>Hours worked</span>
+            <strong><?= h(work_duration_label($hp['worked_seconds'])) ?></strong>
+            <p><?= $calc['present'] ?> login day<?= $calc['present'] === 1 ? '' : 's' ?> · <b><?= $money($calc['monthly']) ?></b></p>
+        </article>
+        <article class="am-card is-off">
+            <span>Hours remaining</span>
+            <strong><?= h(work_duration_label($hp['remaining_seconds'])) ?></strong>
+            <p><?= h(office_hours_label($hp['monthly_hours'])) ?> − <?= h(work_duration_label($hp['worked_seconds'])) ?><?= $hp['extra_seconds'] ? ' · ' . h(work_duration_label($hp['extra_seconds'])) . ' over (not paid)' : '' ?></p>
+        </article>
+        <article class="am-card is-cut">
+            <span>Salary cut by Managing Director</span>
+            <strong>−<?= $money($cutTotal) ?></strong>
+            <?php if (!$cuts): ?><p>No cut this month.</p><?php endif; ?>
+            <?php foreach ($cuts as $c): ?><p class="am-item"><b><?= h(date('d M', strtotime($c['date']))) ?> · −<?= $money($c['paise']) ?></b><?= $c['what'] !== '' ? ' · ' . h($c['what']) : '' ?><?= $c['reason'] !== '' ? '<br>Reason: ' . h($c['reason']) : '' ?></p><?php endforeach; ?>
+        </article>
+        <article class="am-card is-add">
+            <span>Added by Managing Director</span>
+            <strong>+<?= $money($addTotal) ?></strong>
+            <?php if (!$adds): ?><p>Nothing added this month.</p><?php endif; ?>
+            <?php foreach ($adds as $a): ?><p class="am-item"><b><?= h(date('d M', strtotime($a['date']))) ?> · +<?= $money($a['paise']) ?></b><?= $a['what'] !== '' ? ' · ' . h($a['what']) : '' ?><?= $a['reason'] !== '' ? '<br>Reason: ' . h($a['reason']) : '' ?></p><?php endforeach; ?>
+        </article>
+    </div>
+    <div class="am-total">
+        <div>
+            <span><?= $calc['is_current'] ? 'Salary till now' : 'Salary for the hours worked' ?></span>
+            <p><?= h(work_duration_label(min($hp['worked_seconds'], $hp['target_seconds']))) ?> × <?= $money($hp['hour_rate']) ?><?= $addTotal ? ' + ' . $money($addTotal) . ' added by Managing Director' : '' ?><?= $cutTotal ? ' − ' . $money($cutTotal) . ' cut by Managing Director' : '' ?></p>
+        </div>
+        <strong><?= $money($tillToday) ?></strong>
+    </div>
+    <p class="am-foot">
+        After PF <?= $money($calc['pf']) ?> and ESI <?= $money($calc['esi']) ?>: <b><?= $money($calc['net']) ?></b>
+        · <a href="<?= h($salaryLink) ?>">Full salary details →</a>
+        <?php if ($isAdmin): ?> · <a href="<?= h($salaryLink) ?>#adjustments">＋ Add / cut amount</a><?php endif; ?>
+    </p>
+</section>
+<?php elseif ($calc['salary']): ?>
 <section class="am-sum" aria-label="Salary for <?= h($monthLabel) ?>">
     <div class="am-sum-head">
         <h3>Salary calculation · <?= h($monthLabel) ?></h3>
@@ -92,7 +135,7 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
 <section class="am-cal-card">
     <div class="am-legend">
         <span class="is-present">Present</span><span class="is-late">Late login</span><span class="is-leave">Leave / absent (cut)</span><span class="is-missed_logout">Missed logout</span><span class="is-off">Sunday / holiday</span>
-        <small>Office time <?= h($timing['text']) ?> · login after <?= h(office_time_label($timing['start'])) ?> is late</small>
+        <small><?php if (!empty($timing['hourly'])): ?>Hours plan <?= h($timing['text']) ?> · no late login<?php else: ?>Office time <?= h($timing['text']) ?> · login after <?= h(office_time_label($timing['start'])) ?> is late<?php endif; ?></small>
     </div>
     <div class="am-cal">
         <?php foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $wd): ?><div class="am-wd"><?= $wd ?></div><?php endforeach; ?>
@@ -100,7 +143,7 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
         <?php foreach ($calc['days'] as $day):
             $status = $day['status'];
             // Late = first login after the start time (day shifts only; night shifts cross midnight).
-            $late = $day['login'] && $timing['start'] < $timing['end'] && date('H:i', strtotime($day['login'])) > $timing['start'];
+            $late = empty($timing['hourly']) && $day['login'] && $timing['start'] < $timing['end'] && date('H:i', strtotime($day['login'])) > $timing['start'];
             $class = $status === 'holiday' ? 'off' : $status;
             if ($status === 'absent') $class = 'leave';
             if ($status === 'present' && $late) $class = 'late';

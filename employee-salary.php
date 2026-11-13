@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($employee) attendance_sync_reviews((int) $employee['id']);
 $calc = $employee ? salary_month($employee, $month) : null;
 
-$statusLabels = ['present' => 'Present', 'working' => 'Working now', 'missed_logout' => 'Missed logout', 'leave' => 'Leave', 'absent' => 'Absent · no login', 'off' => 'Weekly off', 'holiday' => 'Holiday', 'today' => 'Today · not logged in', 'upcoming' => 'Upcoming', 'not_joined' => 'Not employed', 'no_salary' => 'No salary set'];
+$statusLabels = ['present' => 'Present', 'working' => 'Working now', 'missed_logout' => 'Missed logout', 'leave' => 'Leave', 'absent' => 'Absent · no login', 'off' => 'Weekly off', 'holiday' => 'Holiday', 'today' => 'Today · not logged in', 'upcoming' => 'Upcoming', 'not_joined' => 'Not employed', 'free' => 'No work', 'no_salary' => 'No salary set'];
 $signed = static fn(int $paise): string => $paise === 0 ? '—' : ($paise > 0 ? '+' : '−') . paise_label(abs($paise));
 $reviewText = static function (array $review): string {
     $kind = $review['kind'] === 'overtime' ? 'Extra work ' . work_duration_label(max(0, (int) $review['worked_seconds'] - (int) round(duty_hours((int) $review['employee_id']) * 3600))) : 'Missed logout';
@@ -66,7 +66,11 @@ error_message($error);
     <div>
         <p class="emp-crumb">Dashboard / Salary</p>
         <h2 class="emp-title"><?= $staff ? ($employee ? h($employee['full_name']) . ' · Salary' : 'Employee salary') : 'My salary' ?></h2>
+        <?php if ($calc && $calc['hourly']): ?>
+        <p class="emp-sub">Hours plan: <?= h(office_hours_label($calc['hourly']['monthly_hours'])) ?> a month. Hour amount = monthly salary ÷ <?= h(rtrim(rtrim(number_format($calc['hourly']['monthly_hours'], 2, '.', ''), '0'), '.')) ?> hours. Paid for the hours worked.</p>
+        <?php else: ?>
         <p class="emp-sub">Day amount = monthly salary ÷ <?= SALARY_DAYS_PER_MONTH ?>. Leave days are cut, Sundays and holidays are paid. Duty <?= h(duty_hours_label($employee ? duty_hours((int) $employee['id']) : null)) ?> a day.</p>
+        <?php endif; ?>
     </div>
     <form method="get" class="sal-filter">
         <?php if ($staff): ?><label><span>Employee</span><select name="employee" onchange="this.form.submit()"><?php foreach ($people as $p): ?><option value="<?= (int) $p['id'] ?>" <?= (int) $p['id'] === $employeeId ? 'selected' : '' ?>><?= h($p['full_name']) ?> · <?= h($p['department_name']) ?></option><?php endforeach; ?></select></label><?php endif; ?>
@@ -80,6 +84,15 @@ error_message($error);
 <?php elseif (!$calc['salary']): ?>
     <section class="emp-card"><h3>No salary set for <?= h($calc['first']->format('F Y')) ?></h3><p class="muted">The Managing Director has not added a salary for this month yet.<?php if ($staff): ?> <a href="admin-add-employee.php?id=<?= (int) $employee['id'] ?>">Add salary in Edit employee</a>.<?php endif; ?></p></section>
 <?php else: ?>
+<?php if ($calc['hourly']): $hp = $calc['hourly']; ?>
+<section class="at-stats sal-stats">
+    <div class="at-stat"><span>Monthly salary</span><strong><?= h(paise_label($calc['full_salary'])) ?></strong></div>
+    <div class="at-stat"><span>Hour amount (÷ <?= h(office_hours_label($hp['monthly_hours'])) ?>)</span><strong><?= h(paise_label($hp['hour_rate'])) ?></strong></div>
+    <div class="at-stat"><span>Hours worked</span><strong><?= h(work_duration_label($hp['worked_seconds'])) ?></strong></div>
+    <div class="at-stat is-absent"><span>Hours remaining</span><strong><?= h(work_duration_label($hp['remaining_seconds'])) ?><?php if ($hp['extra_seconds']): ?><small> · <?= h(work_duration_label($hp['extra_seconds'])) ?> over</small><?php endif; ?></strong></div>
+    <div class="at-stat is-primary"><span><?= $calc['is_current'] ? 'Salary so far this month' : 'Total salary' ?></span><strong><?= h(paise_label($calc['net'])) ?></strong></div>
+</section>
+<?php else: ?>
 <section class="at-stats sal-stats">
     <div class="at-stat"><span>Monthly salary</span><strong><?= h(paise_label($calc['full_salary'])) ?></strong></div>
     <div class="at-stat"><span>Day amount (÷ <?= SALARY_DAYS_PER_MONTH ?>)</span><strong><?= h(paise_label($calc['rate'])) ?></strong></div>
@@ -87,13 +100,18 @@ error_message($error);
     <div class="at-stat is-absent"><span>Leave days (cut)</span><strong><?= $calc['leave'] ?></strong></div>
     <div class="at-stat is-primary"><span><?= $calc['is_current'] ? 'Salary so far this month' : 'Total salary' ?></span><strong><?= h(paise_label($calc['net'])) ?></strong></div>
 </section>
+<?php endif; ?>
 
 <div class="sal-layout">
 <section class="emp-card sal-breakdown">
     <h3>How the salary is calculated · <?= h($calc['first']->format('F Y')) ?></h3>
     <dl>
+        <?php if ($calc['hourly']): ?>
+        <div><dt>Hours worked <small><?= h(work_duration_label(min($calc['hourly']['worked_seconds'], $calc['hourly']['target_seconds']))) ?> × <?= h(paise_label($calc['hourly']['hour_rate'])) ?> an hour<?= $calc['hourly']['extra_seconds'] ? ' (hours over ' . h(office_hours_label($calc['hourly']['monthly_hours'])) . ' are not counted)' : '' ?></small></dt><dd><?= h(paise_label($calc['monthly'])) ?></dd></div>
+        <?php else: ?>
         <div><dt>Monthly salary<?= $calc['monthly'] !== $calc['full_salary'] ? ' <small>(only the days employed this month)</small>' : '' ?></dt><dd><?= h(paise_label($calc['monthly'])) ?></dd></div>
-        <div class="is-cut"><dt>− Leave cut <small><?= $calc['leave'] ?> day<?= $calc['leave'] === 1 ? '' : 's' ?> × <?= h(paise_label($calc['rate'])) ?></small></dt><dd>−<?= h(paise_label($calc['leave_cut'])) ?></dd></div>
+        <?php endif; ?>
+        <?php if (!$calc['hourly']): ?><div class="is-cut"><dt>− Leave cut <small><?= $calc['leave'] ?> day<?= $calc['leave'] === 1 ? '' : 's' ?> × <?= h(paise_label($calc['rate'])) ?></small></dt><dd>−<?= h(paise_label($calc['leave_cut'])) ?></dd></div><?php endif; ?>
         <div class="is-add"><dt>+ Extra work approved by Managing Director</dt><dd>+<?= h(paise_label($calc['overtime_add'])) ?></dd></div>
         <div class="is-cut"><dt>− Missed logout cut by Managing Director</dt><dd>−<?= h(paise_label($calc['missed_cut'])) ?></dd></div>
         <div class="is-add"><dt>+ Amount added by Managing Director <small>see the list below</small></dt><dd>+<?= h(paise_label($calc['manual_add'])) ?></dd></div>
@@ -104,7 +122,7 @@ error_message($error);
         <div class="is-total"><dt>Employee receives</dt><dd><?= h(paise_label($calc['net'])) ?></dd></div>
     </dl>
     <?php if ($calc['pending']): ?><p class="sal-note is-pending"><?= $calc['pending'] ?> day<?= $calc['pending'] === 1 ? ' is' : 's are' ?> waiting for Managing Director approval. The amount changes after the Managing Director decides.<?php if ($staff): ?> <a href="attendance-approvals.php">Open approvals →</a><?php endif; ?></p><?php endif; ?>
-    <?php if ($calc['is_current']): ?><p class="sal-note">Remaining days of this month are counted as present. Each leave from now cuts <?= h(paise_label($calc['rate'])) ?>.</p><?php endif; ?>
+    <?php if ($calc['is_current'] && $calc['hourly']): ?><p class="sal-note"><?= h(work_duration_label($calc['hourly']['remaining_seconds'])) ?> of <?= h(office_hours_label($calc['hourly']['monthly_hours'])) ?> remaining this month. Each hour worked adds <?= h(paise_label($calc['hourly']['hour_rate'])) ?>.</p><?php elseif ($calc['is_current']): ?><p class="sal-note">Remaining days of this month are counted as present. Each leave from now cuts <?= h(paise_label($calc['rate'])) ?>.</p><?php endif; ?>
 </section>
 
 <section class="emp-card sal-decisions">

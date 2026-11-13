@@ -5,6 +5,8 @@
 //  - Working more than the duty hours, or forgetting to logout, sends the day to the admin for approval.
 //    The admin adds an amount (extra work) or cuts an amount (missed logout) and writes a remark.
 //  - PF and ESI are cut on the full monthly salary.
+//  - Hours employees (monthly hours set on Office timings, e.g. 150): hour amount = monthly salary ÷ monthly hours.
+//    They are paid for the hours worked (up to the monthly hours); no leave cuts and no extra-work approvals.
 require_once __DIR__ . '/finance.php';
 require_once __DIR__ . '/office-timing.php';
 
@@ -21,7 +23,7 @@ function duty_hours(?int $employeeId = null): float
         if (!array_key_exists($employeeId, $perEmployee)) {
             $own = null;
             try {
-                $profile = one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours FROM employee_profiles WHERE user_id=?', [$employeeId]);
+                $profile = one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours,monthly_hours FROM employee_profiles WHERE user_id=?', [$employeeId]);
                 if ($profile) {
                     $timing = employee_timing($profile);
                     $own = $timing['hours'] ?? ($timing['split'] ? $timing['slot_hours'] : null);
@@ -103,7 +105,7 @@ function attendance_sync_reviews(?int $employeeId = null): array
             if ($day['work_date'] >= today()) continue; // still working today
             $kind = 'missed_logout';
             $stmt = query("INSERT IGNORE INTO attendance_reviews (employee_id,work_date,kind,worked_seconds) VALUES (?,?,'missed_logout',?)", [$day['employee_id'], $day['work_date'], $worked]);
-        } elseif ($worked > $dutySeconds) {
+        } elseif ($worked > $dutySeconds && !employee_is_hourly((int) $day['employee_id'])) {
             $kind = 'overtime';
             $stmt = query("INSERT INTO attendance_reviews (employee_id,work_date,kind,worked_seconds) VALUES (?,?,'overtime',?) ON DUPLICATE KEY UPDATE worked_seconds=IF(status='pending',VALUES(worked_seconds),worked_seconds)", [$day['employee_id'], $day['work_date'], $worked]);
         } else {
@@ -112,6 +114,20 @@ function attendance_sync_reviews(?int $employeeId = null): array
         if ($stmt->rowCount() === 1) $created[] = ['employee_id' => (int) $day['employee_id'], 'work_date' => $day['work_date'], 'kind' => $kind, 'worked_seconds' => $worked];
     }
     return $created;
+}
+
+/** True when the employee is paid per hour (monthly hours set on the Office timings page). */
+function employee_is_hourly(int $employeeId): bool
+{
+    static $cache = [];
+    if (!array_key_exists($employeeId, $cache)) {
+        try {
+            $cache[$employeeId] = employee_monthly_hours(one('SELECT monthly_hours FROM employee_profiles WHERE user_id=?', [$employeeId]) ?: []) !== null;
+        } catch (Throwable $e) {
+            $cache[$employeeId] = false; // column not created yet
+        }
+    }
+    return $cache[$employeeId];
 }
 
 /** Admin add / cut entries for an employee between two dates (oldest first). */
@@ -135,7 +151,7 @@ function pending_review_count(): int
 
 function salary_employee(int $id): ?array
 {
-    return one("SELECT u.id,u.full_name,ep.joining_date,ep.relieving_date,ep.department_id,ep.employee_code,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.id=? AND u.role='employee' AND u.deleted_at IS NULL", [$id]);
+    return one("SELECT u.id,u.full_name,ep.joining_date,ep.relieving_date,ep.department_id,ep.employee_code,ep.monthly_hours,d.name AS department_name FROM users u JOIN employee_profiles ep ON ep.user_id=u.id JOIN departments d ON d.id=ep.department_id WHERE u.id=? AND u.role='employee' AND u.deleted_at IS NULL", [$id]);
 }
 
 /** Valid "YYYY-MM" (not in the future), else the current month. */
@@ -184,8 +200,11 @@ function salary_month(array $employee, string $month): array
     $manual = [];
     foreach (salary_adjustment_rows($id, $from, $to) as $adjustment) $manual[$adjustment['adjustment_date']][] = $adjustment;
 
+    // Hours employee: paid per hour worked, capped at the monthly hours.
+    $monthlyHours = array_key_exists('monthly_hours', $employee) ? employee_monthly_hours($employee) : (employee_is_hourly($id) ? employee_monthly_hours(one('SELECT monthly_hours FROM employee_profiles WHERE user_id=?', [$id]) ?: []) : null);
     $days = [];
     $share = 0.0;
+    $workedTotal = 0;
     $totals = ['present' => 0, 'leave' => 0, 'paid_off' => 0, 'leave_cut' => 0, 'overtime_add' => 0, 'missed_cut' => 0, 'manual_add' => 0, 'manual_cut' => 0, 'pending' => 0];
     $lastRow = null;
     for ($d = $first; $d <= $last; $d = $d->modify('+1 day')) {
@@ -218,8 +237,16 @@ function salary_month(array $employee, string $month): array
             $share += money_cents((string) $row['amount']) / $daysInMonth;
             $lastRow = $row;
         }
+        if ($monthlyHours !== null) {
+            // No cut for days without work; Sundays/holidays are not paid separately.
+            if (in_array($status, ['leave', 'absent', 'off', 'holiday'], true)) { $status = 'free'; $label = $label !== '' ? $label : 'No work'; }
+            if ($status === 'today') $status = 'free';
+            if ($row) $rate = (int) round(money_cents((string) $row['amount']) / $monthlyHours); // per hour
+        }
         $amount = 0;
-        if (in_array($status, ['present', 'working', 'missed_logout'], true)) { $amount = $rate; $totals['present']++; }
+        if ($monthlyHours !== null) {
+            if ($session && $status !== 'not_joined') { $workedTotal += (int) $session['worked']; $amount = (int) round($rate * (int) $session['worked'] / 3600); $totals['present']++; }
+        } elseif (in_array($status, ['present', 'working', 'missed_logout'], true)) { $amount = $rate; $totals['present']++; }
         elseif (in_array($status, ['off', 'holiday'], true)) { $amount = $rate; $totals['paid_off']++; }
         elseif (in_array($status, ['leave', 'absent'], true)) { $amount = -$rate; $totals['leave']++; $totals['leave_cut'] += $rate; }
         $adjust = 0;
@@ -242,6 +269,16 @@ function salary_month(array $employee, string $month): array
         ];
     }
     $monthly = (int) round($share);
+    $hourly = null;
+    if ($monthlyHours !== null) {
+        $targetSeconds = (int) round($monthlyHours * 3600);
+        $hourRate = $lastRow ? (int) round(money_cents((string) $lastRow['amount']) / $monthlyHours) : 0;
+        $paidSeconds = min($workedTotal, $targetSeconds);
+        // Pay for the hours worked; never more than the monthly salary.
+        $monthly = $lastRow ? min(money_cents((string) $lastRow['amount']), (int) round($hourRate * $paidSeconds / 3600)) : 0;
+        $hourly = ['monthly_hours' => $monthlyHours, 'target_seconds' => $targetSeconds, 'worked_seconds' => $workedTotal,
+            'remaining_seconds' => max(0, $targetSeconds - $workedTotal), 'extra_seconds' => max(0, $workedTotal - $targetSeconds), 'hour_rate' => $hourRate];
+    }
     $pf = $lastRow ? money_cents((string) $lastRow['employee_pf']) : 0;
     $esi = $lastRow ? money_cents((string) $lastRow['employee_esi']) : 0;
     $benefits = $lastRow ? money_cents((string) ($lastRow['other_benefit_amount'] ?? '0.00')) : 0;
@@ -249,9 +286,10 @@ function salary_month(array $employee, string $month): array
     return [
         'month' => $month, 'first' => $first, 'days' => $days, 'salary' => $lastRow,
         'full_salary' => $lastRow ? money_cents((string) $lastRow['amount']) : 0,
-        'monthly' => $monthly, 'rate' => $lastRow ? salary_day_rate($lastRow) : 0,
+        'monthly' => $monthly, 'rate' => $hourly ? $hourly['hour_rate'] : ($lastRow ? salary_day_rate($lastRow) : 0),
         'earned' => $earned, 'benefits' => $benefits, 'pf' => $pf, 'esi' => $esi,
         'net' => max(0, $earned + $benefits - $pf - $esi),
         'is_current' => $month === date('Y-m'),
+        'hourly' => $hourly,
     ] + $totals;
 }
