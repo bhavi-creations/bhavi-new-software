@@ -60,6 +60,7 @@ function icon(string $name): string
 function page_start(string $title, string $active = ''): void
 {
     $user = require_roles(['admin','manager','employee','client']);
+    if (!empty($user['real_role'])) $user['role'] = $user['real_role']; // employee using a page given by the Managing Director
     try { query('UPDATE users SET last_seen_at=NOW() WHERE id=? AND (last_seen_at IS NULL OR last_seen_at<NOW()-INTERVAL 30 SECOND)', [$user['id']]); } catch (Throwable $e) { /* presence is best-effort */ }
     $dashboard = dashboard_path($user);
     if ($user['role'] === 'admin') {
@@ -119,6 +120,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'manager-notification.php', 'label' => 'Announcements', 'icon' => 'megaphone', 'badge' => $unread],
                 ['href' => 'wishes.php', 'label' => 'Wishes', 'icon' => 'gift'],
                 ['href' => 'references.php', 'label' => 'References', 'icon' => 'people'],
+                ['href' => 'page-access.php', 'label' => 'Employee access', 'icon' => 'lock'],
                 ['href' => 'tools.php', 'label' => 'Tools / Apps', 'icon' => 'key'],
                 ['href' => 'manager-monthly-design-report.php', 'label' => 'Reports & Analytics', 'icon' => 'chart'],
                 ['href' => 'change-password.php', 'label' => 'Settings', 'icon' => 'settings'],
@@ -165,6 +167,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat'],
                 ['href' => 'manager-notification.php', 'label' => 'Notifications', 'icon' => 'bell', 'badge' => $unread],
             ],
+            'Access given' => array_map(static fn($key) => ['href' => page_access_features()[$key][1], 'label' => page_access_features()[$key][0], 'icon' => 'key', 'match' => page_access_features()[$key][2]], employee_access_list((int) $user['id'])),
             'More' => [
                 ['href' => 'admin-employees.php', 'label' => 'My details', 'icon' => 'people'],
                 ['href' => 'admin-holidays.php', 'label' => 'Holiday calendar', 'icon' => 'calendar'],
@@ -227,6 +230,7 @@ function page_start(string $title, string $active = ''): void
 function page_end(): void
 {
     $user = current_user();
+    if ($user && !empty($user['real_role'])) $user['role'] = $user['real_role'];
     ?></main><footer class="portal-footer">Bhavi Creations</footer></div></div><?= $user ? wish_popup_html($user) : '' ?><script src="assets/js/portal.js?v=<?= filemtime(__DIR__.'/../assets/js/portal.js') ?>" defer></script></body></html><?php
 }
 function error_message(?string $error): void { if ($error): ?><div class="alert error" role="alert"><?= h($error) ?></div><?php endif; }

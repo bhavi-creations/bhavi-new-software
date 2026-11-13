@@ -139,6 +139,19 @@ try {
     ok(!str_contains($d['body'], 'data-wish-dock') && (int) val('SELECT show_count FROM wish_recipients WHERE wish_id=?', [$wishId]) === 5, 'not shown after 5 log-ins');
     $sitaB = new B($base); ok(!str_contains($sitaB->login('sita', 'Secret123!')['body'], 'data-wish-dock'), 'other employee does not get it');
 
+    echo "Employee access\n";
+    ok($sitaB->req('admin-client-work-report.php')['status'] === 403, 'employee blocked from Client work report before access');
+    ok(str_contains($admin->req('page-access.php?employee=' . $sita)['body'], 'value="client_work_report"'), 'Employee access page lists pages to give');
+    $r = $admin->post('page-access.php', ['employee_id' => $sita, 'features' => ['client_work_report', 'tools']]);
+    ok($r['status'] === 303 && (int) val('SELECT COUNT(*) FROM employee_page_access WHERE user_id=?', [$sita]) === 2, 'access saved for employee');
+    $cw = $sitaB->req('admin-client-work-report.php');
+    ok($cw['status'] === 200, 'employee opens Client work report after access');
+    ok(str_contains($cw['body'], 'Access given') && str_contains($cw['body'], 'href="admin-client-work-report.php"') && str_contains($cw['body'], 'role-badge">Employee<'), 'sidebar shows Access given; badge stays Employee');
+    ok($sitaB->req('tools.php')['status'] === 200 && $sitaB->req('office-timings.php')['status'] === 403 && $sitaB->req('page-access.php')['status'] === 403, 'only given pages open; Employee access page stays MD-only');
+    ok(str_contains($sitaB->req('employee-profile.php')['body'], 'role-badge">Employee<'), 'other pages stay employee view');
+    $admin->post('page-access.php', ['employee_id' => $sita]);
+    ok($sitaB->req('admin-client-work-report.php')['status'] === 403, 'access removed when unticked');
+
     echo "Client\n";
     $cl = new B($base);
     $cd = $cl->login('kiran', 'Secret123!');

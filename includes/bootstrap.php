@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/credentials.php';
 require_once __DIR__ . '/persistent-login.php';
+require_once __DIR__ . '/page-access.php';
 
 date_default_timezone_set('Asia/Kolkata');
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -86,6 +87,8 @@ function current_user(): ?array
             $user = one('SELECT u.*, ep.department_id, ep.designation, d.code AS department_code, d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=? AND u.account_status=\'active\' AND u.deleted_at IS NULL', [$_SESSION['user_id']]);
             if ($user && $user['role']==='client' && !one('SELECT id FROM clients WHERE user_id=? AND deleted_at IS NULL AND is_active=1',[$user['id']])) $user=null;
             if ($user && !maintain_browser_login($user)) $user=null;
+            // An employee on a page the Managing Director gave them works with Managing Director rights there.
+            if ($user && $user['role']==='employee' && ($feature=page_access_for_request((int)$user['id']))) { $user['real_role']='employee'; $user['access_feature']=$feature; $user['role']='admin'; }
             if (!$user) { revoke_browser_login(); unset($_SESSION['user_id'],$_SESSION['auth_selector'],$_SESSION['auth_fingerprint']); }
         }
     }

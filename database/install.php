@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 40;
+const PORTAL_SCHEMA_VERSION = 41;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -623,6 +623,17 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (40)');
+        // Managing Director pages given to employees (Employee access page).
+        $pdo->exec("CREATE TABLE IF NOT EXISTS employee_page_access (
+            user_id BIGINT UNSIGNED NOT NULL,
+            feature VARCHAR(40) NOT NULL,
+            granted_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id,feature),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (41)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);
