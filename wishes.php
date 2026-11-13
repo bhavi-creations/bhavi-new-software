@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $wid = positive_id($_POST['id'] ?? null);
             $old = one('SELECT poster_path FROM wishes WHERE id=?', [$wid]);
             query('DELETE FROM wishes WHERE id=?', [$wid]);
-            if ($old && $old['poster_path'] && str_starts_with($old['poster_path'], 'uploads/wishes/')) @unlink(__DIR__ . '/' . $old['poster_path']);
+            if ($old && ($posterFile = wish_poster_file($old['poster_path']))) @unlink($posterFile);
             flash('Message deleted. People who have not opened it yet will not see it.');
             redirect('wishes.php');
         }

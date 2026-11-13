@@ -21,14 +21,34 @@ function wish_poster_input(): ?array
     return ['tmp' => $file['tmp_name'], 'mime' => $mime];
 }
 
+/** Folders a wish poster may be kept in (uploads/photos is the fallback when hosting blocks a new folder). */
+const WISH_POSTER_FOLDERS = ['uploads/wishes', 'uploads/photos'];
+
 function wish_store_poster(array $poster): string
 {
-    $folder = 'uploads/wishes';
-    $root = dirname(__DIR__) . '/' . $folder;
-    if (!is_dir($root) && !@mkdir($root, 0700, true) && !is_dir($root)) throw new InvalidArgumentException('Hosting upload error: PHP cannot create ' . $folder . '/.');
-    $relative = $folder . '/' . bin2hex(random_bytes(20)) . '.' . WISH_POSTER_TYPES[$poster['mime']];
-    if (!@move_uploaded_file($poster['tmp'], dirname(__DIR__) . '/' . $relative)) throw new InvalidArgumentException('Hosting upload error: the poster could not be saved.');
-    return $relative;
+    $app = dirname(__DIR__);
+    foreach (WISH_POSTER_FOLDERS as $folder) {
+        $root = $app . '/' . $folder;
+        if (!is_dir($root)) @mkdir($root, 0755, true);
+        if (!is_dir($root) || !is_writable($root)) continue; // hosting did not allow it: try the next folder
+        $relative = $folder . '/wish-' . bin2hex(random_bytes(20)) . '.' . WISH_POSTER_TYPES[$poster['mime']];
+        if (@move_uploaded_file($poster['tmp'], $app . '/' . $relative)) return $relative;
+    }
+    throw new InvalidArgumentException('Hosting upload error: the poster could not be saved. In the hosting File Manager, create the folder uploads/wishes (or make uploads/photos writable) with permission 755.');
+}
+
+/** Absolute path of a saved wish poster, or null when it is missing / outside the poster folders. */
+function wish_poster_file(?string $relative): ?string
+{
+    if (!$relative) return null;
+    $app = dirname(__DIR__);
+    $path = realpath($app . '/' . $relative);
+    if (!$path || !is_file($path)) return null;
+    foreach (WISH_POSTER_FOLDERS as $folder) {
+        $root = realpath($app . '/' . $folder);
+        if ($root && str_starts_with(strtolower($path), strtolower($root . DIRECTORY_SEPARATOR))) return $path;
+    }
+    return null;
 }
 
 /**

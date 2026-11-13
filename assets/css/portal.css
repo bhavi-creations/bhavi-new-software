@@ -4538,3 +4538,10 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 .upload-progress-bar{height:10px;border-radius:999px;background:#eef3fb;overflow:hidden}
 .upload-progress-bar span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#103d83,#d6ad48);transition:width .2s ease}
 .upload-progress.is-error .upload-progress-card p{color:#b42318}
+/* Wish popup in the middle of the page */
+.wish-dock,.wish-dock{inset:0;right:auto;bottom:auto;width:auto;display:grid;place-items:center;padding:16px;background:#0d2f6659;box-sizing:border-box}
+.wish-dock .wish-card{width:min(440px,100%);max-height:calc(100vh - 32px)}
+.wish-dock .wish-poster{max-height:min(380px,50vh)}
+@media(max-width:560px){.wish-dock{right:auto;bottom:auto;padding:12px}}
+.wish-dock{top:0;left:0;right:0;bottom:0}
+@media(max-width:560px){.wish-dock{top:0;left:0;right:0;bottom:0}}

@@ -162,7 +162,7 @@ try {
 } finally {
     if (is_resource($process)) { proc_terminate($process); proc_close($process); }
     if (preg_match('/^bhavi_portal_test_[a-f0-9]{12}$/D', $database)) $pdo->exec("DROP DATABASE IF EXISTS `$database`");
-    foreach (glob(dirname(__DIR__) . '/uploads/wishes/*') ?: [] as $f) if (filemtime($f) >= time() - 600 && filesize($f) < 200) @unlink($f);
+    foreach (array_merge(glob(dirname(__DIR__) . '/uploads/wishes/*') ?: [], glob(dirname(__DIR__) . '/uploads/photos/wish-*') ?: []) ?: [] as $f) if (filemtime($f) >= time() - 600 && filesize($f) < 200) @unlink($f);
     foreach ($tmp as $t) @unlink($t);
 }
 exit(!empty($failed) ? 1 : 0);
