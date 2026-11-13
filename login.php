@@ -4,7 +4,7 @@ if (current_user()) { redirect(dashboard_path(current_user())); }
 if (!count_value('SELECT COUNT(*) FROM users')) { redirect('setup.php'); }
 $error = $_SESSION['login_error'] ?? null;
 unset($_SESSION['login_error']);
-?><!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in | Bhavi</title><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/assets/css/portal.css') ?>"><link rel="stylesheet" href="assets/css/login.css?v=<?= filemtime(__DIR__.'/assets/css/login.css') ?>"></head><body class="login-page">
+?><!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in | Bhavi</title><link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg"><link rel="apple-touch-icon" href="assets/img/favicon.svg"><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/assets/css/portal.css') ?>"><link rel="stylesheet" href="assets/css/login.css?v=<?= filemtime(__DIR__.'/assets/css/login.css') ?>"></head><body class="login-page">
 <main class="login-shell">
 <section class="login-form-panel"><div class="login-card"><div class="login-identity"><span class="brand-icon" aria-label="Bhavi">B</span></div><h1>Welcome back</h1><p class="muted">Sign in with your assigned username and password.</p>
 <?php foreach ($_SESSION['flash'] ?? [] as $message): ?><div class="alert"><?= h($message['message']) ?></div><?php endforeach; unset($_SESSION['flash']); ?>
