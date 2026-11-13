@@ -3482,7 +3482,7 @@ body[data-role="employee"] .sectioned-nav .nav-section-title:first-child{display
 .cd-shortcut p{color:var(--cd-muted);font-size:12px}
 .cd-shortcut b{margin-top:4px;color:var(--cd-brand);font-size:12px}
 @media(max-width:1000px){.cd-grid{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:820px){.cd-content-grid,.cd-shortcuts{grid-template-columns:minmax(0,1fr)}.cd-hero{flex-direction:column;align-items:flex-start;padding:24px}.cd-hero-side{grid-auto-flow:column;align-items:center}}
+@media(max-width:820px){.cd-shortcuts{grid-template-columns:minmax(0,1fr)}.cd-content-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cd-content{flex-direction:column;align-items:center;gap:8px;padding:14px 10px;text-align:center}.cd-content:last-child:nth-child(odd){grid-column:1/-1}.cd-page .cd-content-count strong{font-size:22px}.cd-hero{flex-direction:column;align-items:flex-start;padding:24px}.cd-hero-side{grid-auto-flow:column;align-items:center}}
 @media(max-width:560px){.cd-pay-boxes{grid-template-columns:minmax(0,1fr)}}
 .cd-ring i svg{position:static;inset:auto;width:20px;height:20px;transform:none}
 /* ===== Client: Request new work (cr-*) ===== */
