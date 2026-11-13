@@ -6,13 +6,33 @@
 //    The admin adds an amount (extra work) or cuts an amount (missed logout) and writes a remark.
 //  - PF and ESI are cut on the full monthly salary.
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/office-timing.php';
 
 const SALARY_DAYS_PER_MONTH = 30;
 
-/** Duty hours per day, set by the admin on the Office timings page (default 8). */
-function duty_hours(): float
+/**
+ * Duty hours per day. Without an employee: the office default set on the Office timings page (default 8).
+ * With an employee: their own hours, or the total of their split timings, else the office default.
+ */
+function duty_hours(?int $employeeId = null): float
 {
-    static $cache = null;
+    static $cache = null, $perEmployee = [];
+    if ($employeeId) {
+        if (!array_key_exists($employeeId, $perEmployee)) {
+            $own = null;
+            try {
+                $profile = one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours FROM employee_profiles WHERE user_id=?', [$employeeId]);
+                if ($profile) {
+                    $timing = employee_timing($profile);
+                    $own = $timing['hours'] ?? ($timing['split'] ? $timing['slot_hours'] : null);
+                }
+            } catch (Throwable $e) {
+                // Columns not created yet.
+            }
+            $perEmployee[$employeeId] = $own !== null && $own > 0 && $own <= 24 ? (float) $own : null;
+        }
+        if ($perEmployee[$employeeId] !== null) return $perEmployee[$employeeId];
+    }
     if ($cache !== null) return $cache;
     $value = 8.0;
     try {
@@ -52,10 +72,11 @@ function salary_row_on(int $employeeId, string $date): ?array
 }
 
 /** Suggested extra-work amount: (day amount ÷ duty hours) × extra hours, rounded to the rupee. */
-function overtime_suggestion(int $dayRate, int $workedSeconds): int
+function overtime_suggestion(int $dayRate, int $workedSeconds, ?int $employeeId = null): int
 {
-    $extra = max(0, $workedSeconds - (int) round(duty_hours() * 3600));
-    return (int) (round($dayRate * $extra / (duty_hours() * 3600) / 100) * 100);
+    $duty = duty_hours($employeeId);
+    $extra = max(0, $workedSeconds - (int) round($duty * 3600));
+    return (int) (round($dayRate * $extra / ($duty * 3600) / 100) * 100);
 }
 
 /**
@@ -64,11 +85,12 @@ function overtime_suggestion(int $dayRate, int $workedSeconds): int
  */
 function attendance_sync_reviews(?int $employeeId = null): array
 {
-    $dutySeconds = (int) round(duty_hours() * 3600);
     $filter = $employeeId ? ' AND employee_id=?' : '';
     $params = $employeeId ? [$employeeId] : [];
     // Duty hours raised by the admin: drop pending extra-work requests that are no longer extra.
-    query("DELETE FROM attendance_reviews WHERE kind='overtime' AND status='pending' AND worked_seconds<=?" . $filter, array_merge([$dutySeconds], $params));
+    foreach (rows("SELECT id,employee_id,worked_seconds FROM attendance_reviews WHERE kind='overtime' AND status='pending'" . $filter, $params) as $old) {
+        if ((int) $old['worked_seconds'] <= (int) round(duty_hours((int) $old['employee_id']) * 3600)) query('DELETE FROM attendance_reviews WHERE id=?', [$old['id']]);
+    }
     $days = rows("SELECT employee_id,DATE(login_at) AS work_date,SUM(logout_at IS NULL) AS open_sessions,
             SUM(IF(logout_at IS NULL,0,TIMESTAMPDIFF(SECOND,login_at,logout_at))) AS worked
         FROM employee_attendance_sessions WHERE login_at>=CURDATE()-INTERVAL 62 DAY" . $filter . '
@@ -76,6 +98,7 @@ function attendance_sync_reviews(?int $employeeId = null): array
     $created = [];
     foreach ($days as $day) {
         $worked = (int) $day['worked'];
+        $dutySeconds = (int) round(duty_hours((int) $day['employee_id']) * 3600);
         if ((int) $day['open_sessions'] > 0) {
             if ($day['work_date'] >= today()) continue; // still working today
             $kind = 'missed_logout';

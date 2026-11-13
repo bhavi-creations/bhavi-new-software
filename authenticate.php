@@ -21,6 +21,7 @@ if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
     query('UPDATE users SET password_hash=? WHERE id=?', [$user['password_hash'],$user['id']]);
 }
 session_regenerate_id(true);
+unset($_SESSION['wish_closed'], $_SESSION['wish_counted']); // each log-in counts as a new visit for wish popups
 begin_browser_login($user);
 query('UPDATE users SET last_login_at=NOW() WHERE id=?', [$user['id']]);
 redirect(dashboard_path($user));

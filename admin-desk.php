@@ -50,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $category = in_array($_POST['category'] ?? '', ['office', 'client', 'team'], true) ? $_POST['category'] : 'office';
             $clientId = ($_POST['client_id'] ?? '') === '' ? null : positive_id($_POST['client_id']);
             if ($clientId) { $category = 'client'; if (!one('SELECT id FROM clients WHERE id=? AND deleted_at IS NULL', [$clientId])) throw new InvalidArgumentException('Choose a valid client.'); }
-            $time = ($_POST['due_time'] ?? '') === '' ? null : office_time_input((string) $_POST['due_time'], 'time');
+            $time = time12_value($_POST['due_time'] ?? null) === null ? null : office_time_input($_POST['due_time'], 'time');
             query('INSERT INTO todo_tasks (user_id,title,expected_date,category,client_id,due_time,is_urgent) VALUES (?,?,?,?,?,?,?)', [$user['id'], $title, $due, $category, $clientId, $time, isset($_POST['is_urgent']) ? 1 : 0]);
             flash('Added to your to-do list.');
         } elseif ($action === 'toggle_todo') {
@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Payment removed.');
         } elseif ($action === 'save_summary') {
             $anchor = '#summary';
-            $time = office_time_input((string) ($_POST['wa_time'] ?? ''), 'summary time');
+            $time = office_time_input($_POST['wa_time'] ?? '', 'summary time');
             $items = array_values(array_intersect(['work', 'late', 'overdue', 'money'], (array) ($_POST['wa_items'] ?? [])));
             foreach (['wa_summary_enabled' => isset($_POST['wa_enabled']) ? '1' : '0', 'wa_summary_time' => $time, 'wa_summary_items' => implode(',', $items)] as $key => $value) {
                 query('INSERT INTO portal_settings (setting_key,setting_value,updated_by) VALUES (?,?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),updated_by=VALUES(updated_by)', [$key, $value, $user['id']]);
@@ -175,7 +175,7 @@ $waTime = substr(desk_setting('wa_summary_time', '20:00'), 0, 5);
 $waItems = array_filter(explode(',', desk_setting('wa_summary_items', 'work,late,overdue,money')));
 $activeEmployees = count_value("SELECT COUNT(*) FROM users WHERE role='employee' AND account_status='active' AND deleted_at IS NULL");
 $submittedToday = count_value("SELECT COUNT(DISTINCT s.employee_id) FROM daily_work_submissions s JOIN users u ON u.id=s.employee_id AND u.account_status='active' AND u.deleted_at IS NULL WHERE s.work_date=? AND s.submission_status='submitted'", [$today]);
-$loginsToday = rows("SELECT MIN(a.login_at) AS first_login,ep.shift_start,ep.shift_end,ep.shift_label FROM employee_attendance_sessions a JOIN users u ON u.id=a.employee_id AND u.account_status='active' AND u.deleted_at IS NULL JOIN employee_profiles ep ON ep.user_id=u.id WHERE a.login_at>=CURDATE() AND a.login_at<CURDATE()+INTERVAL 1 DAY GROUP BY a.employee_id,ep.shift_start,ep.shift_end,ep.shift_label");
+$loginsToday = rows("SELECT MIN(a.login_at) AS first_login,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours FROM employee_attendance_sessions a JOIN users u ON u.id=a.employee_id AND u.account_status='active' AND u.deleted_at IS NULL JOIN employee_profiles ep ON ep.user_id=u.id WHERE a.login_at>=CURDATE() AND a.login_at<CURDATE()+INTERVAL 1 DAY GROUP BY a.employee_id,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours");
 $lateToday = count(array_filter($loginsToday, static fn($l) => login_late_seconds($l['first_login'], employee_timing($l)) > 0));
 $notLoggedIn = max(0, $activeEmployees - count($loginsToday));
 $summaryLines = ['Bhavi daily summary · ' . date('D j M')];
@@ -228,7 +228,7 @@ error_message($error);
                 <details class="td-more"><summary>More options</summary>
                     <div class="td-more-grid">
                         <label><span>Date</span><input type="date" name="due_date" min="<?= h($today) ?>" data-td-date></label>
-                        <label><span>Time</span><input type="time" name="due_time"></label>
+                        <label><span>Time</span><?= time12_field('due_time', null, false, 'Time') ?></label>
                         <label><span>Type</span><select name="category"><option value="office">Office</option><option value="client">Client</option><option value="team">Team</option></select></label>
                         <label><span>Client</span><select name="client_id"><option value="">—</option><?= options($deskClients, 'client_name') ?></select></label>
                         <label class="td-check"><input type="checkbox" name="is_urgent" value="1"> Urgent</label>
@@ -281,7 +281,7 @@ error_message($error);
                 <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_summary">
                     <div class="td-card-head"><h2>Daily WhatsApp summary</h2><label class="td-check"><input type="checkbox" name="wa_enabled" value="1" <?= $waEnabled ? 'checked' : '' ?>> On</label></div>
                     <p class="td-note">To the admin, every evening</p>
-                    <label class="td-inline"><span>Every day at</span><input type="time" name="wa_time" value="<?= h($waTime) ?>" required></label>
+                    <label class="td-inline"><span>Every day at</span><?= time12_field('wa_time', $waTime, true, 'Every day at') ?></label>
                     <div class="td-checks">
                         <?php foreach (['work' => 'Work submitted', 'late' => 'Late & absent', 'overdue' => 'Overdue tasks', 'money' => 'Money to collect & pay'] as $key => $label): ?><label class="td-check"><input type="checkbox" name="wa_items[]" value="<?= $key ?>" <?= in_array($key, $waItems, true) ? 'checked' : '' ?>> <?= h($label) ?></label><?php endforeach; ?>
                     </div>

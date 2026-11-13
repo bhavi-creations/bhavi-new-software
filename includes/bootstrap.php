@@ -121,6 +121,16 @@ function client_status_info(array $client): array
     $labels = ['lead' => 'Lead', 'active' => 'Active', 'on_hold' => 'On hold'];
     return isset($labels[$key]) ? [$key, $labels[$key]] : ['active', 'Active'];
 }
+/**
+ * Package name safe to show to a client: '' when the Package field holds an amount (e.g. "200000", "₹50,000"),
+ * because amounts are shown only on the Payments page.
+ */
+function client_package_name(array $client): string
+{
+    $package = trim((string) ($client['package'] ?? ''));
+    if ($package === '' || preg_match('/^\s*(₹|rs\.?|inr)?\s*[\d,.\s]+(\/-)?\s*(rs\.?|inr|\/-|per\s+month|\/\s*month|pm)?\s*$/iu', $package)) return '';
+    return $package;
+}
 function clients(): array { return rows('SELECT * FROM clients WHERE deleted_at IS NULL AND is_active=1 ORDER BY client_name'); }
 function text_input(string $name, int $max = 255, bool $required = true): string
 {

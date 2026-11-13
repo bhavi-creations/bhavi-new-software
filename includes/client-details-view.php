@@ -43,7 +43,7 @@ function cdv_platform(string $name, string $url): array
 
 $cdName=(string)$client['client_name'];
 $cdInitials=strtoupper(implode('',array_map(static fn($w)=>mb_substr($w,0,1),array_slice(preg_split('/\s+/',trim(preg_replace('/[^\p{L}\p{N}\s]/u',' ',$cdName)))?:[],0,2)))) ?: 'B';
-$cdPackage=trim((string)($client['package']??''));
+$cdPackage=client_package_name($client);
 $cdType=trim((string)($client['client_type']??''));
 $cdBadge=$cdPackage!==''?$cdPackage:($cdType!==''?ucfirst($cdType):'');
 $cdFacts=[
@@ -52,7 +52,7 @@ $cdFacts=[
     'Partner for'=>cdv_partner_for($client['starting_date']),
     'Contract ends'=>$client['ending_date']?date('j M Y',strtotime($client['ending_date'])):'Ongoing',
 ];
-if ((float)$client['payment_total']>0) $cdFacts['Package value']=rupees_label($client['payment_total']);
+// Amounts are shown only on the Payments page.
 $cdPlan=['Reels'=>(int)$client['monthly_reels'],'Posters'=>(int)$client['monthly_posters'],'Carousels'=>(int)$client['monthly_carousels'],'Blogs'=>(int)$client['monthly_blogs']];
 $cdNote=trim((string)($client['monthly_work_remark']??''));
 $cdHasSecrets=(bool)array_filter($socialLinks,static fn($l)=>!empty($l['password_cipher']));

@@ -35,7 +35,7 @@ if ($isAdmin && $selectedEmployeeId===null) {
         redirect('employee-attendance.php?'.http_build_query(array_filter(['date'=>$viewDate===today()?null:$viewDate,'cal'=>(int)($_POST['cal']??0)?:null])));
     }
 
-    $directory=rows("SELECT u.id,u.full_name,ep.employee_code,ep.department_id,ep.joining_date,ep.shift_start,ep.shift_end,ep.shift_label,d.name AS department_name,
+    $directory=rows("SELECT u.id,u.full_name,ep.employee_code,ep.department_id,ep.joining_date,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours,d.name AS department_name,
         (SELECT MIN(a.login_at) FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND a.login_at>=? AND a.login_at<?+INTERVAL 1 DAY) AS day_login,
         (SELECT CASE WHEN SUM(a.logout_at IS NULL)>0 THEN NULL ELSE MAX(a.logout_at) END FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND a.login_at>=? AND a.login_at<?+INTERVAL 1 DAY) AS day_logout,
         (SELECT SUM(TIMESTAMPDIFF(SECOND,a.login_at,COALESCE(a.logout_at,IF(DATE(a.login_at)=CURDATE(),NOW(),DATE(a.login_at)+INTERVAL 1 DAY)))) FROM employee_attendance_sessions a WHERE a.employee_id=u.id AND a.login_at>=? AND a.login_at<?+INTERVAL 1 DAY) AS day_seconds,

@@ -4393,3 +4393,148 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
   .to-do-section .td-bars{gap:4px;height:170px}
   .to-do-section .td-addpay-form{right:auto;left:0}
 }
+/* ---------- 12-hour time picker (hour : minute AM/PM) ---------- */
+.time12{display:flex;align-items:center;gap:6px;min-width:0}
+.time12 b{color:var(--ot-muted,#6a7b94);font-weight:800}
+.time12 select,.ot-page .ot-form .time12 select{flex:1 1 0;min-width:58px;width:auto;min-height:42px;padding:0 8px;border:1px solid #d9e1ee;border-radius:10px;background:#f7f9fe;color:#172b49;font:700 13px "Plus Jakarta Sans",system-ui,sans-serif}
+.ot-default .time12 select,.ot-page .ot-default .ot-form .time12 select{border-color:transparent;background:#fff}
+.ot-default .time12 b{color:#ffffffcc}
+.emp-shift .time12{margin-top:6px}
+/* Office timings: split timing slots */
+.ot-slots{display:grid;gap:10px}
+.ot-slot{display:grid;gap:8px;padding:12px;border:1px dashed #d9e1ee;border-radius:12px;background:#fbfcff}
+.ot-slot[hidden]{display:none}
+.ot-page .ot-slot-title{display:flex;align-items:center;justify-content:space-between;color:var(--ot-brand);font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.ot-slot-remove{width:26px;height:26px;border:1px solid var(--ot-line);border-radius:50%;background:#fff;color:#b42318;font-size:12px;cursor:pointer}
+.ot-add-slot{justify-self:start;padding:8px 14px;border:1px dashed #c9a43f;border-radius:10px;background:#fffaf0;color:#8a6516;font:800 12.5px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.ot-add-slot[hidden]{display:none}
+.ot-when strong{white-space:normal}
+
+/* ---------- Tools / Apps ---------- */
+.tl-grid{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr)}
+.tl-pass{position:relative;display:block}
+.ot-page .ot-form .tl-pass input{padding-right:44px}
+.tl-eye{position:absolute;top:50%;right:6px;display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--ot-muted);transform:translateY(-50%);cursor:pointer}
+.tl-eye:hover{background:#eef3fb;color:var(--ot-brand)}
+.ot-form label.tl-check{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+.ot-page .ot-form .tl-check input{width:auto;min-height:0}
+.tl-list{display:grid;gap:12px}
+.tl-item{display:grid;gap:12px;padding:16px;border:1px solid var(--ot-line);border-radius:14px;background:#fff;min-width:0}
+.tl-item-head{display:flex;align-items:center;gap:12px;min-width:0}
+.tl-item-name{display:grid;gap:2px;flex:1;min-width:0}
+.tl-item-name strong{font-size:15px;overflow-wrap:anywhere}
+.tl-item-name small{color:var(--ot-muted);font-size:12px}
+.tl-renew{flex:0 0 auto;padding:4px 10px;border-radius:999px;background:#eef3fb;color:var(--ot-brand);font-size:11px;font-weight:800;white-space:nowrap}
+.tl-renew.is-soon{background:#fdecea;color:#b42318}
+.ot-page .tl-creds{display:grid;gap:0;margin:0;border:1px solid var(--ot-line);border-radius:10px;overflow:hidden}
+.tl-creds>div{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--ot-line)}
+.tl-creds>div:first-child{border-top:0}
+.tl-creds dt{margin:0;color:var(--ot-muted);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.tl-creds dd{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0;min-width:0;font-size:13px;font-weight:600}
+.tl-creds dd>span,.tl-creds dd>a{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+.tl-secret{font-family:ui-monospace,Consolas,monospace;letter-spacing:.04em}
+.tl-copy{flex:0 0 auto;padding:4px 10px;border:1px solid var(--ot-line);border-radius:7px;background:#f7f9fe;color:var(--ot-brand);font:700 11px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.tl-copy:hover{border-color:var(--ot-brand)}
+.tl-item-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.tl-item-actions form{margin:0}
+.tl-item-actions a,.tl-item-actions button{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--ot-line);border-radius:8px;background:#fff;color:var(--ot-brand);font:700 12px "Plus Jakarta Sans",system-ui,sans-serif;text-decoration:none;cursor:pointer}
+.tl-item-actions svg{width:15px;height:15px}
+.tl-item-actions button{color:#b42318}
+@media(max-width:1000px){.tl-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:520px){.tl-creds>div{grid-template-columns:minmax(0,1fr);gap:4px}.ot-two{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- Vendors ---------- */
+.vd-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.vd-new{display:inline-flex;align-items:center;text-decoration:none}
+.vd-form{display:grid;gap:18px}
+.ot-form.vd-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.vd-wide{grid-column:span 3}
+.vd-money{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.vd-money>div{display:grid;gap:4px;padding:14px 16px;border:1px solid var(--ot-line);border-radius:14px;background:#fff}
+.vd-money span{color:var(--ot-muted);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.vd-money strong{color:var(--ot-brand);font-size:20px;font-weight:800}
+.vd-money .is-due{border-color:#f0dca8;background:#fffaf0}
+.vd-money .is-due strong{color:#8a6516}
+.vd-pay-rows{display:grid;gap:10px}
+.ot-form.vd-pay-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr)}
+.vd-add{justify-self:start;padding:8px 14px;border:1px dashed #c9a43f;border-radius:10px;background:#fffaf0;color:#8a6516;font:800 12.5px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.ot-page .ot-card h2 small{font:500 12px "Plus Jakarta Sans",system-ui,sans-serif}
+@media(max-width:900px){.ot-form.vd-grid,.ot-form.vd-pay-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.vd-wide{grid-column:span 2}}
+@media(max-width:560px){.ot-form.vd-grid,.ot-form.vd-pay-row,.vd-money{grid-template-columns:minmax(0,1fr)}.vd-wide{grid-column:auto}}
+
+/* ---------- Wishes (admin page) ---------- */
+.ws-grid{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.ot-form label.ws-all{display:flex;align-items:center;gap:10px;align-self:end;min-height:42px;padding:0 12px;border:1px solid #d9e1ee;border-radius:10px;background:#f7f9fe;cursor:pointer}
+.ot-page .ot-form .ws-all input{width:18px;height:18px;min-height:0;margin:0;padding:0;accent-color:var(--ot-brand)}
+.ot-form .ws-all span{font-size:13px}
+.ws-pick{display:grid;border:1px solid var(--ot-line);border-radius:12px;overflow:hidden}
+.ws-pick[hidden]{display:none}
+.ws-pick-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--ot-line);background:#f7f9fe}
+.ws-pick-head span{font-size:12px;font-weight:800;color:var(--ot-brand)}
+.ot-page .ot-form .ws-pick-head input{width:160px;min-height:34px;background:#fff}
+.ws-pick-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:240px;padding:10px;overflow-y:auto}
+.ot-form label.ws-person{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--ot-line);border-radius:10px;background:#fff;cursor:pointer}
+.ot-form label.ws-person[hidden]{display:none}
+.ot-page .ot-form .ws-person input{width:16px;height:16px;min-height:0;margin:0;padding:0;flex:0 0 auto;accent-color:var(--ot-brand)}
+.ws-person>span{display:grid;gap:1px;min-width:0}
+.ot-form .ws-person strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ot-form .ws-person small{color:var(--ot-muted);font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-person:has(input:checked){border-color:var(--ot-brand);background:#eef3fb}
+.ws-person:has(input:disabled){opacity:.55}
+.ot-page .ot-form textarea{width:100%;padding:10px 12px;border:1px solid #d9e1ee;border-radius:10px;background:#f7f9fe;color:var(--ot-ink);font:500 13px/1.5 "Plus Jakarta Sans",system-ui,sans-serif;box-sizing:border-box;resize:vertical}
+.ot-page .ot-form input[type=file]{padding:8px 12px;min-height:0}
+.ws-preview{max-width:220px;max-height:220px;border-radius:12px;border:1px solid var(--ot-line);object-fit:cover}
+.ws-preview[hidden]{display:none}
+.ws-send{display:flex;flex-wrap:wrap;gap:10px}
+.ws-send button{display:inline-flex;align-items:center;gap:8px}
+.ws-danger{min-height:42px;padding:0 18px;border:0;border-radius:10px;background:#d92d20;color:#fff;font:800 13px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.ws-danger:hover{background:#b42318}
+.ws-history{display:grid;gap:10px}
+.ws-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:start;gap:12px;padding:12px;border:1px solid var(--ot-line);border-left:4px solid var(--ot-gold);border-radius:12px;background:#fff}
+.ws-item.no-poster{grid-template-columns:minmax(0,1fr) auto}
+.ws-item.is-danger{border-left-color:#d92d20;background:#fffbfa}
+.ws-item img{width:64px;height:64px;border-radius:10px;object-fit:cover}
+.ws-item>div{display:grid;gap:3px;min-width:0}
+.ot-page .ws-item p{margin:0;font-size:12.5px;overflow-wrap:anywhere}
+.ws-item strong{font-size:14px;overflow-wrap:anywhere}
+.ws-item small{color:var(--ot-muted);font-size:11px}
+.ot-page .ws-item-meta{color:var(--ot-muted)}
+.ws-item.is-danger .ws-item-meta b{color:#b42318}
+.ws-item form{margin:0}
+@media(max-width:1000px){.ws-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:560px){.ws-pick-list{grid-template-columns:minmax(0,1fr)}.ot-page .ot-form .ws-pick-head input{width:120px}}
+
+/* ---------- Wish popup (bottom corner, for employees and clients) ---------- */
+.wish-dock{position:fixed;right:20px;bottom:20px;z-index:1000;width:min(380px,calc(100vw - 32px))}
+.wish-sprinkles{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:999}
+.wish-card{position:relative;z-index:1001;display:grid;gap:10px;max-height:calc(100vh - 40px);padding:20px 20px 16px;border:1px solid #f0dca8;border-top:5px solid #d6ad48;border-radius:18px;background:#fff;box-shadow:0 18px 50px #0d2f6633,0 4px 12px #0d2f661a;color:#172b49;font-family:"Plus Jakarta Sans",system-ui,sans-serif;overflow-y:auto;opacity:0;transform:translateY(30px) scale(.97);transition:opacity .25s ease,transform .25s ease;box-sizing:border-box}
+.wish-card[hidden]{display:none}
+.wish-card.is-in{opacity:1;transform:none}
+.wish-card.is-out{opacity:0;transform:translateY(20px) scale(.97)}
+.wish-card.is-danger{border-color:#fda29b;border-top-color:#d92d20;background:#fff5f4}
+.wish-card.is-danger.is-in{animation:wish-shake .5s ease .25s}
+.wish-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:30px;height:30px;padding:0;border:1px solid #e3e8f1;border-radius:50%;background:#fff;color:#172b49;font-size:13px;font-weight:800;line-height:1;cursor:pointer}
+.wish-close:hover{background:#0d2f66;border-color:#0d2f66;color:#fff}
+.wish-card.is-danger .wish-close:hover{background:#d92d20;border-color:#d92d20}
+.wish-card .wish-from{margin:0;padding-right:36px;color:#a57d22;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.wish-card.is-danger .wish-from{color:#b42318}
+.wish-card h2{margin:0;padding-right:28px;color:#103d83;font:600 24px/1.2 "Cormorant Garamond",Georgia,serif}
+.wish-card.is-danger h2{color:#b42318}
+.wish-poster{display:block;width:100%;max-height:300px;border-radius:12px;object-fit:contain;background:#f7f9fe}
+.wish-card .wish-text{margin:0;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
+.wish-card.is-danger .wish-text{color:#7a271a;font-weight:600}
+.wish-card .wish-meta{margin:0;color:#6a7b94;font-size:11.5px}
+@keyframes wish-shake{0%,100%{transform:none}20%{transform:translateX(-8px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(3px)}}
+@media(max-width:560px){.wish-dock{right:16px;bottom:16px}}
+@media(prefers-reduced-motion:reduce){.wish-card{transition:none}.wish-card.is-danger.is-in{animation:none}}
+.to-do-section .td-inline .time12{flex:0 0 auto;width:auto}
+.to-do-section .time12 select{min-width:52px;width:auto!important}
+/* Big upload progress (task videos) */
+.upload-progress{position:fixed;inset:0;z-index:1100;display:grid;place-items:center;padding:16px;background:#0d2f6659}
+.upload-progress-card{display:grid;gap:10px;width:min(420px,100%);padding:22px;border-radius:16px;background:#fff;box-shadow:0 20px 50px #0d2f6640;color:#172b49;font-family:"Plus Jakarta Sans",system-ui,sans-serif;box-sizing:border-box}
+.upload-progress-card strong{color:#103d83;font-size:16px}
+.upload-progress-card p{margin:0;font-size:13.5px;font-weight:700}
+.upload-progress-card small{color:#6a7b94;font-size:12px}
+.upload-progress-bar{height:10px;border-radius:999px;background:#eef3fb;overflow:hidden}
+.upload-progress-bar span{display:block;width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,#103d83,#d6ad48);transition:width .2s ease}
+.upload-progress.is-error .upload-progress-card p{color:#b42318}

@@ -269,7 +269,7 @@ if ($selected) {
     $sharedFiles=rows('SELECT a.id,a.original_file_name,a.file_size_bytes,a.created_at FROM chat_attachments a JOIN chat_messages m ON m.id=a.message_id WHERE m.conversation_id=? ORDER BY a.id DESC LIMIT 12',[$selectedId]);
     $roomState=chat_room_state($selected,(int)$user['id']);
 }
-$roomSub=$roomProfile?array_filter([$roomProfile['department_name'],$roomProfile['designation']?:ucfirst($roomProfile['role'])]):($selected?[count($members)+1 .' members']:[]);
+$roomSub=$roomProfile?array_filter([$roomProfile['department_name'],$roomProfile['designation']?:role_label($roomProfile['role'])]):($selected?[count($members)+1 .' members']:[]);
 if ($selected && $selected['conversation_type']==='group' && !$roomState['online']) $roomSub=[]; // presence already shows the member count
 page_start('Chat','chat.php'); error_message($error);
 ?>
@@ -336,7 +336,7 @@ page_start('Chat','chat.php'); error_message($error);
         <?php if ($roomProfile): ?>
             <span class="tc-avatar tc-avatar-xl"><?= h($initials($roomProfile['full_name'])) ?></span>
             <h3 class="tc-info-name"><?= h($roomProfile['full_name']) ?></h3>
-            <p class="tc-info-sub"><?= h(implode(' · ',array_filter([$roomProfile['designation']?:ucfirst($roomProfile['role']),$roomProfile['department_name'],'@'.$roomProfile['username']]))) ?></p>
+            <p class="tc-info-sub"><?= h(implode(' · ',array_filter([$roomProfile['designation']?:role_label($roomProfile['role']),$roomProfile['department_name'],'@'.$roomProfile['username']]))) ?></p>
             <?php if ($isStaff && $roomProfile['role']==='employee'): ?>
                 <p class="tc-info-label">Quick actions</p>
                 <a class="tc-action" href="manager-assign-work.php">+ Assign a task</a>

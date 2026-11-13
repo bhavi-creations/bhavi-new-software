@@ -50,6 +50,7 @@ if (!empty($_GET['task_file'])) {
     if (!$attachment) {
         fail(404, 'Attachment not found.');
     }
+    session_write_close(); // do not hold the session lock while a video streams
 
     $relativePath = ltrim((string)($attachment['file_path'] ?? ''), "/\\");
     if ($relativePath === '') {
@@ -2655,8 +2656,8 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
             <span class="ed-tile-text">
                 <h2>Attendance</h2>
                 <strong><?= $todayAttendance?'In at '.h(date('g:i A',strtotime($todayAttendance['login_at']))):'Not logged in' ?></strong>                <p><?= $todayAttendance?'View day-wise attendance':'Use Login in the sidebar to record today’s time' ?></p>
-                <?php $edTiming=employee_timing(one('SELECT shift_start,shift_end,shift_label FROM employee_profiles WHERE user_id=?',[$user['id']])?:[]); ?><p class="ed-timing">Your timing · <?= h($edTiming['text']) ?><?= $edTiming['custom']?' ('.h($edTiming['label']).')':'' ?></p>
-                <?php if ($todayAttendance && $todayAttendance['logout_at']): ?><p data-attendance-logout>Logout time · <?= h(date('g:i A',strtotime($todayAttendance['logout_at']))) ?></p><?php $edReview=one("SELECT kind,status,worked_seconds FROM attendance_reviews WHERE employee_id=? AND work_date=? AND kind='overtime'",[$user['id'],today()]); if ($edReview && $edReview['status']==='pending'): ?><p class="ed-timing">Extra <?= h(work_duration_label((int)$edReview['worked_seconds']-(int)round(duty_hours()*3600))) ?> · waiting for admin approval</p><?php endif; ?><?php endif; ?>
+                <?php $edTiming=employee_timing(one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours FROM employee_profiles WHERE user_id=?',[$user['id']])?:[]); ?><p class="ed-timing">Your timing · <?= h($edTiming['text']) ?><?= $edTiming['custom']?' ('.h($edTiming['label']).')':'' ?></p>
+                <?php if ($todayAttendance && $todayAttendance['logout_at']): ?><p data-attendance-logout>Logout time · <?= h(date('g:i A',strtotime($todayAttendance['logout_at']))) ?></p><?php $edReview=one("SELECT kind,status,worked_seconds FROM attendance_reviews WHERE employee_id=? AND work_date=? AND kind='overtime'",[$user['id'],today()]); if ($edReview && $edReview['status']==='pending'): ?><p class="ed-timing">Extra <?= h(work_duration_label((int)$edReview['worked_seconds']-(int)round(duty_hours((int)$user['id'])*3600))) ?> · waiting for admin approval</p><?php endif; ?><?php endif; ?>
             </span>
             <span class="ed-tile-arrow">→</span>
         </a>
@@ -3438,7 +3439,7 @@ $awBrief = static function (?string $text): string {
                             <span class="aw-file is-empty"><span class="aw-file-icon">🔗</span><span>No reference link</span></span>
                         <?php endif; ?>
                         <?php if ($files): foreach ($files as $file): $mime = strtolower((string) $file['mime_type']); $fileIcon = str_starts_with($mime, 'image/') ? '🖼️' : (str_starts_with($mime, 'video/') ? '🎬' : ($mime === 'application/pdf' ? '📄' : '📎')); ?>
-                            <div class="aw-file"><span class="aw-file-icon"><?= $fileIcon ?></span><span class="aw-file-name"><?= h($file['original_name']) ?></span><a href="employee-assigned-work.php?task_file=<?= (int) $file['id'] ?>&amp;mode=view" target="_blank" rel="noopener noreferrer">Open</a><a href="employee-assigned-work.php?task_file=<?= (int) $file['id'] ?>&amp;mode=download">Save</a></div>
+                            <div class="aw-file"><span class="aw-file-icon"><?= $fileIcon ?></span><span class="aw-file-name"><?= h($file['original_name']) ?></span><a href="assignment-file.php?id=<?= (int) $file['id'] ?>&amp;mode=view" target="_blank" rel="noopener noreferrer">Open</a><a href="assignment-file.php?id=<?= (int) $file['id'] ?>&amp;mode=download">Save</a></div>
                         <?php endforeach; else: ?>
                             <span class="aw-file is-empty"><span class="aw-file-icon">📄</span><span>No attached files</span></span>
                         <?php endif; ?>

@@ -39,7 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 attendance_sync_reviews();
-$dutySeconds = (int) round(duty_hours() * 3600);
 $attendanceSelect = "(SELECT MIN(a.login_at) FROM employee_attendance_sessions a WHERE a.employee_id=r.employee_id AND a.login_at>=r.work_date AND a.login_at<r.work_date+INTERVAL 1 DAY) AS first_login,
     (SELECT MAX(a.logout_at) FROM employee_attendance_sessions a WHERE a.employee_id=r.employee_id AND a.login_at>=r.work_date AND a.login_at<r.work_date+INTERVAL 1 DAY) AS last_logout,
     (SELECT s.amount FROM employee_salary_history s WHERE s.employee_id=r.employee_id AND s.effective_from<=r.work_date AND (s.effective_to IS NULL OR s.effective_to>=r.work_date) ORDER BY s.effective_from DESC LIMIT 1) AS salary_amount";
@@ -66,8 +65,9 @@ error_message($error);
     <?php foreach ($pending as $r):
         $rate = $r['salary_amount'] !== null ? (int) round(money_cents((string) $r['salary_amount']) / SALARY_DAYS_PER_MONTH) : 0;
         $isOvertime = $r['kind'] === 'overtime';
-        $extra = max(0, (int) $r['worked_seconds'] - $dutySeconds);
-        $suggest = $isOvertime ? overtime_suggestion($rate, (int) $r['worked_seconds']) : 0;
+        $duty = duty_hours((int) $r['employee_id']);
+        $extra = max(0, (int) $r['worked_seconds'] - (int) round($duty * 3600));
+        $suggest = $isOvertime ? overtime_suggestion($rate, (int) $r['worked_seconds'], (int) $r['employee_id']) : 0;
     ?>
         <article class="sal-approval <?= $isOvertime ? 'is-overtime' : 'is-missed' ?>">
             <div class="sal-approval-head">
@@ -78,7 +78,7 @@ error_message($error);
                 <div><dt>Login</dt><dd><?= $r['first_login'] ? h(date('g:i A', strtotime($r['first_login']))) : '—' ?></dd></div>
                 <div><dt>Logout</dt><dd><?= $isOvertime && $r['last_logout'] ? h(date('g:i A', strtotime($r['last_logout']))) : '<span class="sal-bad">Not done</span>' ?></dd></div>
                 <div><dt>Worked</dt><dd><?= $isOvertime ? h(work_duration_label((int) $r['worked_seconds'])) : '—' ?></dd></div>
-                <div><dt><?= $isOvertime ? 'Extra time' : 'Duty' ?></dt><dd><?= $isOvertime ? h(work_duration_label($extra)) : h(duty_hours_label()) ?></dd></div>
+                <div><dt><?= $isOvertime ? 'Extra time' : 'Duty' ?></dt><dd><?= $isOvertime ? h(work_duration_label($extra)) : h(duty_hours_label($duty)) ?></dd></div>
                 <div><dt>Day amount</dt><dd><?= $rate ? h(paise_label($rate)) : 'No salary' ?></dd></div>
             </dl>
             <form method="post" class="sal-approval-form"><?= csrf_field() ?><input type="hidden" name="review_id" value="<?= (int) $r['id'] ?>">
@@ -88,7 +88,7 @@ error_message($error);
                     <button class="emp-btn emp-btn-dark emp-btn-sm" type="submit" name="decision" value="approve"><?= $isOvertime ? 'Approve & add' : 'Cut amount' ?></button>
                     <button class="emp-btn emp-btn-outline emp-btn-sm" type="submit" name="decision" value="reject"><?= $isOvertime ? 'Reject' : 'No cut' ?></button>
                 </div>
-                <?php if ($isOvertime && $suggest): ?><small class="sal-hint">Suggested: <?= h(paise_label($rate)) ?> ÷ <?= h(duty_hours_label()) ?> × <?= h(work_duration_label($extra)) ?> extra. Change it if needed.</small><?php endif; ?>
+                <?php if ($isOvertime && $suggest): ?><small class="sal-hint">Suggested: <?= h(paise_label($rate)) ?> ÷ <?= h(duty_hours_label($duty)) ?> × <?= h(work_duration_label($extra)) ?> extra. Change it if needed.</small><?php endif; ?>
             </form>
         </article>
     <?php endforeach; ?>

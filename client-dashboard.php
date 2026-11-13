@@ -11,10 +11,6 @@ $totalTarget=0; $totalDone=0;
 foreach ($contentTypes as $type=>[$column]) { $totalTarget+=(int)$client[$column]; $totalDone+=min((int)($done[$type]??0),(int)$client[$column]); }
 $daysLeft=(int)date('t')-(int)date('j');
 
-// Payments
-$agreed=(float)$client['payment_total']; $paid=(float)$client['paid_amount']; $balance=(float)$client['remaining_amount'];
-$paidPercent=$agreed>0?(int)round(min(100,max(0,$paid/$agreed*100))):0;
-
 // Who to contact: the client's account manager, otherwise an administrator.
 $contact=null;
 if (!empty($client['account_manager_id'])) $contact=one("SELECT u.full_name,u.email,ep.phone FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.account_status='active' AND u.deleted_at IS NULL",[$client['account_manager_id']]);
@@ -24,7 +20,8 @@ $contactEmail=trim((string)($contact['email']??''));
 
 $words=array_values(array_filter(preg_split('/\s+/',trim((string)$client['client_name']))?:[]));
 $initials=strtoupper(implode('',array_map(static fn($w)=>mb_substr($w,0,1),array_slice($words,0,2))))?:'?';
-$packageLabel=$client['client_type']==='premium'?'★ '.($client['package']?:'Premium').' package':($client['package']?:ucfirst((string)$client['client_type']).' package');
+$packageName=client_package_name($client);
+$packageLabel=$client['client_type']==='premium'?'★ '.($packageName?:'Premium').' package':($packageName?:ucfirst(str_replace('-',' ',(string)$client['client_type'])).' package');
 $partnerSince=$client['starting_date']?'Partner since '.date('j M Y',strtotime($client['starting_date'])).' · '.project_age($client['starting_date']):'';
 page_start('Dashboard','client-dashboard.php');
 ?>
@@ -68,19 +65,10 @@ page_start('Dashboard','client-dashboard.php');
 
     <div class="cd-grid">
         <section class="cd-card cd-payments">
-            <div class="cd-card-head"><h2>Payments</h2><a href="client-payments.php">View payment history →</a></div>
-            <div class="cd-pay-progress">
-                <div class="cd-pay-labels"><span><?= $paidPercent ?>% paid</span><span>of <?= h(money_label($client['payment_total'])) ?> agreed</span></div>
-                <div class="cd-bar" role="progressbar" aria-valuenow="<?= $paidPercent ?>" aria-valuemin="0" aria-valuemax="100"><span style="width:<?= $paidPercent ?>%"></span></div>
-            </div>
-            <div class="cd-pay-boxes">
-                <div><span>Total agreed</span><strong><?= h(money_label($client['payment_total'])) ?></strong></div>
-                <div class="is-paid"><span>Paid</span><strong><?= h(money_label($client['paid_amount'])) ?></strong></div>
-                <div class="<?= $balance>0?'is-due':'is-clear' ?>"><span>Balance</span><strong><?= h(money_label($client['remaining_amount'])) ?></strong></div>
-            </div>
+            <div class="cd-card-head"><h2>Payments</h2><a href="client-payments.php">Open payments →</a></div>
+            <p class="cd-help">Your package amount, payments made, balance and receipts are on the Payments page.</p>
             <div class="cd-pay-actions">
-                <a class="cd-btn-dark" href="client-payments.php">View receipts</a>
-                <a class="cd-btn-outline" href="client-details.php">Payment details</a>
+                <a class="cd-btn-dark" href="client-payments.php">View payments &amp; receipts</a>
             </div>
         </section>
 

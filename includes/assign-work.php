@@ -1861,7 +1861,7 @@ $awRenderTask = static function ($index, array $row, bool $open) use ($employeeL
             <label>Reference link / Drive link<span class="aw-link-input"><?= icon('document') ?><input type="url" data-task-reference name="<?= $name ?>[reference_link]" value="<?= h($row['reference_link']) ?>" placeholder="https://drive.google.com/… or reference URL"></span><small class="aw-hint">Optional — Google Drive, Canva, YouTube, website or any reference URL</small></label>
             <label class="emp-drop aw-drop"><input type="file" data-task-attachments name="<?= $name ?>[attachments][]" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip" multiple><span class="emp-drop-icon"><?= icon('download') ?></span><strong>Images / Videos / Documents — drop here or click to choose</strong><small>Multiple files · Images, videos, PDF, Word, Excel, PowerPoint, ZIP</small><span class="emp-drop-files" data-file-preview></span></label>
             <?php if ($record): $existingAttachments = assignment_attachments((int) $record['id']); if ($existingAttachments): ?>
-                <div class="aw-existing"><small>Existing attachments</small><?php foreach ($existingAttachments as $attachment): ?><a href="<?= h($attachment['file_path']) ?>" target="_blank" rel="noopener"><?= h($attachment['original_name']) ?></a><?php endforeach; ?></div>
+                <div class="aw-existing"><small>Existing attachments</small><?php foreach ($existingAttachments as $attachment): ?><a href="assignment-file.php?id=<?= (int) $attachment['id'] ?>" target="_blank" rel="noopener"><?= h($attachment['original_name']) ?></a><?php endforeach; ?></div>
             <?php endif; endif; ?>
         </div>
     </article>
@@ -1871,7 +1871,7 @@ $awDepartmentId = (string) $value('department_id');
 // Departments that use "Type of editing" (design / video). For other teams the field is hidden.
 $awCreativeDepartments = array_values(array_map(static fn($d) => (string) $d['id'], array_filter($departmentList, static fn($d) => creative_work_department((string) ($d['code'] ?? ''), (string) ($d['name'] ?? '')))));
 ?>
-<form method="post" enctype="multipart/form-data" class="emp-page aw-page" id="assignmentForm" data-aw-form data-creative-depts="<?= h(implode(',', $awCreativeDepartments)) ?>"><?= csrf_field() ?><input type="hidden" name="notify_present" value="1">
+<form method="post" enctype="multipart/form-data" class="emp-page aw-page" id="assignmentForm" data-aw-form data-upload-progress data-creative-depts="<?= h(implode(',', $awCreativeDepartments)) ?>"><?= csrf_field() ?><input type="hidden" name="notify_present" value="1">
 <header class="emp-header">
     <div><p class="emp-crumb">Dashboard / Assign work / <?= $record ? 'Edit' : 'New' ?></p><h2 class="emp-title"><?= $record ? 'Edit assignment' : 'New assignment' ?></h2><p class="emp-sub">Pick a department, then add one or more tasks for your team.</p></div>
     <a class="emp-btn emp-btn-outline" href="manager-assigned-status.php">View assigned status</a>
@@ -2059,7 +2059,7 @@ foreach ($assignments as $assignment) {
     ]);
     if ($attachments) {
         echo '<script>document.addEventListener("DOMContentLoaded",function(){var d=document.getElementById(' . json_encode('assignment-' . $assignment['id']) . ');if(!d)return;var p=document.createElement("div");p.className="st-dialog-files";';
-        foreach ($attachments as $attachment) echo 'var a=document.createElement("a");a.href=' . json_encode($attachment['file_path']) . ';a.target="_blank";a.rel="noopener";a.textContent=' . json_encode($attachment['original_name']) . ';p.appendChild(a);';
+        foreach ($attachments as $attachment) echo 'var a=document.createElement("a");a.href=' . json_encode('assignment-file.php?id=' . (int) $attachment['id']) . ';a.target="_blank";a.rel="noopener";a.textContent=' . json_encode($attachment['original_name']) . ';p.appendChild(a);';
         echo 'd.appendChild(p);});</script>';
     }
 }

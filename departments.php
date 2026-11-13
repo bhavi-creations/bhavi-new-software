@@ -105,7 +105,7 @@ page_start('Departments','departments.php'); error_message($error);
                     <?php if ($record): ?>
                         <?php if (!$deptMembers): ?><option value="" disabled>No employees in <?= h($record['name']) ?> yet</option><?php endif; ?>
                         <?php foreach ($deptMembers as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$o['id']===$form['head_user_id']?'selected':'' ?>><?= h($o['full_name']) ?><?= $o['role']!=='employee'?' ('.h(ucfirst($o['role'])).')':'' ?></option><?php endforeach; ?>
-                    <?php else: $groups=[]; foreach ($headOptions as $o) $groups[$o['role']!=='employee'?'Admins & managers':($deptNames[(int)($o['department_id']??0)]??'No department')][]=$o; ksort($groups); ?>
+                    <?php else: $groups=[]; foreach ($headOptions as $o) $groups[$o['role']!=='employee'?'Managing Director & managers':($deptNames[(int)($o['department_id']??0)]??'No department')][]=$o; ksort($groups); ?>
                         <?php foreach ($groups as $groupName=>$groupPeople): ?><optgroup label="<?= h($groupName) ?>"><?php foreach ($groupPeople as $o): ?><option value="<?= (int)$o['id'] ?>" <?= (string)$o['id']===$form['head_user_id']?'selected':'' ?>><?= h($o['full_name']) ?><?= $o['role']!=='employee'?' ('.h(ucfirst($o['role'])).')':'' ?></option><?php endforeach; ?></optgroup><?php endforeach; ?>
                     <?php endif; ?>
                 </select><?php if ($record): ?><small class="dept-hint">Showing employees of <?= h($record['name']) ?></small><?php endif; ?></label>

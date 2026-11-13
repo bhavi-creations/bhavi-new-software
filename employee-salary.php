@@ -51,7 +51,7 @@ $calc = $employee ? salary_month($employee, $month) : null;
 $statusLabels = ['present' => 'Present', 'working' => 'Working now', 'missed_logout' => 'Missed logout', 'leave' => 'Leave', 'absent' => 'Absent · no login', 'off' => 'Weekly off', 'holiday' => 'Holiday', 'today' => 'Today · not logged in', 'upcoming' => 'Upcoming', 'not_joined' => 'Not employed', 'no_salary' => 'No salary set'];
 $signed = static fn(int $paise): string => $paise === 0 ? '—' : ($paise > 0 ? '+' : '−') . paise_label(abs($paise));
 $reviewText = static function (array $review): string {
-    $kind = $review['kind'] === 'overtime' ? 'Extra work ' . work_duration_label(max(0, (int) $review['worked_seconds'] - (int) round(duty_hours() * 3600))) : 'Missed logout';
+    $kind = $review['kind'] === 'overtime' ? 'Extra work ' . work_duration_label(max(0, (int) $review['worked_seconds'] - (int) round(duty_hours((int) $review['employee_id']) * 3600))) : 'Missed logout';
     if ($review['status'] === 'pending') return $kind . ' · waiting for admin approval';
     $amount = money_cents((string) $review['amount']);
     if ($review['status'] === 'rejected') return $kind . ' · ' . ($review['kind'] === 'overtime' ? 'not approved' : 'no cut');
@@ -66,7 +66,7 @@ error_message($error);
     <div>
         <p class="emp-crumb">Dashboard / Salary</p>
         <h2 class="emp-title"><?= $staff ? ($employee ? h($employee['full_name']) . ' · Salary' : 'Employee salary') : 'My salary' ?></h2>
-        <p class="emp-sub">Day amount = monthly salary ÷ <?= SALARY_DAYS_PER_MONTH ?>. Leave days are cut, Sundays and holidays are paid. Duty <?= h(duty_hours_label()) ?> a day.</p>
+        <p class="emp-sub">Day amount = monthly salary ÷ <?= SALARY_DAYS_PER_MONTH ?>. Leave days are cut, Sundays and holidays are paid. Duty <?= h(duty_hours_label($employee ? duty_hours((int) $employee['id']) : null)) ?> a day.</p>
     </div>
     <form method="get" class="sal-filter">
         <?php if ($staff): ?><label><span>Employee</span><select name="employee" onchange="this.form.submit()"><?php foreach ($people as $p): ?><option value="<?= (int) $p['id'] ?>" <?= (int) $p['id'] === $employeeId ? 'selected' : '' ?>><?= h($p['full_name']) ?> · <?= h($p['department_name']) ?></option><?php endforeach; ?></select></label><?php endif; ?>
@@ -108,13 +108,13 @@ error_message($error);
 </section>
 
 <section class="emp-card sal-decisions">
-    <h3>Admin decisions & remarks</h3>
+    <h3>Managing Director decisions & remarks</h3>
     <?php $decisions = array_merge(...array_map(static fn($d) => $d['reviews'], $calc['days'])); ?>
     <?php if (!$decisions): ?><p class="muted">No extra work or missed logout this month.</p><?php endif; ?>
     <?php foreach ($decisions as $review): $amount = money_cents((string) $review['amount']); ?>
         <article class="sal-decision is-<?= h($review['status']) ?>">
             <div class="sal-decision-top"><strong><?= h(date('D, d M', strtotime($review['work_date']))) ?></strong><span class="sal-chip is-<?= h($review['status']) ?>"><?= $review['status'] === 'pending' ? 'Waiting' : ($review['status'] === 'rejected' ? ($review['kind'] === 'overtime' ? 'Not approved' : 'No cut') : ($review['kind'] === 'overtime' ? '+' : '−') . h(paise_label($amount))) ?></span></div>
-            <p><?= $review['kind'] === 'overtime' ? 'Worked ' . h(work_duration_label((int) $review['worked_seconds'])) . ' (duty ' . h(duty_hours_label()) . ')' : 'Logout was not recorded' ?></p>
+            <p><?= $review['kind'] === 'overtime' ? 'Worked ' . h(work_duration_label((int) $review['worked_seconds'])) . ' (duty ' . h(duty_hours_label(duty_hours((int) $review['employee_id']))) . ')' : 'Logout was not recorded' ?></p>
             <?php if ($review['remark'] !== ''): ?><p class="sal-remark"><b>Remark:</b> <?= h($review['remark']) ?></p><?php endif; ?>
             <?php if ($review['reviewer_name']): ?><small><?= h($review['reviewer_name']) ?> · <?= h(date('d M, g:i A', strtotime($review['reviewed_at']))) ?></small><?php endif; ?>
         </article>

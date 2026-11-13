@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 37;
+const PORTAL_SCHEMA_VERSION = 39;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -519,6 +519,95 @@ function portal_install(PDO $pdo, string $database): void
         ) ENGINE=InnoDB");
         $pdo->exec("INSERT IGNORE INTO portal_settings (setting_key,setting_value) VALUES ('wa_summary_enabled','1'),('wa_summary_time','20:00'),('wa_summary_items','work,late,overdue,money')");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (37)');
+        // Premium tools / apps the office pays for (Claude AI, Canva…) with their login details (password encrypted).
+        $pdo->exec("CREATE TABLE IF NOT EXISTS premium_tools (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            tool_name VARCHAR(150) NOT NULL,
+            tool_url VARCHAR(2048) NOT NULL DEFAULT '',
+            login_email VARCHAR(255) NOT NULL DEFAULT '',
+            username VARCHAR(255) NOT NULL DEFAULT '',
+            password_cipher TEXT NULL,
+            plan_name VARCHAR(100) NOT NULL DEFAULT '',
+            renewal_date DATE NULL,
+            notes VARCHAR(1000) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_premium_tools_name (tool_name),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        // Vendors (printers, freelancers, suppliers…) added the same way as clients, with payments made to them.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS vendors (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            vendor_name VARCHAR(150) NOT NULL,
+            service_type VARCHAR(100) NOT NULL DEFAULT '',
+            contact_person VARCHAR(150) NOT NULL DEFAULT '',
+            phone VARCHAR(30) NOT NULL DEFAULT '',
+            email VARCHAR(255) NOT NULL DEFAULT '',
+            website_url VARCHAR(2048) NOT NULL DEFAULT '',
+            address VARCHAR(500) NOT NULL DEFAULT '',
+            gst_number VARCHAR(30) NOT NULL DEFAULT '',
+            bank_details VARCHAR(500) NOT NULL DEFAULT '',
+            starting_date DATE NULL,
+            ending_date DATE NULL,
+            vendor_status VARCHAR(10) NOT NULL DEFAULT 'active',
+            login_url VARCHAR(2048) NOT NULL DEFAULT '',
+            login_username VARCHAR(255) NOT NULL DEFAULT '',
+            login_password_cipher TEXT NULL,
+            payment_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            paid_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            notes VARCHAR(2000) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_vendors_name (vendor_name),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS vendor_payments (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            vendor_id BIGINT UNSIGNED NOT NULL,
+            payment_date DATE NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            note VARCHAR(255) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_vendor_payments (vendor_id,payment_date),
+            FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        // Wishes: festival posters / messages (or a red warning) that pop up when the person next opens the portal.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wishes (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            audience ENUM('employee','client') NOT NULL,
+            tone ENUM('wish','danger') NOT NULL DEFAULT 'wish',
+            title VARCHAR(200) NOT NULL DEFAULT '',
+            message TEXT NOT NULL,
+            poster_path VARCHAR(255) NULL,
+            audience_label VARCHAR(255) NOT NULL DEFAULT '',
+            recipient_count INT UNSIGNED NOT NULL DEFAULT 0,
+            sender_id BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_wishes_created (created_at),
+            FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wish_recipients (
+            wish_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            seen_at DATETIME NULL,
+            PRIMARY KEY (wish_id,user_id),
+            INDEX idx_wish_recipient_unseen (user_id,seen_at),
+            FOREIGN KEY (wish_id) REFERENCES wishes(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+        // Split timings (e.g. 7–10 PM and 5–8 AM) and own duty hours per employee.
+        $addColumn('employee_profiles', 'shift_slots', 'TEXT NULL');
+        $addColumn('employee_profiles', 'shift_hours', 'DECIMAL(4,2) NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (38)');
+        // Wish popups show on the first 5 visits (log-ins), then stop.
+        $addColumn('wish_recipients', 'show_count', 'TINYINT UNSIGNED NOT NULL DEFAULT 0');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (39)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

@@ -8,7 +8,7 @@ require_once __DIR__ . '/office-timing.php';
 function attendance_month_view(array $employee, array $calc, bool $isAdmin): void
 {
     $rate = $calc['rate'];
-    $timing = employee_timing(one('SELECT shift_start,shift_end,shift_label FROM employee_profiles WHERE user_id=?', [$employee['id']]) ?: []);
+    $timing = employee_timing(one('SELECT shift_start,shift_end,shift_label,shift_slots,shift_hours FROM employee_profiles WHERE user_id=?', [$employee['id']]) ?: []);
     $cuts = [];
     $adds = [];
     $pending = [];
@@ -115,15 +115,15 @@ function attendance_month_view(array $employee, array $calc, bool $isAdmin): voi
             <?php if ($day['amount'] > 0): ?><p class="am-amt is-pos"><?= $money($day['amount']) ?></p><?php elseif ($day['amount'] < 0): ?><p class="am-amt is-neg">Salary cut −<?= $money(-$day['amount']) ?></p><?php endif; ?>
             <?php foreach ($day['reviews'] as $review): $amt = money_cents((string) $review['amount']); $ot = $review['kind'] === 'overtime'; ?>
                 <?php if ($review['status'] === 'pending'): ?>
-                    <p class="am-adj is-wait"><?= $ot ? 'Extra ' . h(work_duration_label(max(0, (int) $review['worked_seconds'] - (int) round(duty_hours() * 3600)))) : 'Missed logout' ?> · waiting for admin</p>
+                    <p class="am-adj is-wait"><?= $ot ? 'Extra ' . h(work_duration_label(max(0, (int) $review['worked_seconds'] - (int) round(duty_hours((int) $employee['id']) * 3600)))) : 'Missed logout' ?> · waiting for admin</p>
                 <?php elseif ($review['status'] === 'approved' && $amt > 0): ?>
-                    <p class="am-adj <?= $ot ? 'is-add' : 'is-cut' ?>"><b><?= $ot ? 'Extra added +' : 'Admin cut −' ?><?= $money($amt) ?></b><?= $review['remark'] !== '' ? '<span>Reason: ' . h($review['remark']) . '</span>' : '' ?></p>
+                    <p class="am-adj <?= $ot ? 'is-add' : 'is-cut' ?>"><b><?= $ot ? 'Extra added +' : 'MD cut −' ?><?= $money($amt) ?></b><?= $review['remark'] !== '' ? '<span>Reason: ' . h($review['remark']) . '</span>' : '' ?></p>
                 <?php else: ?>
                     <p class="am-adj"><b><?= $ot ? 'Extra not approved' : 'No cut' ?></b><?= $review['remark'] !== '' ? '<span>' . h($review['remark']) . '</span>' : '' ?></p>
                 <?php endif; ?>
             <?php endforeach; ?>
             <?php foreach ($day['adjustments'] as $adjustment): $isAdd = $adjustment['kind'] === 'add'; ?>
-                <p class="am-adj <?= $isAdd ? 'is-add' : 'is-cut' ?>"><b><?= $isAdd ? 'Admin added +' : 'Admin cut −' ?><?= $money(money_cents((string) $adjustment['amount'])) ?></b><span>Reason: <?= h($adjustment['reason']) ?></span></p>
+                <p class="am-adj <?= $isAdd ? 'is-add' : 'is-cut' ?>"><b><?= $isAdd ? 'MD added +' : 'MD cut −' ?><?= $money(money_cents((string) $adjustment['amount'])) ?></b><span>Reason: <?= h($adjustment['reason']) ?></span></p>
             <?php endforeach; ?>
         </article>
         <?php endforeach; ?>

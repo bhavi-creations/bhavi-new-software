@@ -32,7 +32,7 @@ try {
     foreach (attendance_sync_reviews((int)$user['id']) as $review) {
         $day=date('d M Y',strtotime($review['work_date']));
         if ($review['kind']==='overtime') {
-            $extra=work_duration_label($review['worked_seconds']-(int)round(duty_hours()*3600));
+            $extra=work_duration_label($review['worked_seconds']-(int)round(duty_hours((int)$user['id'])*3600));
             notify_staff('general','Extra work approval · '.$user['full_name'],$user['full_name'].' worked '.work_duration_label($review['worked_seconds']).' on '.$day.' ('.$extra.' more than duty). Approve in Attendance approvals.');
             $message.=' You worked '.$extra.' extra — sent to admin for approval.';
         } else {

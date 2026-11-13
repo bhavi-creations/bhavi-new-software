@@ -23,7 +23,7 @@ $reviewCount=count_value("SELECT COUNT(*) FROM daily_work_submissions s JOIN use
 $attendanceToday=one("SELECT COUNT(*) AS present_count,COALESCE(SUM(TIMESTAMPDIFF(MINUTE,first_login,COALESCE(last_logout,NOW()))),0) AS logged_minutes FROM (SELECT a.employee_id,MIN(a.login_at) AS first_login,CASE WHEN SUM(a.logout_at IS NULL)>0 THEN NULL ELSE MAX(a.logout_at) END AS last_logout FROM employee_attendance_sessions a JOIN users attended_employee ON attended_employee.id=a.employee_id AND attended_employee.role='employee' AND attended_employee.account_status='active' AND attended_employee.deleted_at IS NULL WHERE a.login_at>=CURDATE() AND a.login_at<CURDATE()+INTERVAL 1 DAY GROUP BY a.employee_id) AS today_sessions");
 // Late = first login after the employee's own office time / shift (set on the Office timings page).
 $attendanceToday['late_count']=0;
-foreach (rows("SELECT MIN(a.login_at) AS first_login,ep.shift_start,ep.shift_end,ep.shift_label FROM employee_attendance_sessions a JOIN users u ON u.id=a.employee_id AND u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL JOIN employee_profiles ep ON ep.user_id=u.id WHERE a.login_at>=CURDATE() AND a.login_at<CURDATE()+INTERVAL 1 DAY GROUP BY a.employee_id,ep.shift_start,ep.shift_end,ep.shift_label") as $todayLogin) {
+foreach (rows("SELECT MIN(a.login_at) AS first_login,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours FROM employee_attendance_sessions a JOIN users u ON u.id=a.employee_id AND u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL JOIN employee_profiles ep ON ep.user_id=u.id WHERE a.login_at>=CURDATE() AND a.login_at<CURDATE()+INTERVAL 1 DAY GROUP BY a.employee_id,ep.shift_start,ep.shift_end,ep.shift_label,ep.shift_slots,ep.shift_hours") as $todayLogin) {
     if (login_late_seconds($todayLogin['first_login'],employee_timing($todayLogin))>0) $attendanceToday['late_count']++;
 }
 $officeDefault=office_timing_default();
@@ -39,7 +39,7 @@ $formatMinutes=static function(int $minutes): string { return intdiv($minutes,60
 <div class="admin-dashboard">
     <header class="admin-dashboard-heading">
         <div>
-            <p class="admin-eyebrow">Admin dashboard · <?= h(date('l, d F Y')) ?></p>
+            <p class="admin-eyebrow">Managing Director · <?= h(date('l, d F Y')) ?></p>
             <h1><?= h($greeting) ?>, <?= h($user['full_name']) ?></h1>
         </div>
         <form class="admin-dashboard-search" method="get" action="admin-employees.php" role="search">
