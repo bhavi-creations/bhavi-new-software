@@ -4571,3 +4571,11 @@ body[data-role="client"] .sectioned-nav .nav-section-title{margin-top:18px;paddi
 /* Sidebar logo image */
 .portal-brand.portal-brand-logo{display:block;padding:0 10px 26px}
 .portal-brand-logo img{display:block;width:100%;max-width:190px;height:auto}
+
+/* Clients list: search + always-visible horizontal scrollbar */
+.client-search{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.client-search input{flex:1;min-width:220px;max-width:460px;padding:10px 14px;border:1px solid #d7deea;border-radius:10px;font:inherit;background:#fff}
+.client-search input:focus{outline:none;border-color:#1659ad;box-shadow:0 0 0 3px rgba(22,89,173,.15)}
+.client-table-scroll{max-height:calc(100vh - 220px);overflow:auto}
+.client-table-scroll thead th{position:sticky;top:0;z-index:2}
+.client-table-scroll tr[hidden]{display:none}
