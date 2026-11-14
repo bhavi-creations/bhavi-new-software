@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 47;
+const PORTAL_SCHEMA_VERSION = 49;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -726,6 +726,26 @@ function portal_install(PDO $pdo, string $database): void
         // Chat: senders can delete their own messages (kept as a "deleted" placeholder).
         $addColumn('chat_messages','deleted_at','DATETIME NULL');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (47)');
+        // Zoom meetings: added by the Managing Director / managers, joined inside the portal (Meeting SDK) or in the Zoom app.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS zoom_meetings (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            title VARCHAR(150) NOT NULL,
+            meeting_number VARCHAR(20) NOT NULL,
+            passcode VARCHAR(100) NOT NULL DEFAULT '',
+            join_url VARCHAR(2048) NOT NULL DEFAULT '',
+            starts_at DATETIME NOT NULL,
+            duration_minutes SMALLINT UNSIGNED NOT NULL DEFAULT 60,
+            notes VARCHAR(1000) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_zoom_meetings_start (deleted_at,starts_at),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (48)');
+        // Instant Zoom meetings created through the connected Zoom account (host joins with a ZAK token).
+        $addColumn('zoom_meetings','is_instant','TINYINT(1) NOT NULL DEFAULT 0');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (49)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

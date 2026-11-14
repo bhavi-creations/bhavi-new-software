@@ -4665,3 +4665,36 @@ tr.sc-soon td{background:#f3fbf6}
 .sc-media a.sc-dl{padding:2px 7px;margin-left:-4px}
 .sc-media a:hover{border-color:#1659ad}
 @media (max-width:900px){.ot-form.sc-row{grid-template-columns:1fr 1fr}.sc-row .sc-files,.sc-row .sc-links{grid-column:1/-1}}
+/* ===== Zoom meetings (zm-*) ===== */
+.zm-grid{align-items:start}
+.zm-list{display:grid;gap:10px}
+.zm-item{display:flex;align-items:flex-start;gap:12px;padding:14px;border:1px solid var(--ot-line);border-radius:14px;background:#fff;min-width:0;flex-wrap:wrap}
+.zm-item.is-live{border-color:#1a8f4a;background:#f3fbf6}
+.zm-item.is-past{opacity:.75}
+.zm-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:12px;background:#eef3fb;color:var(--ot-brand)}
+.zm-icon svg{width:20px;height:20px}
+.zm-info{display:grid;gap:3px;flex:1 1 220px;min-width:0}
+.zm-info strong{font-size:14px;overflow-wrap:anywhere}
+.zm-info small{color:var(--ot-muted);font-size:12px;overflow-wrap:anywhere}
+.zm-notes{color:var(--ot-ink)!important}
+.zm-live{margin-left:6px;padding:2px 8px;border-radius:999px;background:#1a8f4a;color:#fff;font-size:10.5px;font-style:normal;font-weight:800;vertical-align:middle}
+.zm-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.zm-btn{display:inline-flex;align-items:center;text-decoration:none}
+.zm-link{color:var(--ot-brand);font-size:12.5px;font-weight:700}
+.zm-del{padding:0;border:0;background:none;color:#b42318;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.zm-check{display:flex!important;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.ot-page .zm-check input{width:auto;min-height:0}
+.zm-past summary{cursor:pointer;color:var(--ot-muted);font-size:13px;font-weight:700;margin-bottom:10px}
+@media(max-width:900px){.zm-grid.ot-grid{grid-template-columns:minmax(0,1fr)}}
+.tc-zoom-form{display:contents}
+.tc-zoom-btn{color:#1a8f4a}
+.tc-bubble a{color:inherit;font-weight:600;text-decoration:underline;overflow-wrap:anywhere}
+.zm-instant{border-color:#cfe6d8}
+.zm-instant-form{display:flex;gap:10px;flex-wrap:wrap}
+.ot-page .zm-instant-form input{flex:1 1 220px;min-height:42px;padding:0 12px;border:1px solid #d9e1ee;border-radius:10px;background:#f7f9fe;font:600 13px "Plus Jakarta Sans",system-ui,sans-serif;box-sizing:border-box}
+.zm-instant-form .ot-gold{display:inline-flex;align-items:center;gap:8px}
+.zm-instant-form svg{width:18px;height:18px}
+.zm-ok{color:#1a8f4a!important;font-weight:700}
+.zm-steps{display:grid;gap:8px;margin:0;padding-left:18px;font-size:13px}
+.zm-code{display:inline-block;margin-top:4px;padding:4px 8px;border-radius:6px;background:#f2f5fa;font-size:12px;overflow-wrap:anywhere}
+.zm-steps .zm-link{padding:0;border:0;background:none;cursor:pointer}

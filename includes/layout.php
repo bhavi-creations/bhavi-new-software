@@ -89,7 +89,7 @@ function page_start(string $title, string $active = ''): void
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
-    if (in_array($user['role'],['admin','manager','employee'],true)) $nav['chat.php']='Chat';
+    if (in_array($user['role'],['admin','manager','employee'],true)) { $nav['chat.php']='Chat'; $nav['zoom-meetings.php']='Zoom meetings'; }
     $nav['change-password.php'] = 'Change password';
     if (!is_staff() && $user['role']==='employee') $nav['apply-leaves.php']='Apply leave';
     if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
@@ -122,6 +122,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'manager-leave-requist.php', 'label' => 'Leave Requests', 'icon' => 'calendar', 'badge' => $pendingLeaves],
                 ['href' => 'office-timings.php', 'label' => 'Office Timings', 'icon' => 'clock'],
                 ['href' => 'manager-notification.php', 'label' => 'Announcements', 'icon' => 'megaphone', 'badge' => $unread],
+                ['href' => 'zoom-meetings.php', 'label' => 'Zoom meetings', 'icon' => 'video'],
                 ['href' => 'wishes.php', 'label' => 'Wishes', 'icon' => 'gift'],
                 ['href' => 'references.php', 'label' => 'References', 'icon' => 'people'],
                 ['href' => 'page-access.php', 'label' => 'Employee access', 'icon' => 'lock'],
@@ -170,6 +171,7 @@ function page_start(string $title, string $active = ''): void
             ],
             'Team' => [
                 ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat'],
+                ['href' => 'zoom-meetings.php', 'label' => 'Zoom meetings', 'icon' => 'video'],
                 ['href' => 'manager-notification.php', 'label' => 'Notifications', 'icon' => 'bell', 'badge' => $unread],
             ],
             'Access given' => array_map(static fn($key) => ['href' => page_access_features()[$key][1], 'label' => page_access_features()[$key][0], 'icon' => 'key', 'match' => page_access_features()[$key][2]], employee_access_list((int) $user['id'])),

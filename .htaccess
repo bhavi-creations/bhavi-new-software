@@ -7,7 +7,7 @@ DirectoryIndex index.php
     php_value max_execution_time 1800
     php_value max_input_time 1800
 </IfModule>
-<FilesMatch "^(config(\.(local|live)(\.example)?)?\.php|README\.md|AGENTS\.md)$">
+<FilesMatch "^(config(\.(local|live|zoom)(\.example)?)?\.php|README\.md|AGENTS\.md)$">
     Require all denied
 </FilesMatch>
 <IfModule mod_rewrite.c>

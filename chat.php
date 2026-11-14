@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/includes/layout.php';
+require_once __DIR__.'/includes/zoom.php';
 $user=require_roles(['admin','manager','employee']);
 const CHAT_ONLINE_SECONDS=90;
 
@@ -87,6 +88,20 @@ function chat_conversation_rows(int $userId): array
     }
     unset($row);
     return $list;
+}
+
+/** Escaped message text with http(s) links made clickable. */
+function chat_linkify(string $text): string
+{
+    $out=''; $last=0;
+    if (preg_match_all('~https?://[^\s<>"\']+~i',$text,$m,PREG_OFFSET_CAPTURE)) {
+        foreach ($m[0] as [$url,$pos]) {
+            $url=rtrim($url,'.,!?)');
+            $out.=h(substr($text,$last,$pos-$last)).'<a href="'.h($url).'" target="_blank" rel="noopener noreferrer">'.h($url).'</a>';
+            $last=$pos+strlen($url);
+        }
+    }
+    return $out.h(substr($text,$last));
 }
 
 function chat_json(array $payload): void
@@ -193,6 +208,25 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             query('UPDATE chat_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?',[$conversationId]);
             db()->commit();
             redirect('chat.php?id='.$conversationId.'#chat-latest');
+        }
+        if ($action==='start_zoom') {
+            // Staff start an instant Zoom meeting; the join link is posted in this chat and the starter joins as host.
+            if (!in_array($user['role'],['admin','manager'],true)) throw new InvalidArgumentException('Only the Managing Director and managers can start a Zoom meeting.');
+            $conversationId=positive_id($_POST['conversation_id']??null);
+            $room=one('SELECT c.id,c.conversation_type,c.title FROM chat_conversations c JOIN chat_participants p ON p.conversation_id=c.id AND p.user_id=? WHERE c.id=?',[$user['id'],$conversationId]);
+            if (!$room) throw new InvalidArgumentException('You are not a member of this chat.');
+            if (!zoom_connected()) throw new InvalidArgumentException('Zoom account is not connected yet. Open Zoom meetings and click “Connect Zoom account”.');
+            $title=($room['conversation_type']==='group' && $room['title'] ? $room['title'] : 'Chat').' · Zoom meeting';
+            $zoomMeeting=zoom_create_instant_meeting($title);
+            db()->beginTransaction();
+            $meetingId=zoom_save_instant_meeting($zoomMeeting,$title,(int)$user['id']);
+            $body='📹 '.$user['full_name'].' started a Zoom meeting. Join here: '.zoom_base_url().'/zoom-join.php?id='.$meetingId;
+            query('INSERT INTO chat_messages (conversation_id,sender_id,body) VALUES (?,?,?)',[$conversationId,$user['id'],$body]);
+            $messageId=(int)db()->lastInsertId();
+            query('UPDATE chat_participants SET last_read_message_id=GREATEST(last_read_message_id,?) WHERE conversation_id=? AND user_id=?',[$messageId,$conversationId,$user['id']]);
+            query('UPDATE chat_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?',[$conversationId]);
+            db()->commit();
+            redirect('zoom-join.php?id='.$meetingId.'&back='.rawurlencode('chat.php?id='.$conversationId));
         }
         if ($action==='delete_message') {
             // Only the sender can delete their own message; it stays as a "deleted" placeholder and its files are removed.
@@ -327,6 +361,7 @@ page_start('Chat','chat.php'); error_message($error);
                 <span class="tc-avatar tc-avatar-lg<?= $selected['conversation_type']==='group'?' is-group':'' ?>"><?= $selected['conversation_type']==='group'?icon('people'):h($initials($roomTitle)) ?></span>
                 <div class="tc-room-title"><strong><?= h($roomTitle?:'Chat') ?></strong><small><span class="tc-presence<?= $roomState['online']?' is-online':'' ?>" data-tc-presence><?= h($roomState['presence']) ?></span><?php foreach ($roomSub as $part): ?> · <?= h($part) ?><?php endforeach; ?></small></div>
                 <label class="tc-msg-search" data-tc-msg-search-wrap hidden><span class="sr-only">Search messages</span><input type="search" placeholder="Search in chat…" data-tc-msg-search></label>
+                <?php if ($isStaff && zoom_connected()): ?><form method="post" class="tc-zoom-form" data-confirm="Start a Zoom meeting now and post the join link in this chat?"><?= csrf_field() ?><input type="hidden" name="action" value="start_zoom"><input type="hidden" name="conversation_id" value="<?= (int)$selectedId ?>"><button type="submit" class="tc-head-btn tc-zoom-btn" title="Start a Zoom meeting" aria-label="Start a Zoom meeting"><?= icon('video') ?></button></form><?php endif; ?>
                 <button type="button" class="tc-head-btn" data-tc-msg-search-toggle title="Search messages" aria-label="Search messages"><?= icon('search') ?></button>
                 <button type="button" class="tc-head-btn" data-tc-info-toggle title="Chat details" aria-label="Chat details"><?= icon('kebab') ?></button>
             </header>
@@ -336,7 +371,7 @@ page_start('Chat','chat.php'); error_message($error);
                     <?php if (!$own): ?><span class="tc-avatar tc-avatar-xs" title="<?= h($message['sender_name']) ?>"><?= h($initials($message['sender_name'])) ?></span><?php endif; ?>
                     <div class="tc-msg-body">
                         <?php if (!$own && $selected['conversation_type']==='group'): ?><small class="tc-sender"><?= h($message['sender_name']) ?></small><?php endif; ?>
-                        <?php if ((int)$message['is_deleted']===1): ?><p class="tc-bubble tc-deleted">🚫 This message was deleted</p><?php elseif ($message['body']!==''): ?><p class="tc-bubble"><?= h($message['body']) ?></p><?php endif; ?>
+                        <?php if ((int)$message['is_deleted']===1): ?><p class="tc-bubble tc-deleted">🚫 This message was deleted</p><?php elseif ($message['body']!==''): ?><p class="tc-bubble"><?= chat_linkify($message['body']) ?></p><?php endif; ?>
                         <?php foreach ($filesByMessage[(int)$message['id']]??[] as $attachment): ?><a class="tc-file chat-attachment" href="download-chat-attachment.php?id=<?= (int)$attachment['id'] ?>"><?= icon('download') ?><span><?= h($attachment['original_file_name']) ?></span><small><?= h(chat_file_size_label((int)$attachment['file_size_bytes'])) ?></small></a><?php endforeach; ?>
                         <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?><?php $waFilesJson=json_encode(array_map(static fn($f)=>['id'=>(int)$f['id'],'name'=>$f['original_file_name'],'mime'=>$f['mime_type']],$filesByMessage[(int)$message['id']]??[]),JSON_UNESCAPED_UNICODE); if ((int)$message['is_deleted']!==1 && ($message['body']!=='' || $waFilesJson!=='[]')): ?> · <a class="tc-wa" href="<?= h($waBase.'?text='.rawurlencode($message['body'])) ?>" target="bhavi_whatsapp" data-mode="web" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp Web (Chrome)">WhatsApp Web</a><span class="tc-wa-app"> · <a class="tc-wa" href="whatsapp://send" data-mode="app" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp app">App</a></span><?php endif; ?><?php if ($own && (int)$message['is_deleted']!==1): ?> · <button type="button" class="tc-del" data-tc-delete title="Delete this message">Delete</button><?php endif; ?></small>
                     </div>
@@ -470,6 +505,8 @@ page_start('Chat','chat.php'); error_message($error);
     const icons=<?= json_encode(['people'=>icon('people'),'download'=>icon('download'),'document'=>icon('document')],JSON_HEX_TAG|JSON_HEX_AMP) ?>;
     const initials=n=>(n||'').trim().split(/\s+/).slice(0,2).map(p=>p.charAt(0).toUpperCase()).join('')||'?';
     const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
+    // Message bubble with http(s) links made clickable (text nodes only, no HTML injection).
+    const linkify=text=>{const p=el('p','tc-bubble');let last=0;for(const m of text.matchAll(/https?:\/\/[^\s<>"']+/gi)){const url=m[0].replace(/[.,!?)]+$/,'');p.append(text.slice(last,m.index));const a=el('a','',url);a.href=url;a.target='_blank';a.rel='noopener noreferrer';p.append(a);last=m.index+url.length;}p.append(text.slice(last));return p;};
     const pad=n=>String(n).padStart(2,'0');
     const localKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     const dayLabel=key=>{const today=new Date(),y=new Date();y.setDate(y.getDate()-1);if(key===localKey(today))return'Today';if(key===localKey(y))return'Yesterday';const [yr,mo,da]=key.split('-').map(Number),d=new Date(yr,mo-1,da);return `${d.toLocaleDateString('en-GB',{weekday:'long'})}, ${da} ${d.toLocaleDateString('en-GB',{month:'short'})} ${yr}`;};
@@ -562,7 +599,7 @@ page_start('Chat','chat.php'); error_message($error);
         if(!own&&isGroupRoom)body.append(el('small','tc-sender',message.sender_name));
         const isDeleted=Number(message.is_deleted)===1;
         if(isDeleted)body.append(el('p','tc-bubble tc-deleted','🚫 This message was deleted'));
-        else if(message.body)body.append(el('p','tc-bubble',message.body));
+        else if(message.body)body.append(linkify(message.body));
         (isDeleted?[]:(message.files||[])).forEach(file=>{const link=el('a','tc-file chat-attachment');link.href=`download-chat-attachment.php?id=${file.id}`;link.innerHTML=icons.download;link.append(el('span','',file.original_file_name),el('small','',file.size_label));body.append(link);addShared(file);});
         const meta=el('small','tc-meta');meta.append(el('time','',message.time));
         if(own){const st=el('span','tc-status','Sent');st.dataset.tcStatus='';meta.append(' · ',st);}
