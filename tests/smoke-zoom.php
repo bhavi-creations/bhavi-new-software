@@ -97,6 +97,28 @@ try {
     $noZoom = $admin->post('chat.php?id=' . $chatId, ['action' => 'start_zoom', 'conversation_id' => (string) $chatId]);
     ok(str_contains($noZoom['body'], 'not connected'), 'start_zoom explains Zoom is not connected');
 
+    echo "Zoom details saved in the portal (no config.zoom.php, like a fresh subdomain)\n";
+    $cfgFile = dirname(__DIR__) . '/config.zoom.php'; $cfgBak = $cfgFile . '.testbak';
+    if (is_file($cfgFile)) rename($cfgFile, $cfgBak);
+    try {
+        $np = $admin->req('zoom-meetings.php');
+        ok(str_contains($np['body'], 'Zoom app details') && str_contains($np['body'], 'value="save_zoom_credentials"') && !str_contains($np['body'], 'config.zoom.php'), 'admin sees Zoom details form instead of the file error');
+        $badKeys = $admin->post('zoom-meetings.php', ['action' => 'save_zoom_credentials', 'client_id' => 'x', 'client_secret' => 'y']);
+        ok(str_contains($badKeys['body'], 'Client ID exactly'), 'invalid Client ID rejected');
+        $admin->post('zoom-meetings.php', ['action' => 'save_zoom_credentials', 'client_id' => 'TestClientId123', 'client_secret' => 'TestSecretValue4567890']);
+        ok(val("SELECT setting_value FROM portal_settings WHERE setting_key='zoom_client_id'") === 'TestClientId123', 'Client ID saved');
+        ok(!str_contains((string) val("SELECT setting_value FROM portal_settings WHERE setting_key='zoom_client_secret'"), 'TestSecretValue'), 'Client Secret saved encrypted');
+        $after = $admin->req('zoom-meetings.php');
+        ok(str_contains($after['body'], 'Saved · Client ID TestClientId123') && str_contains($after['body'], 'Connect Zoom account') && !str_contains($after['body'], 'TestSecretValue'), 'page shows Zoom ready, secret not shown');
+        $conn2 = $admin->req('zoom-connect.php');
+        ok(str_contains($conn2['headers']['location'] ?? '', 'client_id=TestClientId123'), 'Zoom connect uses the saved Client ID');
+        $emp3 = new B($base); $emp3->login('ravi', 'Secret123!');
+        $ek = $emp3->post('zoom-meetings.php', ['action' => 'save_zoom_credentials', 'client_id' => 'HackerId12345', 'client_secret' => 'HackerSecret12345']);
+        ok(val("SELECT setting_value FROM portal_settings WHERE setting_key='zoom_client_id'") === 'TestClientId123', 'employee cannot change Zoom details');
+    } finally {
+        if (is_file($cfgBak)) rename($cfgBak, $cfgFile);
+    }
+
     echo "\nAll $checks checks passed.\n";
 } catch (Throwable $e) {
     echo "\n" . $e->getMessage() . "\n";

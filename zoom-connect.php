@@ -4,7 +4,7 @@
 require_once __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/zoom.php';
 $user = require_roles(['admin']);
-if (!zoom_ready()) fail(503, 'Add the Zoom Client ID and Client Secret in config.zoom.php first.');
+if (!zoom_ready()) fail(503, 'Add the Zoom Client ID and Client Secret on the Zoom meetings page first.');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();

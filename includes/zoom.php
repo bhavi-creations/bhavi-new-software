@@ -3,19 +3,46 @@
 
 const ZOOM_SDK_VERSION = '6.10.0';
 
-/** ['client_id'=>..., 'client_secret'=>...] from config.zoom.php or environment; empty strings when not set. */
-function zoom_config(): array
+/**
+ * ['client_id'=>..., 'client_secret'=>...]; empty strings when not set.
+ * Order: environment → config.zoom.php → saved in the portal by the Managing Director (portal_settings, secret encrypted).
+ */
+function zoom_config(bool $reload = false): array
 {
     static $config;
-    if ($config !== null) return $config;
+    if ($config !== null && !$reload) return $config;
     $file = dirname(__DIR__) . '/config.zoom.php';
     $values = is_file($file) ? require $file : [];
     if (!is_array($values)) $values = [];
-    $config = [
-        'client_id' => trim((string) (getenv('BHAVI_ZOOM_CLIENT_ID') ?: ($values['client_id'] ?? ''))),
-        'client_secret' => trim((string) (getenv('BHAVI_ZOOM_CLIENT_SECRET') ?: ($values['client_secret'] ?? ''))),
-    ];
+    $id = trim((string) (getenv('BHAVI_ZOOM_CLIENT_ID') ?: ($values['client_id'] ?? '')));
+    $secret = trim((string) (getenv('BHAVI_ZOOM_CLIENT_SECRET') ?: ($values['client_secret'] ?? '')));
+    if ($id === '' || $secret === '') {
+        try {
+            $id = trim(zoom_setting('zoom_client_id'));
+            $secret = trim(credential_decrypt(zoom_setting('zoom_client_secret') ?: null));
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $id = $secret = '';
+        }
+    }
+    $config = ['client_id' => $id, 'client_secret' => $secret];
     return $config;
+}
+
+/** True when the credentials come from the portal settings (so the admin can change them on the page). */
+function zoom_config_from_portal(): bool
+{
+    $file = dirname(__DIR__) . '/config.zoom.php';
+    $values = is_file($file) ? require $file : [];
+    $fileOk = is_array($values) && trim((string) ($values['client_id'] ?? '')) !== '' && trim((string) ($values['client_secret'] ?? '')) !== '';
+    return !$fileOk && !getenv('BHAVI_ZOOM_CLIENT_ID');
+}
+
+function zoom_save_credentials(string $clientId, string $clientSecret): void
+{
+    zoom_setting_save('zoom_client_id', $clientId);
+    zoom_setting_save('zoom_client_secret', (string) credential_encrypt($clientSecret));
+    zoom_config(true);
 }
 
 function zoom_ready(): bool

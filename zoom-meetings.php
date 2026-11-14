@@ -12,6 +12,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (!$canManage) throw new InvalidArgumentException('Only the Managing Director and managers can manage meetings.');
         $action = (string) ($_POST['action'] ?? '');
+        if ($action === 'save_zoom_credentials') {
+            // The Managing Director pastes the Zoom app's Client ID / Secret here (no server file needed).
+            if ($user['role'] !== 'admin') throw new InvalidArgumentException('Only the Managing Director can change the Zoom connection.');
+            $clientId = trim(text_input('client_id', 100));
+            $clientSecret = trim((string) ($_POST['client_secret'] ?? ''));
+            if (!preg_match('/^[A-Za-z0-9_-]{10,100}$/', $clientId)) throw new InvalidArgumentException('Enter the Client ID exactly as shown in Zoom (letters and numbers).');
+            if (!preg_match('/^[A-Za-z0-9_-]{10,200}$/', $clientSecret)) throw new InvalidArgumentException('Enter the Client Secret exactly as shown in Zoom.');
+            zoom_save_credentials($clientId, $clientSecret);
+            // New app credentials make any earlier Zoom account connection invalid.
+            query("DELETE FROM portal_settings WHERE setting_key IN ('zoom_access_token','zoom_refresh_token','zoom_token_expires','zoom_account_email')");
+            flash('Zoom Client ID and Client Secret saved.');
+            redirect('zoom-meetings.php');
+        }
         if ($action === 'instant_meeting') {
             // One click: Zoom creates the meeting, the team is notified, and the starter joins as host.
             $title = optional_text('title', 150) ?: 'Instant meeting · ' . $user['full_name'];
@@ -82,7 +95,24 @@ error_message($error);
         <h1 class="ot-title">Zoom meetings</h1>
         <p class="ot-sub">Join team meetings right here in the portal, or open them in the Zoom app.</p>
     </header>
-    <?php if (!zoom_ready()): ?><p class="alert error">Zoom is not connected yet. Add the Client ID and Client Secret in config.zoom.php on the server. Until then use “Open in Zoom app”.</p><?php endif; ?>
+    <?php if (!zoom_ready() && $user['role'] !== 'admin'): ?><p class="alert error">Zoom is not set up yet. Ask the Managing Director to add the Zoom details. Until then use “Open in Zoom app”.</p><?php endif; ?>
+    <?php if ($user['role'] === 'admin' && (!zoom_ready() || zoom_config_from_portal())): $editing = !zoom_ready() || isset($_GET['zoom_keys']); ?>
+    <section class="ot-card zm-keys" id="zoom-keys">
+        <div class="ot-card-head"><h2>Zoom app details</h2><?php if (zoom_ready()): ?><span class="zm-ok">Saved · Client ID <?= h(zoom_config()['client_id']) ?></span><?php endif; ?></div>
+        <?php if ($editing): ?>
+            <p class="ot-help">From <a href="https://marketplace.zoom.us/user/build" target="_blank" rel="noopener noreferrer">Zoom Marketplace → your app</a> → <b>App Credentials</b>, copy the Client ID and Client Secret and paste them here. The secret is saved encrypted.</p>
+            <form method="post" class="ot-form" autocomplete="off"><?= csrf_field() ?><input type="hidden" name="action" value="save_zoom_credentials">
+                <div class="ot-two">
+                    <label><span>Client ID *</span><input name="client_id" maxlength="100" required value="<?= h(zoom_config()['client_id']) ?>" placeholder="e.g. hgj7RrZn…"></label>
+                    <label><span>Client Secret *</span><input type="password" name="client_secret" maxlength="200" required autocomplete="new-password" placeholder="Paste the Client Secret"></label>
+                </div>
+                <div class="ot-actions"><button class="ot-dark" type="submit">Save Zoom details</button><?php if (zoom_ready()): ?><a href="zoom-meetings.php">Cancel</a><?php endif; ?></div>
+            </form>
+        <?php else: ?>
+            <div class="ot-actions"><a href="zoom-meetings.php?zoom_keys=1#zoom-keys">Change Client ID / Secret</a></div>
+        <?php endif; ?>
+    </section>
+    <?php endif; ?>
     <?php if ($canManage && zoom_ready()): $connected = zoom_connected(); ?>
     <section class="ot-card zm-instant">
         <div class="ot-card-head"><h2>Instant meeting</h2><?php if ($connected): ?><span class="zm-ok">Zoom connected<?= zoom_setting('zoom_account_email') !== '' ? ' · ' . h(zoom_setting('zoom_account_email')) : '' ?></span><?php endif; ?></div>

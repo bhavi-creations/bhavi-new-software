@@ -6,7 +6,7 @@ $user = require_roles(['admin', 'manager', 'employee']);
 $id = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $meeting = $id ? one('SELECT * FROM zoom_meetings WHERE id=? AND deleted_at IS NULL', [$id]) : null;
 if (!$meeting) fail(404, 'Meeting not found.');
-if (!zoom_ready()) fail(503, 'Zoom is not connected yet. Ask the Managing Director to add the Zoom Client ID and Client Secret.');
+if (!zoom_ready()) fail(503, 'Zoom is not connected yet. Ask the Managing Director to add the Zoom details on the Zoom meetings page.');
 $passcode = $meeting['passcode'] !== '' ? $meeting['passcode'] : (zoom_parse_link($meeting['join_url'])['pwd'] ?? '');
 // The person who started an instant meeting joins as host (needs the account's ZAK token); everyone else as attendee.
 $role = 0; $zak = '';
