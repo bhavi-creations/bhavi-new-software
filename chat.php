@@ -257,7 +257,7 @@ $messages=$selected?array_reverse(rows('SELECT m.id,m.sender_id,u.full_name AS s
 $filesByMessage=chat_attachments_from_rows($messages);
 $people=rows("SELECT u.id,u.full_name,u.role,d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id<>? AND u.role IN ('admin','manager','employee') AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name",[$user['id']]);
 $initials=static function(?string $name): string { $o=''; foreach (array_slice(preg_split('/\s+/',trim((string)$name))?:[],0,2) as $p) $o.=mb_strtoupper(mb_substr($p,0,1)); return $o?:'?'; };
-$profileOf=static fn(int $id)=>one("SELECT u.id,u.full_name,u.username,u.role,ep.designation,d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=?",[$id]);
+$profileOf=static fn(int $id)=>one("SELECT u.id,u.full_name,u.username,u.role,u.deleted_at,ep.designation,d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=?",[$id]);
 $dayLabel=static function(string $at): string { $d=date('Y-m-d',strtotime($at)); return $d===today()?'Today':($d===date('Y-m-d',strtotime('-1 day'))?'Yesterday':date('l, j M Y',strtotime($at))); };
 $isStaff=in_array($user['role'],['admin','manager'],true);
 $roomTitle=''; $roomProfile=null; $members=[]; $sharedFiles=[]; $roomState=['read_upto'=>0,'online'=>false,'presence'=>''];
@@ -269,6 +269,14 @@ if ($selected) {
     $sharedFiles=rows('SELECT a.id,a.original_file_name,a.file_size_bytes,a.created_at FROM chat_attachments a JOIN chat_messages m ON m.id=a.message_id WHERE m.conversation_id=? ORDER BY a.id DESC LIMIT 12',[$selectedId]);
     $roomState=chat_room_state($selected,(int)$user['id']);
 }
+// Manual WhatsApp share: private chats open straight to the other person's number (adds 91 to 10-digit numbers).
+$waPhone='';
+if ($roomProfile) {
+    $phoneDigits=preg_replace('/\D+/','',(string)(one('SELECT phone FROM employee_profiles WHERE user_id=?',[(int)$roomProfile['id']])['phone']??''));
+    if (strlen($phoneDigits)===10) $phoneDigits='91'.$phoneDigits;
+    if (strlen($phoneDigits)>=11) $waPhone=$phoneDigits;
+}
+$waBase='https://wa.me/'.$waPhone;
 $roomSub=$roomProfile?array_filter([$roomProfile['department_name'],$roomProfile['designation']?:role_label($roomProfile['role'])]):($selected?[count($members)+1 .' members']:[]);
 if ($selected && $selected['conversation_type']==='group' && !$roomState['online']) $roomSub=[]; // presence already shows the member count
 page_start('Chat','chat.php'); error_message($error);
@@ -312,7 +320,7 @@ page_start('Chat','chat.php'); error_message($error);
                         <?php if (!$own && $selected['conversation_type']==='group'): ?><small class="tc-sender"><?= h($message['sender_name']) ?></small><?php endif; ?>
                         <?php if ($message['body']!==''): ?><p class="tc-bubble"><?= h($message['body']) ?></p><?php endif; ?>
                         <?php foreach ($filesByMessage[(int)$message['id']]??[] as $attachment): ?><a class="tc-file chat-attachment" href="download-chat-attachment.php?id=<?= (int)$attachment['id'] ?>"><?= icon('download') ?><span><?= h($attachment['original_file_name']) ?></span><small><?= h(chat_file_size_label((int)$attachment['file_size_bytes'])) ?></small></a><?php endforeach; ?>
-                        <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?></small>
+                        <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?><?php if ($message['body']!==''): ?> · <a class="tc-wa" href="<?= h($waBase.'?text='.rawurlencode($message['body'])) ?>" target="bhavi_whatsapp" data-mode="web" data-text="<?= h($message['body']) ?>" title="Open in WhatsApp Web (Chrome)">WhatsApp Web</a><span class="tc-wa-app"> · <a class="tc-wa" href="whatsapp://send" data-mode="app" data-text="<?= h($message['body']) ?>" title="Open in WhatsApp app">App</a></span><?php endif; ?></small>
                     </div>
                 </article>
                 <?php endforeach; ?>
@@ -336,7 +344,7 @@ page_start('Chat','chat.php'); error_message($error);
         <?php if ($roomProfile): ?>
             <span class="tc-avatar tc-avatar-xl"><?= h($initials($roomProfile['full_name'])) ?></span>
             <h3 class="tc-info-name"><?= h($roomProfile['full_name']) ?></h3>
-            <p class="tc-info-sub"><?= h(implode(' · ',array_filter([$roomProfile['designation']?:role_label($roomProfile['role']),$roomProfile['department_name'],'@'.$roomProfile['username']]))) ?></p>
+            <p class="tc-info-sub"><?= h(implode(' · ',array_filter([$roomProfile['designation']?:role_label($roomProfile['role']),$roomProfile['department_name'],($roomProfile['deleted_at'] || str_starts_with((string)$roomProfile['username'],'!deleted'))?'Former employee':'@'.$roomProfile['username']]))) ?></p>
             <?php if ($isStaff && $roomProfile['role']==='employee'): ?>
                 <p class="tc-info-label">Quick actions</p>
                 <a class="tc-action" href="manager-assign-work.php">+ Assign a task</a>
@@ -396,7 +404,21 @@ page_start('Chat','chat.php'); error_message($error);
 </dialog>
 <script>
 (() => {
-    const me=<?= (int)$user['id'] ?>, isGroupRoom=<?= $selected && $selected['conversation_type']==='group' ? 'true' : 'false' ?>, selectedId=<?= (int)$selectedId ?>;
+    const me=<?= (int)$user['id'] ?>, isGroupRoom=<?= $selected && $selected['conversation_type']==='group' ? 'true' : 'false' ?>, selectedId=<?= (int)$selectedId ?>, waBase=<?= json_encode($waBase ?? 'https://wa.me/',JSON_HEX_TAG|JSON_HEX_AMP) ?>, waPhone=<?= json_encode($waPhone ?? '',JSON_HEX_TAG|JSON_HEX_AMP) ?>;
+    // WhatsApp: phones open the app via wa.me. On a computer each message has two links:
+    // "WhatsApp Web" (one reused Chrome tab) and "App" (WhatsApp Desktop) - use whichever is logged in.
+    const isMobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if(isMobile){document.documentElement.classList.add('tc-is-mobile');document.querySelectorAll('.tc-wa[data-mode=web]').forEach(a=>{a.textContent='WhatsApp';});}
+    const waQuery=text=>(waPhone?'phone='+waPhone+'&':'')+'text='+encodeURIComponent(text);
+    let waTab=null;
+    const openWhatsApp=(text,mode)=>{
+        if(isMobile){window.location.href=waBase+'?text='+encodeURIComponent(text);return;}
+        if(mode==='app'){window.location.href='whatsapp://send?'+waQuery(text);return;}
+        const url='https://web.whatsapp.com/send?'+waQuery(text);
+        if(waTab&&!waTab.closed){waTab.location.href=url;waTab.focus();return;}
+        waTab=window.open(url,'bhavi_whatsapp');
+    };
+    document.addEventListener('click',e=>{const link=e.target.closest('.tc-wa');if(!link)return;e.preventDefault();openWhatsApp(link.dataset.text||'',link.dataset.mode||'web');});
     const icons=<?= json_encode(['people'=>icon('people'),'download'=>icon('download'),'document'=>icon('document')],JSON_HEX_TAG|JSON_HEX_AMP) ?>;
     const initials=n=>(n||'').trim().split(/\s+/).slice(0,2).map(p=>p.charAt(0).toUpperCase()).join('')||'?';
     const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
@@ -494,6 +516,7 @@ page_start('Chat','chat.php'); error_message($error);
         (message.files||[]).forEach(file=>{const link=el('a','tc-file chat-attachment');link.href=`download-chat-attachment.php?id=${file.id}`;link.innerHTML=icons.download;link.append(el('span','',file.original_file_name),el('small','',file.size_label));body.append(link);addShared(file);});
         const meta=el('small','tc-meta');meta.append(el('time','',message.time));
         if(own){const st=el('span','tc-status','Sent');st.dataset.tcStatus='';meta.append(' · ',st);}
+        if(message.body){const wa=el('a','tc-wa',isMobile?'WhatsApp':'WhatsApp Web');wa.href=waBase+'?text='+encodeURIComponent(message.body);wa.target='bhavi_whatsapp';wa.title='Open in WhatsApp Web (Chrome)';wa.dataset.mode='web';wa.dataset.text=message.body;const app=el('a','tc-wa','App');app.href='whatsapp://send';app.title='Open in WhatsApp app';app.dataset.mode='app';app.dataset.text=message.body;const appWrap=el('span','tc-wa-app');appWrap.append(' · ',app);meta.append(' · ',wa,appWrap);}
         body.append(meta);item.append(body);box.insertBefore(item,latest);
         lastId=Math.max(lastId,Number(message.id)||0);
     };

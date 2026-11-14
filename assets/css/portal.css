@@ -2777,6 +2777,9 @@ body.sidebar-open:after{position:fixed;inset:0;z-index:9;background:#0b1a3366;co
 .tc-meta{color:var(--emp-muted);font-size:11px}
 .tc-meta time{font-size:inherit}
 .tc-status.is-seen{color:#103d83;font-weight:600}
+.tc-wa{color:#1a8f4a;font-weight:600;text-decoration:none}
+.tc-wa:hover{text-decoration:underline}
+.tc-is-mobile .tc-wa-app{display:none}
 .tc-msg:not(.own)>.tc-avatar-xs{position:relative;top:2px;align-self:flex-end;margin-bottom:0}
 .tc-msg:not(.own) .tc-meta{margin-top:2px}
 .tc-file svg{flex:0 0 auto}
