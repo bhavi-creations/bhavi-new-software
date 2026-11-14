@@ -9,7 +9,13 @@ $mode = isset($_GET['add']) || isset($_GET['id']) ? 'form' : 'list';
 $id = (int) ($_GET['id'] ?? 0);
 $record = $id ? one('SELECT * FROM invoices WHERE id=? AND deleted_at IS NULL', [$id]) : null;
 if ($id && !$record) fail(404, 'Invoice not found.');
-$clientList = rows('SELECT id,client_name,package,payment_total,gst_number FROM clients WHERE deleted_at IS NULL ORDER BY client_name');
+$clientList = rows('SELECT id,client_name,package,payment_total,paid_amount,gst_number FROM clients WHERE deleted_at IS NULL ORDER BY client_name');
+// New invoices are filled with what the client still has to pay: package amount − amount already paid.
+foreach ($clientList as &$c) {
+    $c['pkg_amount'] = client_package_amount($c);
+    $c['remaining'] = max(0, $c['pkg_amount'] - (float) $c['paid_amount']);
+}
+unset($c);
 
 /** Decimal text with up to 2 places → hundredths (quantity / GST %). */
 function invoice_hundredths(string $value, string $label, int $max): int
@@ -138,7 +144,7 @@ if ($mode === 'form') {
     <form method="post" class="vd-form" autocomplete="off" data-invoice-form><?= csrf_field() ?><input type="hidden" name="action" value="save_invoice">
         <section class="ot-card"><h2>1 · Invoice details</h2>
             <div class="ot-form vd-grid">
-                <label><span>Client *</span><select name="client_id" required data-client><option value="">Select client</option><?php foreach ($clientList as $c): ?><option value="<?= (int) $c['id'] ?>" data-package="<?= h($c['package']) ?>" data-amount="<?= h($c['payment_total']) ?>" data-gst="<?= h($c['gst_number']) ?>" <?= $v('client_id') === (string) $c['id'] ? 'selected' : '' ?>><?= h($c['client_name']) ?></option><?php endforeach; ?></select><small data-client-gst></small></label>
+                <label><span>Client *</span><select name="client_id" required data-client><option value="">Select client</option><?php foreach ($clientList as $c): ?><option value="<?= (int) $c['id'] ?>" data-package="<?= h(client_package_name($c)) ?>" data-amount="<?= h(number_format($c['remaining'], 2, '.', '')) ?>" data-money="<?= h('Package '.rupees_label($c['pkg_amount']).' · Paid '.rupees_label($c['paid_amount']).' · Remaining '.rupees_label($c['remaining'])) ?>" data-gst="<?= h($c['gst_number']) ?>" <?= $v('client_id') === (string) $c['id'] ? 'selected' : '' ?>><?= h($c['client_name']) ?></option><?php endforeach; ?></select><small data-client-gst></small></label>
                 <label><span>Invoice number <small>(auto)</small></span><input name="invoice_no" maxlength="40" value="<?= h($v('invoice_no')) ?>" placeholder="Leave empty for next number"></label>
                 <label><span>Status</span><select name="status" data-status><?php foreach (INVOICE_STATUSES as $k => $l): ?><option value="<?= $k ?>" <?= $v('status') === $k ? 'selected' : '' ?>><?= h($l) ?></option><?php endforeach; ?></select></label>
                 <label><span>Invoice date *</span><input type="date" name="invoice_date" required value="<?= h($v('invoice_date')) ?>"></label>
@@ -219,17 +225,22 @@ if ($mode === 'form') {
         else btn.closest('.inv-row').remove();
         renumber(); calc();
     });
+    list.addEventListener('input', e => { const row = e.target.closest('.inv-row'); if (row) row.dataset.auto = '0'; }); // typed by hand: keep it
     const client = form.querySelector('[data-client]'), gstNote = form.querySelector('[data-client-gst]');
-    function showGst() { const o = client.selectedOptions[0]; gstNote.textContent = o && o.dataset.gst ? 'Client GSTIN: ' + o.dataset.gst : ''; }
+    function showGst() { const o = client.selectedOptions[0]; gstNote.textContent = o && o.value ? [o.dataset.money, o.dataset.gst ? 'GSTIN: ' + o.dataset.gst : ''].filter(Boolean).join(' · ') : ''; }
     client.addEventListener('change', () => {
         showGst();
         const o = client.selectedOptions[0], first = list.querySelector('.inv-row');
-        // New invoice: fill the first empty item with the client's package.
-        if (o && o.value && first && !first.querySelector('[name$="[service_name]"]').value && !first.querySelector('[data-rate]').value) {
-            first.querySelector('[name$="[service_name]"]').value = o.dataset.package || '';
-            if (parseFloat(o.dataset.amount) > 0) first.querySelector('[data-rate]').value = o.dataset.amount;
-            calc();
-        }
+        // Fill the first item with the client's remaining amount (package − paid) when it is empty
+        // or was filled automatically for another client; never overwrite what was typed by hand.
+        if (!o || !o.value || !first) return;
+        const svc = first.querySelector('[name$="[service_name]"]'), desc = first.querySelector('[name$="[description]"]'), rate = first.querySelector('[data-rate]');
+        if (first.dataset.auto !== '1' && (svc.value || rate.value)) return;
+        svc.value = o.dataset.package || 'Package balance';
+        desc.value = parseFloat(o.dataset.amount) > 0 ? 'Remaining amount (' + o.dataset.money.replace(/ · Remaining.*/, '') + ')' : '';
+        rate.value = parseFloat(o.dataset.amount) > 0 ? o.dataset.amount : '';
+        first.dataset.auto = '1';
+        calc();
     });
     form.addEventListener('input', calc); form.addEventListener('change', calc);
     showGst(); calc();
