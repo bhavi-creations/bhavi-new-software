@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 42;
+const PORTAL_SCHEMA_VERSION = 46;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -637,6 +637,92 @@ function portal_install(PDO $pdo, string $database): void
         // Hours employees: a monthly hours target (e.g. 150) instead of full-time office timing; paid per hour worked.
         $addColumn('employee_profiles', 'monthly_hours', 'DECIMAL(6,2) NULL');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (42)');
+        // Invoices raised to clients from the Managing Director's Invoices page.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS invoices (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            invoice_no VARCHAR(40) NOT NULL UNIQUE,
+            client_id BIGINT UNSIGNED NOT NULL,
+            invoice_date DATE NOT NULL,
+            due_date DATE NULL,
+            gst_type VARCHAR(12) NOT NULL DEFAULT 'none',
+            gst_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+            subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            discount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            tax_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            status VARCHAR(12) NOT NULL DEFAULT 'unpaid',
+            notes VARCHAR(2000) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_invoice_client (client_id,invoice_date),
+            FOREIGN KEY (client_id) REFERENCES clients(id),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS invoice_items (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            invoice_id BIGINT UNSIGNED NOT NULL,
+            sort_order SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            description VARCHAR(500) NOT NULL,
+            hsn_sac VARCHAR(20) NOT NULL DEFAULT '',
+            quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+            rate DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+            INDEX idx_invoice_items (invoice_id,sort_order),
+            FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (43)');
+        // Invoice format: service name + discount % per item, advance received on the invoice.
+        $addColumn('invoice_items', 'service_name', "VARCHAR(150) NOT NULL DEFAULT ''");
+        $addColumn('invoice_items', 'discount_percent', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00');
+        $addColumn('invoices', 'advance', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (44)');
+        // Content schedule: edited reels/posters are set to go out at a date & time; the employee gets a reminder.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS content_schedule (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            client_id BIGINT UNSIGNED NOT NULL,
+            employee_id BIGINT UNSIGNED NULL,
+            content_type VARCHAR(20) NOT NULL DEFAULT 'reel',
+            title VARCHAR(255) NOT NULL,
+            platforms VARCHAR(255) NOT NULL DEFAULT '',
+            media_link VARCHAR(2048) NOT NULL DEFAULT '',
+            caption TEXT NULL,
+            scheduled_at DATETIME NOT NULL,
+            status VARCHAR(12) NOT NULL DEFAULT 'scheduled',
+            reminded_at DATETIME NULL,
+            done_at DATETIME NULL,
+            done_by BIGINT UNSIGNED NULL,
+            done_note VARCHAR(1000) NOT NULL DEFAULT '',
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_schedule_due (status,reminded_at,scheduled_at),
+            INDEX idx_schedule_employee (employee_id,scheduled_at),
+            INDEX idx_schedule_client (client_id,scheduled_at),
+            FOREIGN KEY (client_id) REFERENCES clients(id),
+            FOREIGN KEY (employee_id) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (done_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (45)');
+        // Content schedule: several links per item and uploaded files (reel video, thumbnail...).
+        $pdo->exec('ALTER TABLE content_schedule MODIFY media_link TEXT NULL');
+        $pdo->exec("CREATE TABLE IF NOT EXISTS content_schedule_files (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            schedule_id BIGINT UNSIGNED NOT NULL,
+            original_name VARCHAR(255) NOT NULL,
+            file_path VARCHAR(500) NOT NULL,
+            mime_type VARCHAR(150) NOT NULL DEFAULT '',
+            file_size BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            uploaded_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_schedule_files (schedule_id),
+            FOREIGN KEY (schedule_id) REFERENCES content_schedule(id) ON DELETE CASCADE,
+            FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (46)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

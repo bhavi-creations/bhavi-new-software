@@ -1,0 +1,20 @@
+Option 2 lo Zoom meeting mana portal page lone open avthundi. Daaniki Zoom anumathi kavali. Aa anumathi kosam meeru Zoom website lo okasari ee steps cheyyali:
+
+**Steps:**
+
+1. **https://marketplace.zoom.us** ki vellandi. Mee Zoom account tho Sign in avvandi.
+2. Paina right side lo **Develop → Build App** click cheyyandi.
+3. **General App** select chesi **Create** click cheyyandi.
+4. Left menu lo **Embed** (leda Features) open chesi **Meeting SDK** ni **ON** cheyyandi.
+5. **App Credentials** page lo rendu values kanipisthayi:
+   - **Client ID**
+   - **Client Secret**
+6. Aa rendu naaku ivvandi. Nenu vaatini mee server config file lo pedathanu.
+
+Client Secret ni chat lo, WhatsApp lo leda public chotla evariki pampakandi. Kavalante nenu config file ready chesi istha, meere aa file lo paste chesukovachu.
+
+**Mukhyamaina limit:** Zoom approve cheyyani app tho **mee Zoom account lo create chesina meetings** matrame portal lo open avthayi. Bayati vaallu (client leda vere company) create chesina Zoom links pani cheyyavu. Avi kuda pani cheyyalante app ni Zoom ki review ki submit cheyyali, approval ki konni rojulu leda vaaralu padochu.
+
+**Na suggestion:** Meetings anni mee Zoom account nunche create chesthe Option 2 pani chesthundi. Clients pampe Zoom links kuda open avvalante Option 1 (Join button) simple ga, ventane pani chesthundi.
+
+Edi kavalo cheppandi.

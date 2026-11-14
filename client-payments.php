@@ -6,6 +6,8 @@ $payments=rows('SELECT id,payment_date,amount FROM client_payments WHERE client_
 $proofs=rows("SELECT id,created_at,brief,status FROM client_requirements WHERE client_id=? AND status IN ('assigned','in_progress') AND (title LIKE 'Payment proof · %' OR title LIKE 'URGENT · Payment proof · %') ORDER BY created_at DESC",[$client['id']]);
 // Proofs the team marked as not received in the last 30 days (with their note).
 $rejectedProofs=rows("SELECT id,created_at,approved_text FROM client_requirements WHERE client_id=? AND status='cancelled' AND (title LIKE 'Payment proof · %' OR title LIKE 'URGENT · Payment proof · %') AND created_at>=NOW()-INTERVAL 30 DAY ORDER BY created_at DESC",[$client['id']]);
+// Invoices raised to this client (cancelled ones are hidden).
+$invoices=rows("SELECT id,invoice_no,invoice_date,total,status FROM invoices WHERE client_id=? AND deleted_at IS NULL AND status<>'cancelled' ORDER BY invoice_date DESC,id DESC",[$client['id']]);
 $payInfo=array_map(static fn($v)=>trim((string)$v),(array)require __DIR__.'/includes/payment-details.php');
 
 $total=(float)$client['payment_total']; $paid=(float)$client['paid_amount']; $balance=(float)$client['remaining_amount'];
@@ -75,6 +77,17 @@ page_start('Payments','client-payments.php');
         </section>
 
         <aside class="pp-side">
+            <?php if ($invoices): ?>
+            <section class="pp-card">
+                <h3>My invoices</h3>
+                <?php foreach ($invoices as $inv): ?>
+                    <div class="pp-item">
+                        <span class="pp-item-text"><strong><?= h($inv['invoice_no']) ?></strong><small><?= h(date('d M Y',strtotime($inv['invoice_date']))) ?> · <?= h(rupees_label($inv['total'])) ?> · <?= $inv['status']==='paid'?'Paid':'Unpaid' ?></small></span>
+                        <a class="pp-receipt" href="invoice-print.php?id=<?= (int)$inv['id'] ?>" target="_blank" rel="noopener"><?= icon('download') ?> Invoice</a>
+                    </div>
+                <?php endforeach; ?>
+            </section>
+            <?php endif; ?>
             <section class="pp-card pp-how">
                 <h3>How to pay</h3>
                 <?php if ($howRows): ?>

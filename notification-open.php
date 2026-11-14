@@ -45,6 +45,9 @@ if ($notification['submission_id']) {
     && str_contains($title,'submitted an assigned task update')
 ) {
     $destination='manager-assigned-status.php?employee='.(int)$notification['sender_id'];
+} elseif ($notification['notification_type']==='general' && (str_starts_with($title,'send to client now') || str_starts_with($title,'scheduled post due'))) {
+    // Content schedule reminder: open the posts that are due now.
+    $destination='content-schedule.php?tab=due';
 } else {
     // Announcements and other messages: show the full message on the Notifications page.
     $destination='manager-notification.php?open='.$notificationId.'#notification-'.$notificationId;

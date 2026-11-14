@@ -2630,6 +2630,26 @@ else { $weekTasks=array_sum(array_column($submittedDays,'task_count')); $weekDon
     <a class="ed-hero-btn" href="employee-daily-work.php">＋ Update today’s work</a>
 </section>
 
+<?php
+// Reels the Managing Director scheduled for this employee to send to clients: overdue + today + the next few.
+$sendList = [];
+try {
+    $sendList = rows("SELECT s.id,s.title,s.content_type,s.platforms,s.media_link,s.scheduled_at,c.client_name FROM content_schedule s JOIN clients c ON c.id=s.client_id WHERE s.employee_id=? AND s.status='scheduled' AND s.deleted_at IS NULL AND s.scheduled_at<? ORDER BY s.scheduled_at LIMIT 8", [$user['id'], date('Y-m-d', strtotime('+3 days')).' 00:00:00']);
+} catch (Throwable $e) { /* schedule table not ready yet */ }
+if ($sendList): $nowTs = time(); $sendFiles = schedule_files_for(array_column($sendList, 'id')); ?>
+<section class="ed-card sc-send-card">
+    <div class="ed-card-head"><h3>Reels to send to client</h3><a href="content-schedule.php">All →</a></div>
+    <?php foreach ($sendList as $s): $ts = strtotime($s['scheduled_at']); $late = $ts < $nowTs; $today = date('Y-m-d', $ts) === date('Y-m-d'); ?>
+        <article class="sc-send<?= $late ? ' is-late' : ($today ? ' is-today' : '') ?>">
+            <span class="sc-send-time"><b><?= h(date('h:i A', $ts)) ?></b><small><?= $today ? 'Today' : h(date('d M', $ts)) ?></small></span>
+            <span class="sc-send-text"><strong><?= h($s['title']) ?> · <?= h($s['client_name']) ?></strong><small><?= h(SCHEDULE_TYPES[$s['content_type']] ?? 'Post') ?><?= $s['platforms'] !== '' ? ' · Post on '.h($s['platforms']) : '' ?></small><?php schedule_media_list($sendFiles[(int) $s['id']] ?? [], schedule_links($s['media_link'])); ?></span>
+            <?php if ($late): ?><span class="inv-overdue">Overdue</span><?php endif; ?>
+            <form method="post" action="content-schedule.php" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="mark_done"><input type="hidden" name="id" value="<?= (int) $s['id'] ?>"><input type="hidden" name="return" value="dashboard"><button type="submit" class="button secondary">✓ Sent</button></form>
+        </article>
+    <?php endforeach; ?>
+</section>
+<?php endif; ?>
+
 <div class="ed-grid">
     <section class="ed-card ed-tasks">
         <div class="ed-card-head"><h3>My tasks</h3><a href="employee-assigned-work.php">All assigned work →</a></div>

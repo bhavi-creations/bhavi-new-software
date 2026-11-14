@@ -16,6 +16,8 @@ function page_access_features(): array
         'tasks' => ['Tasks (assign work)', 'manager-assign-work.php', ['manager-assign-work.php', 'manager-assigned-status.php', 'download-assignments.php', 'assignment-file.php', 'admin-all-work.php']],
         'clients' => ['Projects & clients', 'add-client.php', ['add-client.php', 'admin-add-client.php', 'client-profile.php', 'client-logo.php', 'client-reveal-password.php', 'download-asset.php', 'download-all-logos.php']],
         'vendors' => ['Vendors', 'vendors.php', ['vendors.php']],
+        'invoices' => ['Invoices', 'invoices.php', ['invoices.php', 'invoice-print.php']],
+        'content_schedule' => ['Content schedule', 'content-schedule.php', ['content-schedule.php']],
         'leave_requests' => ['Leave requests', 'manager-leave-requist.php', ['manager-leave-requist.php']],
         'office_timings' => ['Office timings', 'office-timings.php', ['office-timings.php']],
         'announcements' => ['Announcements', 'manager-notification.php', ['manager-notification.php']],
