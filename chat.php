@@ -65,6 +65,7 @@ function chat_conversation_rows(int $userId): array
     $list=rows("SELECT c.id,c.conversation_type,c.title,c.created_at,
         (SELECT MAX(m.id) FROM chat_messages m WHERE m.conversation_id=c.id) AS last_message_id,
         (SELECT m.body FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+        (SELECT m.deleted_at IS NOT NULL FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_deleted,
         (SELECT m.sender_id FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_sender,
         (SELECT m.created_at FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_at,
         (SELECT GROUP_CONCAT(u.full_name ORDER BY u.full_name SEPARATOR ', ') FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=c.id AND p.user_id<>?) AS other_members,
@@ -75,13 +76,14 @@ function chat_conversation_rows(int $userId): array
     foreach ($list as &$row) {
         $isGroup=$row['conversation_type']==='group';
         $row['label']=($isGroup?($row['title']?:$row['other_members']):$row['other_members'])?:'Chat';
-        if ($row['last_body']!==null && $row['last_body']!=='') $row['preview']=((int)$row['last_sender']===$userId?'You: ':'').mb_strimwidth($row['last_body'],0,60,'…');
+        if ((int)$row['last_deleted']===1) $row['preview']=((int)$row['last_sender']===$userId?'You: ':'').'🚫 Message deleted';
+        elseif ($row['last_body']!==null && $row['last_body']!=='') $row['preview']=((int)$row['last_sender']===$userId?'You: ':'').mb_strimwidth($row['last_body'],0,60,'…');
         elseif ($row['last_message_id']) $row['preview']=((int)$row['last_sender']===$userId?'You: ':'').'📎 File';
         else $row['preview']=$isGroup?'Group chat':'Private chat';
         $row['when']=chat_short_date($row['last_at']);
         $row['unread']=(int)$row['unread'];
         $row['online']=!$isGroup && (int)$row['other_online']===1;
-        unset($row['last_body'],$row['other_online']);
+        unset($row['last_body'],$row['last_deleted'],$row['other_online']);
     }
     unset($row);
     return $list;
@@ -102,7 +104,7 @@ if (isset($_GET['messages'])) {
     $conversation=one('SELECT c.id,c.conversation_type FROM chat_conversations c JOIN chat_participants p ON p.conversation_id=c.id WHERE c.id=? AND p.user_id=?',[$conversationId,$user['id']]);
     if (!$conversation) fail(403,'You are not a member of this chat.');
     if (($_GET['seen']??'')==='1') chat_mark_read($conversationId,(int)$user['id']);
-    $messages=rows('SELECT m.id,m.sender_id,u.full_name AS sender_name,m.body,m.created_at FROM chat_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? AND m.id>? ORDER BY m.id LIMIT 100',[$conversationId,$afterId]);
+    $messages=rows('SELECT m.id,m.sender_id,u.full_name AS sender_name,m.body,m.created_at,m.deleted_at IS NOT NULL AS is_deleted FROM chat_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? AND m.id>? ORDER BY m.id LIMIT 100',[$conversationId,$afterId]);
     $files=chat_attachments_from_rows($messages);
     foreach ($messages as &$message) {
         $message['files']=array_map(static fn($f)=>$f+['size_label'=>chat_file_size_label((int)$f['file_size_bytes'])],$files[(int)$message['id']]??[]);
@@ -110,7 +112,8 @@ if (isset($_GET['messages'])) {
         $message['day']=date('Y-m-d',strtotime($message['created_at']));
     }
     unset($message);
-    chat_json(['messages'=>$messages]+chat_room_state($conversation,(int)$user['id']));
+    $deletedIds=array_map('intval',array_column(rows('SELECT id FROM chat_messages WHERE conversation_id=? AND deleted_at IS NOT NULL AND deleted_at>=NOW()-INTERVAL 1 DAY',[$conversationId]),'id'));
+    chat_json(['messages'=>$messages,'deleted'=>$deletedIds]+chat_room_state($conversation,(int)$user['id']));
 }
 if (isset($_GET['conversations'])) {
     chat_json(['conversations'=>chat_conversation_rows((int)$user['id'])]);
@@ -191,6 +194,20 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             db()->commit();
             redirect('chat.php?id='.$conversationId.'#chat-latest');
         }
+        if ($action==='delete_message') {
+            // Only the sender can delete their own message; it stays as a "deleted" placeholder and its files are removed.
+            $messageId=positive_id($_POST['message_id']??null);
+            $message=one('SELECT m.id,m.conversation_id FROM chat_messages m JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=? WHERE m.id=? AND m.sender_id=? AND m.deleted_at IS NULL',[$user['id'],$messageId,$user['id']]);
+            if (!$message) throw new InvalidArgumentException('You can delete only your own messages.');
+            $paths=array_column(rows('SELECT storage_path FROM chat_attachments WHERE message_id=?',[$messageId]),'storage_path');
+            db()->beginTransaction();
+            query('DELETE FROM chat_attachments WHERE message_id=?',[$messageId]);
+            query("UPDATE chat_messages SET body='',deleted_at=NOW() WHERE id=?",[$messageId]);
+            db()->commit();
+            foreach ($paths as $path) { $absolute=__DIR__.'/'.$path; if (str_starts_with($path,'storage/chat/') && is_file($absolute)) @unlink($absolute); }
+            if (($_POST['ajax']??'')==='1') chat_json(['ok'=>true]);
+            redirect('chat.php?id='.(int)$message['conversation_id'].'#chat-latest');
+        }
         if ($action==='send_message') {
             $conversationId=positive_id($_POST['conversation_id']??null);
             if (!one('SELECT conversation_id FROM chat_participants WHERE conversation_id=? AND user_id=?',[$conversationId,$user['id']])) throw new InvalidArgumentException('You are not a member of this chat.');
@@ -239,6 +256,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         if (db()->inTransaction()) db()->rollBack();
         foreach ($storedFiles as $path) if (is_file($path)) @unlink($path);
         $error=mutation_error($exception);
+        if (($_POST['ajax']??'')==='1') { http_response_code(400); chat_json(['ok'=>false,'error'=>$error]); }
     }
 }
 
@@ -253,7 +271,7 @@ if (!$selected && $conversations) {
     chat_mark_read($selectedId,(int)$user['id']);
     $conversations[0]['unread']=0;
 }
-$messages=$selected?array_reverse(rows('SELECT m.id,m.sender_id,u.full_name AS sender_name,m.body,m.created_at FROM chat_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.id DESC LIMIT 100',[$selectedId])):[];
+$messages=$selected?array_reverse(rows('SELECT m.id,m.sender_id,u.full_name AS sender_name,m.body,m.created_at,m.deleted_at IS NOT NULL AS is_deleted FROM chat_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.id DESC LIMIT 100',[$selectedId])):[];
 $filesByMessage=chat_attachments_from_rows($messages);
 $people=rows("SELECT u.id,u.full_name,u.role,d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id<>? AND u.role IN ('admin','manager','employee') AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name",[$user['id']]);
 $initials=static function(?string $name): string { $o=''; foreach (array_slice(preg_split('/\s+/',trim((string)$name))?:[],0,2) as $p) $o.=mb_strtoupper(mb_substr($p,0,1)); return $o?:'?'; };
@@ -314,13 +332,13 @@ page_start('Chat','chat.php'); error_message($error);
             </header>
             <div class="tc-messages chat-messages" id="chat-messages" aria-live="polite">
                 <?php $lastDay=''; foreach ($messages as $message): $own=(int)$message['sender_id']===(int)$user['id']; $day=date('Y-m-d',strtotime($message['created_at'])); if ($day!==$lastDay): $lastDay=$day; ?><div class="tc-day" data-day="<?= h($day) ?>"><span><?= h($dayLabel($message['created_at'])) ?></span></div><?php endif; ?>
-                <article class="tc-msg chat-message<?= $own?' own':'' ?>" data-message-id="<?= (int)$message['id'] ?>">
+                <article class="tc-msg chat-message<?= $own?' own':'' ?>" data-message-id="<?= (int)$message['id'] ?>"<?= (int)$message['is_deleted']===1?' data-deleted="1"':'' ?>>
                     <?php if (!$own): ?><span class="tc-avatar tc-avatar-xs" title="<?= h($message['sender_name']) ?>"><?= h($initials($message['sender_name'])) ?></span><?php endif; ?>
                     <div class="tc-msg-body">
                         <?php if (!$own && $selected['conversation_type']==='group'): ?><small class="tc-sender"><?= h($message['sender_name']) ?></small><?php endif; ?>
-                        <?php if ($message['body']!==''): ?><p class="tc-bubble"><?= h($message['body']) ?></p><?php endif; ?>
+                        <?php if ((int)$message['is_deleted']===1): ?><p class="tc-bubble tc-deleted">🚫 This message was deleted</p><?php elseif ($message['body']!==''): ?><p class="tc-bubble"><?= h($message['body']) ?></p><?php endif; ?>
                         <?php foreach ($filesByMessage[(int)$message['id']]??[] as $attachment): ?><a class="tc-file chat-attachment" href="download-chat-attachment.php?id=<?= (int)$attachment['id'] ?>"><?= icon('download') ?><span><?= h($attachment['original_file_name']) ?></span><small><?= h(chat_file_size_label((int)$attachment['file_size_bytes'])) ?></small></a><?php endforeach; ?>
-                        <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?><?php $waFilesJson=json_encode(array_map(static fn($f)=>['id'=>(int)$f['id'],'name'=>$f['original_file_name'],'mime'=>$f['mime_type']],$filesByMessage[(int)$message['id']]??[]),JSON_UNESCAPED_UNICODE); if ($message['body']!=='' || $waFilesJson!=='[]'): ?> · <a class="tc-wa" href="<?= h($waBase.'?text='.rawurlencode($message['body'])) ?>" target="bhavi_whatsapp" data-mode="web" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp Web (Chrome)">WhatsApp Web</a><span class="tc-wa-app"> · <a class="tc-wa" href="whatsapp://send" data-mode="app" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp app">App</a></span><?php endif; ?></small>
+                        <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?><?php $waFilesJson=json_encode(array_map(static fn($f)=>['id'=>(int)$f['id'],'name'=>$f['original_file_name'],'mime'=>$f['mime_type']],$filesByMessage[(int)$message['id']]??[]),JSON_UNESCAPED_UNICODE); if ((int)$message['is_deleted']!==1 && ($message['body']!=='' || $waFilesJson!=='[]')): ?> · <a class="tc-wa" href="<?= h($waBase.'?text='.rawurlencode($message['body'])) ?>" target="bhavi_whatsapp" data-mode="web" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp Web (Chrome)">WhatsApp Web</a><span class="tc-wa-app"> · <a class="tc-wa" href="whatsapp://send" data-mode="app" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp app">App</a></span><?php endif; ?><?php if ($own && (int)$message['is_deleted']!==1): ?> · <button type="button" class="tc-del" data-tc-delete title="Delete this message">Delete</button><?php endif; ?></small>
                     </div>
                 </article>
                 <?php endforeach; ?>
@@ -538,19 +556,39 @@ page_start('Chat','chat.php'); error_message($error);
         if(box.querySelector(`[data-message-id="${message.id}"]`))return;
         box.querySelector('.tc-first')?.remove();
         if(message.day!==lastDay){lastDay=message.day;const sep=el('div','tc-day');sep.dataset.day=message.day;sep.append(el('span','',dayLabel(message.day)));box.insertBefore(sep,latest);}
-        const own=Number(message.sender_id)===me,item=el('article','tc-msg chat-message'+(own?' own':''));item.dataset.messageId=message.id;
+        const own=Number(message.sender_id)===me,item=el('article','tc-msg chat-message'+(own?' own':''));item.dataset.messageId=message.id;if(Number(message.is_deleted)===1)item.dataset.deleted='1';
         if(!own){const av=el('span','tc-avatar tc-avatar-xs',initials(message.sender_name));av.title=message.sender_name;item.append(av);}
         const body=el('div','tc-msg-body');
         if(!own&&isGroupRoom)body.append(el('small','tc-sender',message.sender_name));
-        if(message.body)body.append(el('p','tc-bubble',message.body));
-        (message.files||[]).forEach(file=>{const link=el('a','tc-file chat-attachment');link.href=`download-chat-attachment.php?id=${file.id}`;link.innerHTML=icons.download;link.append(el('span','',file.original_file_name),el('small','',file.size_label));body.append(link);addShared(file);});
+        const isDeleted=Number(message.is_deleted)===1;
+        if(isDeleted)body.append(el('p','tc-bubble tc-deleted','🚫 This message was deleted'));
+        else if(message.body)body.append(el('p','tc-bubble',message.body));
+        (isDeleted?[]:(message.files||[])).forEach(file=>{const link=el('a','tc-file chat-attachment');link.href=`download-chat-attachment.php?id=${file.id}`;link.innerHTML=icons.download;link.append(el('span','',file.original_file_name),el('small','',file.size_label));body.append(link);addShared(file);});
         const meta=el('small','tc-meta');meta.append(el('time','',message.time));
         if(own){const st=el('span','tc-status','Sent');st.dataset.tcStatus='';meta.append(' · ',st);}
         const waFiles=JSON.stringify((message.files||[]).map(f=>({id:Number(f.id),name:f.original_file_name,mime:f.mime_type})));
-        if(message.body||waFiles!=='[]'){const wa=el('a','tc-wa',isMobile?'WhatsApp':'WhatsApp Web');wa.dataset.files=waFiles;wa.href=waBase+'?text='+encodeURIComponent(message.body||'');wa.target='bhavi_whatsapp';wa.title='Open in WhatsApp Web (Chrome)';wa.dataset.mode='web';wa.dataset.text=message.body||'';const app=el('a','tc-wa','App');app.href='whatsapp://send';app.title='Open in WhatsApp app';app.dataset.mode='app';app.dataset.text=message.body||'';app.dataset.files=waFiles;const appWrap=el('span','tc-wa-app');appWrap.append(' · ',app);meta.append(' · ',wa,appWrap);}
+        if(!isDeleted&&(message.body||waFiles!=='[]')){const wa=el('a','tc-wa',isMobile?'WhatsApp':'WhatsApp Web');wa.dataset.files=waFiles;wa.href=waBase+'?text='+encodeURIComponent(message.body||'');wa.target='bhavi_whatsapp';wa.title='Open in WhatsApp Web (Chrome)';wa.dataset.mode='web';wa.dataset.text=message.body||'';const app=el('a','tc-wa','App');app.href='whatsapp://send';app.title='Open in WhatsApp app';app.dataset.mode='app';app.dataset.text=message.body||'';app.dataset.files=waFiles;const appWrap=el('span','tc-wa-app');appWrap.append(' · ',app);meta.append(' · ',wa,appWrap);}
+        if(own&&!isDeleted){const del=el('button','tc-del','Delete');del.type='button';del.dataset.tcDelete='';del.title='Delete this message';meta.append(' · ',del);}
         body.append(meta);item.append(body);box.insertBefore(item,latest);
         lastId=Math.max(lastId,Number(message.id)||0);
     };
+    // Delete own message: confirm, POST, then show the "deleted" placeholder (others see it on their next refresh).
+    const markDeleted=id=>{
+        const item=box.querySelector(`[data-message-id="${id}"]`);if(!item||item.dataset.deleted)return;item.dataset.deleted='1';
+        const body=item.querySelector('.tc-msg-body');
+        body.querySelectorAll('.tc-bubble,.tc-file').forEach(n=>n.remove());
+        body.querySelectorAll('.tc-wa,.tc-wa-app,.tc-del').forEach(n=>{const prev=n.previousSibling;if(prev&&prev.nodeType===3&&prev.textContent.trim()==='·')prev.remove();n.remove();});
+        body.insertBefore(el('p','tc-bubble tc-deleted','🚫 This message was deleted'),body.querySelector('.tc-meta'));
+    };
+    box.addEventListener('click',async e=>{
+        const btn=e.target.closest('[data-tc-delete]');if(!btn)return;
+        if(!confirm('Delete this message for everyone?'))return;
+        const id=btn.closest('[data-message-id]').dataset.messageId,data=new FormData();
+        data.append('csrf',document.querySelector('[data-chat-compose] [name=csrf]').value);data.append('action','delete_message');data.append('message_id',id);data.append('ajax','1');
+        btn.disabled=true;
+        try{const r=await fetch('chat.php?id='+selectedId,{method:'POST',body:data,credentials:'same-origin'});const p=await r.json().catch(()=>({}));if(r.ok&&p.ok){markDeleted(id);refreshConversations();}else{alert(p.error||'Message could not be deleted.');btn.disabled=false;}}
+        catch(_){alert('Message could not be deleted. Check the connection.');btn.disabled=false;}
+    });
     let busy=false;
     async function refresh(forceScroll){
         if(busy)return;busy=true;
@@ -560,6 +598,7 @@ page_start('Chat','chat.php'); error_message($error);
             if(!response.ok)return;
             const payload=await response.json();
             payload.messages.forEach(append);
+            (payload.deleted||[]).forEach(markDeleted);
             readUpto=Number(payload.read_upto)||0;applyReceipts();
             if(presence){presence.textContent=payload.presence;presence.classList.toggle('is-online',!!payload.online);}
             if(payload.messages.length&&stick)box.scrollTop=box.scrollHeight;

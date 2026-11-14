@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 46;
+const PORTAL_SCHEMA_VERSION = 47;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -723,6 +723,9 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (46)');
+        // Chat: senders can delete their own messages (kept as a "deleted" placeholder).
+        $addColumn('chat_messages','deleted_at','DATETIME NULL');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (47)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);
