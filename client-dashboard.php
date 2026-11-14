@@ -66,7 +66,8 @@ page_start('Dashboard','client-dashboard.php');
     <div class="cd-grid">
         <section class="cd-card cd-payments">
             <div class="cd-card-head"><h2>Payments</h2><a href="client-payments.php">Open payments →</a></div>
-            <p class="cd-help">Your package amount, payments made, balance and receipts are on the Payments page.</p>
+            <?php $cdAmt=client_package_amount($client); $cdPaidAmt=(float)$client['paid_amount']; ?>
+            <dl class="cd-pay-sum"><div><dt>Package amount</dt><dd><?= h(rupees_label($cdAmt)) ?></dd></div><div><dt>Paid</dt><dd><?= h(rupees_label($cdPaidAmt)) ?></dd></div><div class="<?= $cdAmt-$cdPaidAmt>0?'is-due':'' ?>"><dt>Balance</dt><dd><?= h(rupees_label(max(0,$cdAmt-$cdPaidAmt))) ?></dd></div></dl>
             <div class="cd-pay-actions">
                 <a class="cd-btn-dark" href="client-payments.php">View payments &amp; receipts</a>
             </div>

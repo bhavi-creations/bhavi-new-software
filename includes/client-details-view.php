@@ -52,7 +52,11 @@ $cdFacts=[
     'Partner for'=>cdv_partner_for($client['starting_date']),
     'Contract ends'=>$client['ending_date']?date('j M Y',strtotime($client['ending_date'])):'Ongoing',
 ];
-// Amounts are shown only on the Payments page.
+// Package: name, billing, amount, paid and balance (full history and receipts are on the Payments page).
+$cdAmount=client_package_amount($client);
+$cdPaid=(float)($client['paid_amount']??0);
+$cdBalance=max(0,$cdAmount-$cdPaid);
+$cdBilling=['monthly'=>'Monthly retainer','one_time'=>'One-time project','quarterly'=>'Quarterly'][(string)($client['billing_cycle']??'')]??'';
 $cdPlan=['Reels'=>(int)$client['monthly_reels'],'Posters'=>(int)$client['monthly_posters'],'Carousels'=>(int)$client['monthly_carousels'],'Blogs'=>(int)$client['monthly_blogs']];
 $cdNote=trim((string)($client['monthly_work_remark']??''));
 $cdHasSecrets=(bool)array_filter($socialLinks,static fn($l)=>!empty($l['password_cipher']));
@@ -83,6 +87,19 @@ $cdHasSecrets=(bool)array_filter($socialLinks,static fn($l)=>!empty($l['password
         </aside>
 
         <div class="pd-main">
+            <section class="pd-card">
+                <div class="pd-card-head">
+                    <h2>Your package</h2>
+                    <a href="client-payments.php">Payments &amp; receipts →</a>
+                </div>
+                <div class="pd-plan pd-package">
+                    <div class="pd-plan-box"><span>Package</span><strong class="pd-package-name"><?= h($cdPackage!==''?$cdPackage:($cdType!==''?ucfirst(str_replace('-',' ',$cdType)):'—')) ?></strong><small><?= h($cdBilling?:'Package') ?></small></div>
+                    <div class="pd-plan-box"><span>Package amount</span><strong><?= h(rupees_label($cdAmount)) ?></strong><small>Total agreed</small></div>
+                    <div class="pd-plan-box"><span>Paid</span><strong><?= h(rupees_label($cdPaid)) ?></strong><small>Received so far</small></div>
+                    <div class="pd-plan-box<?= $cdBalance>0?' is-due':'' ?>"><span>Balance</span><strong><?= h(rupees_label($cdBalance)) ?></strong><small><?= $cdBalance>0?'Still to pay':'Fully paid' ?></small></div>
+                </div>
+            </section>
+
             <section class="pd-card">
                 <div class="pd-card-head">
                     <h2>Your monthly plan</h2>

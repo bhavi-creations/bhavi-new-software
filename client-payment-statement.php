@@ -85,9 +85,9 @@ td{padding:12px 10px;border-bottom:1px solid var(--line)}
     <?php endif; ?>
 
     <div class="totals">
-        <div><span class="label">Total agreed</span><strong><?= h(rupees_label($client['payment_total'])) ?></strong></div>
+        <div><span class="label">Total agreed</span><strong><?= h(rupees_label(client_package_amount($client))) ?></strong></div>
         <div><span class="label">Paid</span><strong><?= h(rupees_label($client['paid_amount'])) ?></strong></div>
-        <div class="due"><span class="label">Balance</span><strong><?= h(rupees_label(max(0,(float)$client['remaining_amount']))) ?></strong></div>
+        <div class="due"><span class="label">Balance</span><strong><?= h(rupees_label(max(0,client_package_amount($client)-(float)$client['paid_amount']))) ?></strong></div>
     </div>
     <p class="foot">This is a computer-generated <?= $isReceipt?'receipt':'statement' ?> from the Bhavi Creations client portal and does not need a signature.</p>
 </main>

@@ -10,7 +10,7 @@ $rejectedProofs=rows("SELECT id,created_at,approved_text FROM client_requirement
 $invoices=rows("SELECT id,invoice_no,invoice_date,total,status FROM invoices WHERE client_id=? AND deleted_at IS NULL AND status<>'cancelled' ORDER BY invoice_date DESC,id DESC",[$client['id']]);
 $payInfo=array_map(static fn($v)=>trim((string)$v),(array)require __DIR__.'/includes/payment-details.php');
 
-$total=(float)$client['payment_total']; $paid=(float)$client['paid_amount']; $balance=(float)$client['remaining_amount'];
+$total=client_package_amount($client); $paid=(float)$client['paid_amount']; $balance=max(0,$total-$paid);
 $percent=$total>0?(int)floor(min(100,max(0,$paid/$total*100))):($paid>0?100:0);
 $ring=2*M_PI*52;
 $howRows=array_filter([

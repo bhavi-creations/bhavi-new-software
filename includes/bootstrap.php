@@ -134,6 +134,14 @@ function client_package_name(array $client): string
     if ($package === '' || preg_match('/^\s*(₹|rs\.?|inr)?\s*[\d,.\s]+(\/-)?\s*(rs\.?|inr|\/-|per\s+month|\/\s*month|pm)?\s*$/iu', $package)) return '';
     return $package;
 }
+/** Package amount for a client: the "Package amount" field, or a number typed in the Package name field when the amount was left at 0. */
+function client_package_amount(array $client): float
+{
+    $total = (float) ($client['payment_total'] ?? 0);
+    if ($total > 0) return $total;
+    $digits = preg_replace('/[^0-9.]/', '', str_replace(',', '', (string) ($client['package'] ?? '')));
+    return client_package_name($client) === '' && is_numeric($digits) ? (float) $digits : 0.0;
+}
 function clients(): array { return rows('SELECT * FROM clients WHERE deleted_at IS NULL AND is_active=1 ORDER BY client_name'); }
 function text_input(string $name, int $max = 255, bool $required = true): string
 {
