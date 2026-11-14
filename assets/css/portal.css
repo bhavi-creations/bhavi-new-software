@@ -2780,6 +2780,8 @@ body.sidebar-open:after{position:fixed;inset:0;z-index:9;background:#0b1a3366;co
 .tc-wa{color:#1a8f4a;font-weight:600;text-decoration:none}
 .tc-wa:hover{text-decoration:underline}
 .tc-is-mobile .tc-wa-app{display:none}
+.tc-wa-toast{position:fixed;left:50%;bottom:24px;z-index:1000;transform:translateX(-50%);max-width:min(460px,calc(100vw - 32px));padding:12px 16px;border-radius:12px;background:#1a8f4a;color:#fff;font-size:13px;font-weight:600;line-height:1.4;text-align:center;box-shadow:0 12px 30px #10234233}
+.tc-wa-toast[hidden]{display:none}
 .tc-msg:not(.own)>.tc-avatar-xs{position:relative;top:2px;align-self:flex-end;margin-bottom:0}
 .tc-msg:not(.own) .tc-meta{margin-top:2px}
 .tc-file svg{flex:0 0 auto}

@@ -320,7 +320,7 @@ page_start('Chat','chat.php'); error_message($error);
                         <?php if (!$own && $selected['conversation_type']==='group'): ?><small class="tc-sender"><?= h($message['sender_name']) ?></small><?php endif; ?>
                         <?php if ($message['body']!==''): ?><p class="tc-bubble"><?= h($message['body']) ?></p><?php endif; ?>
                         <?php foreach ($filesByMessage[(int)$message['id']]??[] as $attachment): ?><a class="tc-file chat-attachment" href="download-chat-attachment.php?id=<?= (int)$attachment['id'] ?>"><?= icon('download') ?><span><?= h($attachment['original_file_name']) ?></span><small><?= h(chat_file_size_label((int)$attachment['file_size_bytes'])) ?></small></a><?php endforeach; ?>
-                        <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?><?php if ($message['body']!==''): ?> · <a class="tc-wa" href="<?= h($waBase.'?text='.rawurlencode($message['body'])) ?>" target="bhavi_whatsapp" data-mode="web" data-text="<?= h($message['body']) ?>" title="Open in WhatsApp Web (Chrome)">WhatsApp Web</a><span class="tc-wa-app"> · <a class="tc-wa" href="whatsapp://send" data-mode="app" data-text="<?= h($message['body']) ?>" title="Open in WhatsApp app">App</a></span><?php endif; ?></small>
+                        <small class="tc-meta"><time datetime="<?= h($message['created_at']) ?>"><?= h(date('g:i A',strtotime($message['created_at']))) ?></time><?php if ($own): $seen=(int)$message['id']<=$roomState['read_upto']; ?> · <span class="tc-status<?= $seen?' is-seen':'' ?>" data-tc-status><?= $seen?'Seen':'Sent' ?></span><?php endif; ?><?php $waFilesJson=json_encode(array_map(static fn($f)=>['id'=>(int)$f['id'],'name'=>$f['original_file_name'],'mime'=>$f['mime_type']],$filesByMessage[(int)$message['id']]??[]),JSON_UNESCAPED_UNICODE); if ($message['body']!=='' || $waFilesJson!=='[]'): ?> · <a class="tc-wa" href="<?= h($waBase.'?text='.rawurlencode($message['body'])) ?>" target="bhavi_whatsapp" data-mode="web" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp Web (Chrome)">WhatsApp Web</a><span class="tc-wa-app"> · <a class="tc-wa" href="whatsapp://send" data-mode="app" data-text="<?= h($message['body']) ?>" data-files="<?= h($waFilesJson) ?>" title="Open in WhatsApp app">App</a></span><?php endif; ?></small>
                     </div>
                 </article>
                 <?php endforeach; ?>
@@ -417,8 +417,38 @@ page_start('Chat','chat.php'); error_message($error);
         const url='https://web.whatsapp.com/send?'+waQuery(text);
         if(waTab&&!waTab.closed){waTab.location.href=url;waTab.focus();return;}
         waTab=window.open(url,'bhavi_whatsapp');
+        if(!waTab)waToast('Browser blocked the WhatsApp tab. Click WhatsApp Web again.');
     };
-    document.addEventListener('click',e=>{const link=e.target.closest('.tc-wa');if(!link)return;e.preventDefault();openWhatsApp(link.dataset.text||'',link.dataset.mode||'web');});
+    // Media: WhatsApp links cannot carry files. On a computer the first image is copied to the clipboard
+    // (paste it in WhatsApp with Ctrl+V) and other files are downloaded (attach them with 📎); then WhatsApp opens.
+    // On phones the share sheet sends the files straight to WhatsApp.
+    const waToast=msg=>{let t=document.querySelector('.tc-wa-toast');if(!t){t=document.createElement('div');t.className='tc-wa-toast';t.setAttribute('role','status');document.body.append(t);}t.textContent=msg;t.hidden=false;clearTimeout(t._h);t._h=setTimeout(()=>{t.hidden=true;},9000);};
+    const fileUrl=f=>`download-chat-attachment.php?id=${f.id}`;
+    const downloadFile=f=>{const a=document.createElement('a');a.href=fileUrl(f);a.download=f.name;document.body.append(a);a.click();a.remove();};
+    const fetchFile=async f=>{const r=await fetch(fileUrl(f),{credentials:'same-origin'});if(!r.ok)throw new Error('download');return new File([await r.blob()],f.name,{type:f.mime||'application/octet-stream'});};
+    const toPng=blob=>new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(blob);img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);URL.revokeObjectURL(url);c.toBlob(b=>b?resolve(b):reject(new Error('png')),'image/png');};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('img'));};img.src=url;});
+    async function sendMediaToWhatsApp(link,text,files,mode){
+        const label=link.textContent;link.textContent='Preparing…';
+        try{
+            if(isMobile){
+                try{const shared=await Promise.all(files.map(fetchFile));const data={files:shared};if(text)data.text=text;if(navigator.canShare&&navigator.canShare(data)){await navigator.share(data);return;}}catch(err){if(err&&err.name==='AbortError')return;}
+                files.forEach(downloadFile);waToast('File downloaded. In WhatsApp tap 📎 and attach it.');openWhatsApp(text,mode);return;
+            }
+            const image=files.find(f=>/^image\/(png|jpe?g|gif|webp|bmp)$/i.test(f.mime||''));
+            let copied=false;
+            if(image&&navigator.clipboard&&window.ClipboardItem){try{const png=await toPng(await fetchFile(image));await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);copied=true;}catch(_){}}
+            const rest=files.filter(f=>!(copied&&f===image));
+            rest.forEach(downloadFile);
+            waToast(copied?(rest.length?'Image copied: in WhatsApp press Ctrl+V. Other files downloaded: attach them with 📎.':'Image copied: in WhatsApp press Ctrl+V, then Send.'):'File downloaded: in WhatsApp click 📎 and attach it, then Send.');
+            openWhatsApp(text,mode);
+        }finally{link.textContent=label;}
+    }
+    document.addEventListener('click',e=>{
+        const link=e.target.closest('.tc-wa');if(!link)return;e.preventDefault();
+        let files=[];try{files=JSON.parse(link.dataset.files||'[]');}catch(_){}
+        const text=link.dataset.text||'',mode=link.dataset.mode||'web';
+        if(files.length)sendMediaToWhatsApp(link,text,files,mode);else openWhatsApp(text,mode);
+    });
     const icons=<?= json_encode(['people'=>icon('people'),'download'=>icon('download'),'document'=>icon('document')],JSON_HEX_TAG|JSON_HEX_AMP) ?>;
     const initials=n=>(n||'').trim().split(/\s+/).slice(0,2).map(p=>p.charAt(0).toUpperCase()).join('')||'?';
     const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
@@ -516,7 +546,8 @@ page_start('Chat','chat.php'); error_message($error);
         (message.files||[]).forEach(file=>{const link=el('a','tc-file chat-attachment');link.href=`download-chat-attachment.php?id=${file.id}`;link.innerHTML=icons.download;link.append(el('span','',file.original_file_name),el('small','',file.size_label));body.append(link);addShared(file);});
         const meta=el('small','tc-meta');meta.append(el('time','',message.time));
         if(own){const st=el('span','tc-status','Sent');st.dataset.tcStatus='';meta.append(' · ',st);}
-        if(message.body){const wa=el('a','tc-wa',isMobile?'WhatsApp':'WhatsApp Web');wa.href=waBase+'?text='+encodeURIComponent(message.body);wa.target='bhavi_whatsapp';wa.title='Open in WhatsApp Web (Chrome)';wa.dataset.mode='web';wa.dataset.text=message.body;const app=el('a','tc-wa','App');app.href='whatsapp://send';app.title='Open in WhatsApp app';app.dataset.mode='app';app.dataset.text=message.body;const appWrap=el('span','tc-wa-app');appWrap.append(' · ',app);meta.append(' · ',wa,appWrap);}
+        const waFiles=JSON.stringify((message.files||[]).map(f=>({id:Number(f.id),name:f.original_file_name,mime:f.mime_type})));
+        if(message.body||waFiles!=='[]'){const wa=el('a','tc-wa',isMobile?'WhatsApp':'WhatsApp Web');wa.dataset.files=waFiles;wa.href=waBase+'?text='+encodeURIComponent(message.body||'');wa.target='bhavi_whatsapp';wa.title='Open in WhatsApp Web (Chrome)';wa.dataset.mode='web';wa.dataset.text=message.body||'';const app=el('a','tc-wa','App');app.href='whatsapp://send';app.title='Open in WhatsApp app';app.dataset.mode='app';app.dataset.text=message.body||'';app.dataset.files=waFiles;const appWrap=el('span','tc-wa-app');appWrap.append(' · ',app);meta.append(' · ',wa,appWrap);}
         body.append(meta);item.append(body);box.insertBefore(item,latest);
         lastId=Math.max(lastId,Number(message.id)||0);
     };
