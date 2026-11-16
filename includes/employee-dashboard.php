@@ -3506,7 +3506,7 @@ $awBrief = static function (?string $text): string {
                 <div class="aw-request-top"><div><strong><?= h($request['client_name']) ?></strong><small>Due <?= $request['due_date'] ? h(date('d-m-Y', strtotime($request['due_date']))) : 'No deadline' ?></small></div><?= status_badge($request['status']) ?></div>
                 <p class="requirement-remark"><?= nl2br(h($request['brief'])) ?></p>
                 <?php if ($request['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($request['approved_text'])) ?></p><?php endif; ?>
-                <?= requirement_files_html($requestFiles) ?>
+                <?= requirement_files_html($requestFiles, false) ?>
             </article>
         <?php endforeach; ?>
     </section>

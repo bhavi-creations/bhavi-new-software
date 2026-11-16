@@ -114,10 +114,8 @@ try {
     $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
     ok($d['status'] === 303 && !str_contains($d['body'], 'Request file is unavailable'), 'missing file: no bare error page, goes back');
     $page = $admin->req('client-reuirement.php')['body'];
-    ok(str_contains($page, 'is not on the server any more') && str_contains($page, 'file is not on the server') && str_contains($page, 'rq-file-dl'), 'clear message + file marked missing in the list');
-    ok(str_starts_with((string) val('SELECT description FROM requirement_files WHERE id=?', [$f1[1]['id']]), 'Uploaded on 127.0.0.1') && str_contains($page, 'uploaded on this same site') && str_contains($page, 'hosting-check.php'), 'upload place saved + reason shown to MD');
-    $pdo->prepare('UPDATE requirement_files SET description=? WHERE id=?')->execute(['Uploaded on client.other-site.com · /home/old/public_html', $f1[1]['id']]);
-    ok(str_contains($admin->req('client-reuirement.php')['body'], 'another copy of the portal: <b>client.other-site.com'), 'files from another portal copy are explained');
+    ok(str_contains($page, 'is not on the server any more') && str_contains($page, '<h4>Attached files</h4><ul class="requirement-file-list">') && !str_contains($page, 'rq-missing'), 'clear message after click; list keeps the old simple look');
+    ok(str_starts_with((string) val('SELECT description FROM requirement_files WHERE id=?', [$f1[1]['id']]), 'Uploaded on 127.0.0.1'), 'upload place saved for Hosting checks');
     rename($moved, dirname(__DIR__) . '/' . $f1[1]['file_path']);
     echo "\nAll $checks checks passed.\n";
 } finally {
