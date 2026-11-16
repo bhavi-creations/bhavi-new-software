@@ -4994,3 +4994,9 @@ tr.sc-soon td{background:#f3fbf6}
 .cr-shared{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 14px;border:1px solid #b7e1c7;border-radius:10px;background:#f2fbf5;color:#1a6b3c;font-size:13px}
 .cr-shared form{margin:0}
 .cr-shared-stop{padding:6px 12px;border:1px solid #b7e1c7;border-radius:8px;background:#fff;color:#1a6b3c;font-size:12px;font-weight:700;cursor:pointer}
+/* Client Details page, 992px–1400px: profile card, package and monthly plan one below another (full width),
+   so the package name and amounts are not squeezed or cut */
+@media (min-width:992px) and (max-width:1400px){
+    .pd-grid{grid-template-columns:minmax(0,1fr)}
+    .pd-page .pd-plan-box strong{font-size:24px;overflow-wrap:normal;word-break:normal}
+}

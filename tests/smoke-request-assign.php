@@ -151,6 +151,11 @@ try {
     ok(str_contains($page, 'is not on the server any more') && str_contains($page, 'Details: this server') && str_contains($page, 'uploaded on 127.0.0.1') && str_contains($page, '<h4>Attached files</h4><ul class="requirement-file-list">'), 'clear message with the reason for the MD; old list look');
     ok(!str_contains($page, 'download-requirement-files.php?id=' . $req['id']), 'Download all hidden when fewer than 2 files are on the server');
     rename($moved, $disk);
+    $pdo->prepare("INSERT INTO client_requirements (client_id,department_id,title,brief,due_date,status,created_by) VALUES (?,NULL,'Payment proof · Kiran Raju','Payment proof
+Amount: ₹20000
+Transaction ID / UTR: 876543123',CURDATE(),'assigned',?)")->execute([$clientId, $kiran]);
+    $page = $admin->req('client-reuirement.php')['body'];
+    ok(!str_contains($page, '876543123') && !str_contains($page, 'Payment proof') && str_contains($page, 'Diwali poster with 15% offer'), 'payment proofs hidden: only client work requests shown');
     echo "\nAll $checks checks passed.\n";
 } finally {
     if ($process) { proc_terminate($process); proc_close($process); }
