@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 51;
+const PORTAL_SCHEMA_VERSION = 53;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -778,6 +778,13 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('client_engagements','meeting_minutes','SMALLINT UNSIGNED NOT NULL DEFAULT 60');
         $addColumn('client_engagements','shoot_minutes','SMALLINT UNSIGNED NOT NULL DEFAULT 180');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (51)');
+        // A client request sent straight to an employee from the Client requests page.
+        $addColumn('work_assignments','requirement_id','BIGINT UNSIGNED NULL');
+        if (!$pdo->query("SHOW INDEX FROM work_assignments WHERE Key_name='idx_assignment_requirement'")->fetch()) $pdo->exec('ALTER TABLE work_assignments ADD INDEX idx_assignment_requirement (requirement_id)');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (52)');
+        // Zoom meetings whose link the portal created on the connected Zoom account (deleted there too).
+        $addColumn('zoom_meetings','auto_created','TINYINT(1) NOT NULL DEFAULT 0');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (53)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

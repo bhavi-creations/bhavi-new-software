@@ -171,7 +171,7 @@ function zoom_access_token(): string
 /** Calls the Zoom REST API (https://api.zoom.us/v2) as the connected account. */
 function zoom_api(string $method, string $path, ?array $body = null): array
 {
-    $h = curl_init('https://api.zoom.us/v2' . $path);
+    $h = curl_init(zoom_api_base() . $path);
     $headers = ['Authorization: Bearer ' . zoom_access_token(), 'Accept: application/json'];
     $opts = [CURLOPT_CUSTOMREQUEST => $method, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20];
     if ($body !== null) { $opts[CURLOPT_POSTFIELDS] = json_encode($body); $headers[] = 'Content-Type: application/json'; }
@@ -208,4 +208,33 @@ function zoom_save_instant_meeting(array $meeting, string $title, int $userId): 
 function zoom_zak(): string
 {
     return (string) (zoom_api('GET', '/users/me/token?type=zak')['token'] ?? '');
+}
+
+/** Zoom REST API address (BHAVI_ZOOM_API_BASE is only for local tests with a fake Zoom server). */
+function zoom_api_base(): string
+{
+    $base = getenv('BHAVI_ZOOM_API_BASE');
+    return is_string($base) && $base !== '' && preg_match('#^http://127\.0\.0\.1:\d+$#', $base) ? $base : 'https://api.zoom.us/v2';
+}
+
+/**
+ * Creates a scheduled meeting on the connected Zoom account ("Add a meeting" with automatic link).
+ * Returns Zoom's meeting: id (Meeting ID), password (passcode), join_url (invite link).
+ */
+function zoom_create_scheduled_meeting(string $topic, int $start, int $minutes, string $agenda = ''): array
+{
+    $meeting = zoom_api('POST', '/users/me/meetings', [
+        'topic' => mb_substr($topic, 0, 200), 'type' => 2,
+        'start_time' => date('Y-m-d\TH:i:s', $start), 'timezone' => date_default_timezone_get() ?: 'Asia/Kolkata',
+        'duration' => $minutes, 'agenda' => mb_substr($agenda, 0, 2000),
+        'settings' => ['join_before_host' => true, 'jbh_time' => 0, 'waiting_room' => false, 'mute_upon_entry' => true, 'host_video' => true, 'participant_video' => true],
+    ]);
+    if (zoom_meeting_number((string) ($meeting['id'] ?? '')) === '' || empty($meeting['join_url'])) throw new RuntimeException('Zoom did not return a meeting link. Try again.');
+    return $meeting;
+}
+
+/** Removes a meeting the portal created on Zoom (errors are ignored: it may already be gone). */
+function zoom_delete_remote_meeting(string $meetingNumber): void
+{
+    try { zoom_api('DELETE', '/meetings/' . rawurlencode($meetingNumber)); } catch (Throwable $e) { error_log('Zoom meeting delete: ' . $e->getMessage()); }
 }

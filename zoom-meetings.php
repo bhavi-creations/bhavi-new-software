@@ -39,29 +39,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($action === 'add_meeting') {
             $title = text_input('title', 150);
-            $link = optional_text('join_url', 2048);
-            $parsed = zoom_parse_link($link);
-            $number = $parsed['number'] ?? zoom_meeting_number(optional_text('meeting_number', 30));
-            if ($number === '' && $link !== '') $number = zoom_meeting_number($link);
-            if ($number === '') throw new InvalidArgumentException('Paste the Zoom invite link, or enter the 9–11 digit Meeting ID.');
-            if ($link !== '' && !$parsed && !preg_match('/^[\d\s-]+$/', $link)) throw new InvalidArgumentException('That does not look like a Zoom link. Paste a link such as https://zoom.us/j/12345678901?pwd=…');
-            $passcode = optional_text('passcode', 100);
+            $notes = optional_text('notes', 1000);
             $start = strtotime((string) ($_POST['starts_at'] ?? ''));
             if (!$start) throw new InvalidArgumentException('Choose the meeting date and time.');
             $duration = max(15, min(600, (int) ($_POST['duration_minutes'] ?? 60)));
-            $joinUrl = $parsed ? (preg_match('#^https?://#i', $link) ? $link : 'https://' . $link) : 'https://zoom.us/j/' . $number;
-            db()->beginTransaction();
-            query('INSERT INTO zoom_meetings (title,meeting_number,passcode,join_url,starts_at,duration_minutes,notes,created_by) VALUES (?,?,?,?,?,?,?,?)', [$title, $number, $passcode, $joinUrl, date('Y-m-d H:i:s', $start), $duration, optional_text('notes', 1000), $user['id']]);
+            // "auto": the portal creates the meeting on the connected Zoom account (link, Meeting ID and passcode come from Zoom).
+            $auto = ($_POST['zoom_mode'] ?? '') === 'auto';
+            if ($auto) {
+                if (!zoom_connected()) throw new InvalidArgumentException('Zoom account is not connected, so the link cannot be created automatically. Connect Zoom above, or choose “I have a Zoom link”.');
+                if ($start < time() - 300) throw new InvalidArgumentException('Choose a date and time in the future.');
+                try {
+                    $created = zoom_create_scheduled_meeting($title, $start, $duration, $notes);
+                } catch (RuntimeException $zoomError) {
+                    error_log($zoomError->getMessage());
+                    throw new InvalidArgumentException($zoomError->getMessage() . ' If this keeps happening, disconnect and connect the Zoom account again, or choose “I have a Zoom link”.');
+                }
+                $number = zoom_meeting_number((string) $created['id']);
+                $passcode = mb_substr((string) ($created['password'] ?? ''), 0, 100);
+                $joinUrl = (string) $created['join_url'];
+            } else {
+                $link = optional_text('join_url', 2048);
+                $parsed = zoom_parse_link($link);
+                $number = $parsed['number'] ?? zoom_meeting_number(optional_text('meeting_number', 30));
+                if ($number === '' && $link !== '') $number = zoom_meeting_number($link);
+                if ($number === '') throw new InvalidArgumentException('Paste the Zoom invite link, or enter the 9–11 digit Meeting ID.');
+                if ($link !== '' && !$parsed && !preg_match('/^[\d\s-]+$/', $link)) throw new InvalidArgumentException('That does not look like a Zoom link. Paste a link such as https://zoom.us/j/12345678901?pwd=…');
+                $passcode = optional_text('passcode', 100);
+                $joinUrl = $parsed ? (preg_match('#^https?://#i', $link) ? $link : 'https://' . $link) : 'https://zoom.us/j/' . $number;
+            }
+            try {
+                db()->beginTransaction();
+                query('INSERT INTO zoom_meetings (title,meeting_number,passcode,join_url,starts_at,duration_minutes,notes,created_by,auto_created) VALUES (?,?,?,?,?,?,?,?,?)', [$title, $number, $passcode, $joinUrl, date('Y-m-d H:i:s', $start), $duration, $notes, $user['id'], $auto ? 1 : 0]);
+                $savedId = (int) db()->lastInsertId();
+            } catch (Throwable $saveError) {
+                // Do not leave a meeting on Zoom that the portal does not know about.
+                if ($auto) zoom_delete_remote_meeting($number);
+                throw $saveError;
+            }
             if (!empty($_POST['notify'])) {
-                $message = date('D j M, g:i A', $start) . ' · Open Zoom meetings in the portal to join.';
+                $message = date('D j M, g:i A', $start) . ' · Meeting ID ' . trim(chunk_split($number, 4, ' ')) . ($passcode !== '' ? ' · Passcode ' . $passcode : '') . ' · Open Zoom meetings in the portal to join.';
                 foreach (rows("SELECT id FROM users WHERE role IN ('admin','manager','employee') AND account_status='active' AND deleted_at IS NULL AND id<>?", [$user['id']]) as $recipient) {
                     query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)", [$recipient['id'], $user['id'], 'Zoom meeting: ' . $title, $message]);
                 }
             }
             db()->commit();
-            flash('Meeting added.');
+            flash($auto ? 'Zoom meeting created · ' . date('D j M, g:i A', $start) . ' · Meeting ID ' . trim(chunk_split($number, 4, ' ')) . ($passcode !== '' ? ' · Passcode ' . $passcode : '') . '. The team can see it now.' : 'Meeting added.');
+            redirect('zoom-meetings.php#meeting-' . $savedId);
         } elseif ($action === 'delete_meeting') {
-            query('UPDATE zoom_meetings SET deleted_at=NOW() WHERE id=? AND deleted_at IS NULL', [positive_id($_POST['id'] ?? null)]);
+            $deleteId = positive_id($_POST['id'] ?? null);
+            $deleting = one('SELECT meeting_number,auto_created,starts_at FROM zoom_meetings WHERE id=? AND deleted_at IS NULL', [$deleteId]);
+            query('UPDATE zoom_meetings SET deleted_at=NOW() WHERE id=? AND deleted_at IS NULL', [$deleteId]);
+            // A future meeting the portal created is removed from Zoom too.
+            if ($deleting && (int) $deleting['auto_created'] === 1 && strtotime($deleting['starts_at']) > time() && zoom_connected()) zoom_delete_remote_meeting($deleting['meeting_number']);
             flash('Meeting deleted.');
         } else {
             throw new InvalidArgumentException('Invalid request.');
@@ -143,19 +172,27 @@ error_message($error);
             <h2>Add a meeting</h2>
             <form method="post" class="ot-form" autocomplete="off"><?= csrf_field() ?><input type="hidden" name="action" value="add_meeting">
                 <label><span>Meeting title *</span><input name="title" maxlength="150" required value="<?= h($val('title')) ?>" placeholder="e.g. Monday team meeting"></label>
-                <label><span>Zoom invite link</span><input name="join_url" maxlength="2048" value="<?= h($val('join_url')) ?>" placeholder="https://us05web.zoom.us/j/12345678901?pwd=…"></label>
-                <div class="ot-two">
-                    <label><span>or Meeting ID</span><input name="meeting_number" inputmode="numeric" maxlength="30" value="<?= h($val('meeting_number')) ?>" placeholder="123 4567 8901"></label>
-                    <label><span>Passcode</span><input name="passcode" maxlength="100" value="<?= h($val('passcode')) ?>" placeholder="From the Zoom invite"></label>
+                <?php $canAuto = zoom_connected(); $mode = $val('zoom_mode', $canAuto ? 'auto' : 'manual'); if (!$canAuto) $mode = 'manual'; ?>
+                <div class="zm-mode" role="radiogroup" aria-label="Zoom link">
+                    <label class="zm-mode-opt<?= $canAuto ? '' : ' is-off' ?>"><input type="radio" name="zoom_mode" value="auto" data-zm-mode <?= $mode === 'auto' ? 'checked' : '' ?><?= $canAuto ? '' : ' disabled' ?>><span><b>✨ Create Zoom link automatically</b><small><?= $canAuto ? 'Zoom makes the link, Meeting ID and passcode for this date' : 'Connect the Zoom account above to use this' ?></small></span></label>
+                    <label class="zm-mode-opt"><input type="radio" name="zoom_mode" value="manual" data-zm-mode <?= $mode === 'manual' ? 'checked' : '' ?>><span><b>I have a Zoom link</b><small>Paste the invite link or Meeting ID</small></span></label>
                 </div>
+                <div class="zm-manual" data-zm-manual<?= $mode === 'auto' ? ' hidden' : '' ?>>
+                    <label><span>Zoom invite link</span><input name="join_url" maxlength="2048" value="<?= h($val('join_url')) ?>" placeholder="https://us05web.zoom.us/j/12345678901?pwd=…"></label>
+                    <div class="ot-two">
+                        <label><span>or Meeting ID</span><input name="meeting_number" inputmode="numeric" maxlength="30" value="<?= h($val('meeting_number')) ?>" placeholder="123 4567 8901"></label>
+                        <label><span>Passcode</span><input name="passcode" maxlength="100" value="<?= h($val('passcode')) ?>" placeholder="From the Zoom invite"></label>
+                    </div>
+                </div>
+                <p class="zm-auto-note" data-zm-auto<?= $mode === 'auto' ? '' : ' hidden' ?>>✓ When you click <b>Create meeting</b>, the link, Meeting ID and passcode are made on Zoom<?= zoom_setting('zoom_account_email') !== '' ? ' (' . h(zoom_setting('zoom_account_email')) . ')' : '' ?> and shown to every employee in Upcoming meetings.</p>
                 <div class="ot-two">
                     <label><span>Date &amp; time *</span><input type="datetime-local" name="starts_at" required value="<?= h($val('starts_at', date('Y-m-d\TH:00', strtotime('+1 hour')))) ?>"></label>
                     <label><span>Duration</span><select name="duration_minutes"><?php foreach ([15, 30, 45, 60, 90, 120, 180] as $m): ?><option value="<?= $m ?>"<?= (int) $val('duration_minutes', '60') === $m ? ' selected' : '' ?>><?= $m < 60 ? $m . ' min' : ($m / 60) . ' hour' . ($m > 60 ? 's' : '') ?></option><?php endforeach; ?></select></label>
                 </div>
                 <label><span>Notes <small>(optional)</small></span><input name="notes" maxlength="1000" value="<?= h($val('notes')) ?>" placeholder="Agenda, who should join…"></label>
                 <label class="zm-check"><input type="checkbox" name="notify" value="1" <?= !$isPost || !empty($_POST['notify']) ? 'checked' : '' ?>> Notify the whole team</label>
-                <p class="ot-help">Create the meeting in your Zoom account first, then paste its invite link and passcode here.</p>
-                <div class="ot-actions"><button class="ot-dark" type="submit">Add meeting</button></div>
+                <p class="ot-help" data-zm-manual<?= $mode === 'auto' ? ' hidden' : '' ?>>Create the meeting in your Zoom account first, then paste its invite link and passcode here.<?= !$canAuto && $user['role'] === 'admin' && zoom_ready() ? ' Or connect the Zoom account above so links are made automatically.' : '' ?></p>
+                <div class="ot-actions"><button class="ot-dark" type="submit" data-zm-submit><?= $mode === 'auto' ? 'Create meeting' : 'Add meeting' ?></button></div>
             </form>
         </section>
         <?php endif; ?>
@@ -165,15 +202,18 @@ error_message($error);
             <?php if (!$upcoming): ?><p class="ot-help">No meetings scheduled.<?= $canManage ? ' Add one on the left.' : '' ?></p><?php endif; ?>
             <div class="zm-list">
                 <?php foreach ($upcoming as $m): [$label, $live] = $when($m); ?>
-                <article class="zm-item<?= $live ? ' is-live' : '' ?>">
+                <?php $link = $m['join_url'] ?: 'https://zoom.us/j/' . $m['meeting_number']; $invite = $m['title'] . "\n" . $label . "\nJoin Zoom: " . $link . "\nMeeting ID: " . trim(chunk_split($m['meeting_number'], 4, ' ')) . ($m['passcode'] !== '' ? "\nPasscode: " . $m['passcode'] : ''); ?>
+                <article class="zm-item<?= $live ? ' is-live' : '' ?>" id="meeting-<?= (int) $m['id'] ?>">
                     <span class="zm-icon"><?= icon('video') ?></span>
                     <div class="zm-info">
-                        <strong><?= h($m['title']) ?><?php if ($live): ?> <em class="zm-live">Live now</em><?php endif; ?></strong>
+                        <strong><?= h($m['title']) ?><?php if ($live): ?> <em class="zm-live">Live now</em><?php endif; ?><?php if (!empty($m['auto_created'])): ?> <em class="zm-auto-tag">Zoom link ready</em><?php endif; ?></strong>
                         <small><?= h($label) ?></small>
-                        <small>ID <?= h(trim(chunk_split($m['meeting_number'], 4, ' '))) ?><?= $m['passcode'] !== '' ? ' · Passcode ' . h($m['passcode']) : '' ?><?= $m['creator'] ? ' · by ' . h($m['creator']) : '' ?></small>
+                        <small>Meeting ID <b><?= h(trim(chunk_split($m['meeting_number'], 4, ' '))) ?></b><?= $m['passcode'] !== '' ? ' · Passcode <b>' . h($m['passcode']) . '</b>' : '' ?><?= $m['creator'] ? ' · by ' . h($m['creator']) : '' ?></small>
+                        <small class="zm-url"><a href="<?= h($link) ?>" target="_blank" rel="noopener noreferrer"><?= h($link) ?></a></small>
                         <?php if ($m['notes'] !== ''): ?><small class="zm-notes"><?= h($m['notes']) ?></small><?php endif; ?>
                     </div>
                     <div class="zm-actions">
+                        <button type="button" class="zm-link" data-copy="<?= h($invite) ?>">Copy invite</button>
                         <?php if (zoom_ready()): ?><a class="ot-gold zm-btn" href="zoom-join.php?id=<?= (int) $m['id'] ?>">Join here</a><?php endif; ?>
                         <a class="zm-link" href="<?= h($m['join_url'] ?: 'https://zoom.us/j/' . $m['meeting_number']) ?>" target="_blank" rel="noopener noreferrer">Open in Zoom app</a>
                         <?php if ($canManage): ?><form method="post" data-confirm="Delete the meeting “<?= h($m['title']) ?>”?"><?= csrf_field() ?><input type="hidden" name="action" value="delete_meeting"><input type="hidden" name="id" value="<?= (int) $m['id'] ?>"><button type="submit" class="zm-del">Delete</button></form><?php endif; ?>
@@ -200,5 +240,15 @@ document.addEventListener('click', e => {
     const copy = e.target.closest('[data-copy]'); if (!copy) return;
     navigator.clipboard?.writeText(copy.dataset.copy).then(() => { const t = copy.textContent; copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = t; }, 1200); });
 });
+// New meeting form: "Create Zoom link automatically" hides the link / ID / passcode fields.
+document.querySelectorAll('[data-zm-mode]').forEach(radio => radio.addEventListener('change', () => {
+    const auto = radio.form.querySelector('[data-zm-mode][value="auto"]:checked') !== null;
+    radio.form.querySelectorAll('[data-zm-manual]').forEach(el => { el.hidden = auto; });
+    radio.form.querySelectorAll('[data-zm-auto]').forEach(el => { el.hidden = !auto; });
+    radio.form.querySelector('[data-zm-submit]').textContent = auto ? 'Create meeting' : 'Add meeting';
+}));
+document.querySelectorAll('[data-zm-submit]').forEach(btn => btn.form.addEventListener('submit', () => {
+    if (btn.form.querySelector('[data-zm-mode][value="auto"]:checked')) { btn.disabled = true; btn.textContent = 'Creating on Zoom…'; }
+}));
 </script>
 <?php page_end(); ?>

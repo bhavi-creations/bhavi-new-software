@@ -4895,3 +4895,43 @@ tr.sc-soon td{background:#f3fbf6}
 .aw-download-all svg{width:15px;height:15px}
 .aw-download-all:hover{filter:brightness(1.08)}
 .st-dialog-zip{display:inline-flex;margin-top:6px;padding:8px 14px;border-radius:9px;background:#1f4f9c;color:#fff!important;font-weight:800;text-decoration:none}
+/* Client requests: send a request straight to an employee */
+.cr-assign{display:grid;gap:10px;margin-top:14px;padding-top:14px;border-top:1px dashed #d9e1ee}
+.cr-assign-sent{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.cr-assign-sent li{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;border:1px solid #dbe7f7;border-radius:10px;background:#f6f9fe;font-size:13px}
+.cr-assign-avatar{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1f4f9c;color:#fff;font-size:12px;font-weight:800}
+.cr-assign-state{margin-left:auto;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:800}
+.cr-assign-state.is-wait{background:#fff4d6;color:#8a5a00}
+.cr-assign-state.is-work{background:#e6efff;color:#1f4f9c}
+.cr-assign-state.is-done{background:#e3f6ea;color:#1a7a43}
+.cr-assign-box{border:1px solid #c9d7f0;border-radius:12px;background:#fff}
+.cr-assign-box>summary{display:flex;align-items:center;gap:8px;padding:11px 14px;color:#1f4f9c;font-weight:800;font-size:13.5px;cursor:pointer;list-style:none}
+.cr-assign-box>summary::-webkit-details-marker{display:none}
+.cr-assign-box>summary svg{width:16px;height:16px}
+.cr-assign-box[open]>summary{border-bottom:1px solid #e3eaf5}
+.cr-assign-form{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:12px;padding:14px}
+.cr-assign-form label{display:grid;gap:5px;margin:0}
+.cr-assign-form label>span{font-size:12px;font-weight:700;color:#4a5b75}
+.cr-assign-form select,.cr-assign-form input,.cr-assign-form textarea{width:100%;min-width:0}
+.cr-assign-note{grid-column:1/-1}
+.cr-assign-foot{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cr-assign-foot small{color:#5c6b82}
+.cr-assign-foot button{display:inline-flex;align-items:center;gap:6px}
+.cr-assign-foot button svg{width:15px;height:15px}
+@media(max-width:700px){.cr-assign-form{grid-template-columns:minmax(0,1fr)}}
+/* Zoom: Add a meeting — create the link automatically or paste one */
+.zm-mode{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.zm-mode-opt{display:flex!important;align-items:flex-start;gap:10px;padding:12px;border:1.5px solid #d9e1ee;border-radius:12px;background:#fff;cursor:pointer}
+.zm-mode-opt input{margin-top:3px;width:auto!important}
+.zm-mode-opt span{display:grid;gap:3px}
+.zm-mode-opt b{font-size:13.5px;color:#172b49}
+.zm-mode-opt small{font-size:12px;color:#5c6b82;font-weight:500}
+.zm-mode-opt:has(input:checked){border-color:#1f4f9c;background:#f2f6fd}
+.zm-mode-opt.is-off{opacity:.6;cursor:not-allowed}
+.zm-manual{display:grid;gap:14px}
+.zm-manual[hidden],.zm-auto-note[hidden],.ot-help[hidden]{display:none!important}
+.zm-auto-note{margin:0;padding:10px 12px;border-radius:10px;background:#e9f7ef;color:#1a6b3c;font-size:12.5px}
+.zm-auto-tag{margin-left:6px;padding:2px 8px;border-radius:999px;background:#e9f7ef;color:#1a7a43;font-size:11px;font-style:normal;font-weight:800}
+.zm-url{overflow-wrap:anywhere}
+.zm-url a{color:#1f4f9c}
+@media(max-width:560px){.zm-mode{grid-template-columns:minmax(0,1fr)}}

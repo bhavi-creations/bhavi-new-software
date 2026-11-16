@@ -105,7 +105,69 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && in_array($_POST['action']??'',['confi
     }
 }
 
-if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment'],true)) {
+// Admin / manager: send a client request straight to an employee. It becomes an assigned task
+// (Assigned work) with the client's files attached as task-1-file-1, task-1-file-2 …
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='assign_requirement') {
+    require_roles(['admin','manager']); check_csrf(); $copiedFiles=[];
+    try {
+        $requirementId=positive_id($_POST['requirement_id']??null);
+        $employeeId=positive_id($_POST['employee_id']??null);
+        $requirement=one("SELECT r.*,c.client_name FROM client_requirements r JOIN clients c ON c.id=r.client_id WHERE r.id=? AND c.deleted_at IS NULL",[$requirementId]);
+        if (!$requirement || is_payment_proof($requirement)) throw new InvalidArgumentException('Client request not found.');
+        if (!in_array($requirement['status'],['assigned','in_progress'],true)) throw new InvalidArgumentException('This request is already '.str_replace('_',' ',$requirement['status']).'.');
+        $employee=one("SELECT u.id,u.full_name,ep.department_id FROM users u JOIN employee_profiles ep ON ep.user_id=u.id WHERE u.id=? AND u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL",[$employeeId]);
+        if (!$employee) throw new InvalidArgumentException('Choose an active employee.');
+        if (one('SELECT id FROM work_assignments WHERE requirement_id=? AND employee_id=? AND deleted_at IS NULL',[$requirementId,$employeeId])) throw new InvalidArgumentException('This request is already sent to '.$employee['full_name'].'.');
+        $workDate=date_input('work_date');
+        if ($workDate<today()) throw new InvalidArgumentException('The work date must be today or later.');
+        $priority=in_array($_POST['priority']??'',['normal','high','urgent'],true)?$_POST['priority']:'normal';
+        $note=trim((string)($_POST['note']??''));
+        if (mb_strlen($note)>2000) throw new InvalidArgumentException('Keep the note for the employee under 2000 characters.');
+        // "URGENT · Reel · Client name" → task "Reel · Client name", editing type "reel".
+        $title=preg_replace('/^URGENT · /u','',(string)$requirement['title']);
+        $kind=strtolower(trim(explode('·',$title)[0]));
+        $editingType=['reel'=>'reel','poster'=>'poster','carousel'=>'carousel','change to existing work'=>'image_editing'][$kind]??null;
+        $description=trim($requirement['brief']).($requirement['due_date']?"\n\nClient wants it by ".date('d M Y',strtotime($requirement['due_date'])).'.':'').($note!==''?"\n\nNote from ".$user['full_name'].":\n".$note:'');
+
+        db()->beginTransaction();
+        query("INSERT INTO work_assignments (employee_id,department_id,client_id,title,description,editing_type,reference_link,work_date,status,assigned_by) VALUES (?,?,?,?,?,?,NULL,?,'pending',?)",[$employeeId,$employee['department_id'],$requirement['client_id'],mb_substr($title,0,255),$description,$editingType,$workDate,$user['id']]);
+        $assignmentId=(int)db()->lastInsertId();
+        query('UPDATE work_assignments SET priority=?,requirement_id=? WHERE id=?',[$priority,$requirementId,$assignmentId]);
+        // Copy the client's files into the task (the request keeps its own copy).
+        $files=rows('SELECT * FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirementId]);
+        if ($files) {
+            $relativeDir='uploads/work-assignments/'.date('Y/m');
+            $absoluteDir=__DIR__.'/'.$relativeDir;
+            if (!is_dir($absoluteDir) && !mkdir($absoluteDir,0775,true) && !is_dir($absoluteDir)) throw new RuntimeException('Unable to create the task file folder.');
+            $root=realpath(dirname(__DIR__).'/storage/requirements');
+            $n=0;
+            foreach ($files as $file) {
+                $source=realpath(dirname(__DIR__).'/'.ltrim(str_replace('\\','/',(string)$file['file_path']),'/'));
+                if (!$root || !$source || !str_starts_with(strtolower($source),strtolower($root.DIRECTORY_SEPARATOR)) || !is_file($source)) continue;
+                $ext=strtolower((string)pathinfo((string)$file['original_file_name'],PATHINFO_EXTENSION));
+                $ext=preg_match('/^[a-z0-9]{1,8}$/',$ext)?$ext:'bin';
+                $stored=bin2hex(random_bytes(20)).'.'.$ext;
+                if (!copy($source,$absoluteDir.'/'.$stored)) throw new RuntimeException('Unable to copy the client file '.$file['original_file_name'].'.');
+                $copiedFiles[]=$absoluteDir.'/'.$stored;
+                query('INSERT INTO work_assignment_attachments (assignment_id,original_name,stored_name,file_path,mime_type,file_size,uploaded_by) VALUES (?,?,?,?,?,?,?)',[$assignmentId,'task-1-file-'.(++$n).'.'.$ext,$stored,$relativeDir.'/'.$stored,$file['mime_type'],$file['file_size_bytes'],$user['id']]);
+            }
+        }
+        query('INSERT IGNORE INTO requirement_assignments (requirement_id,employee_id,assigned_by) VALUES (?,?,?)',[$requirementId,$employeeId,$user['id']]);
+        query("UPDATE client_requirements SET status='in_progress',approved_text=COALESCE(NULLIF(approved_text,''),?) WHERE id=?",['Our team has started working on this.',$requirementId]);
+        db()->commit();
+        try {
+            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",[$employeeId,$user['id'],'1 task assigned',$title.' · '.date('d M',strtotime($workDate)).($files?' · '.count($files).' client file'.(count($files)===1?'':'s'):'')]);
+        } catch (Throwable $notificationError) { error_log('Request assigned; notification failed: '.$notificationError->getMessage()); }
+        flash('Sent to '.$employee['full_name'].'. It is in their assigned work'.($files?' with '.count($files).' file'.(count($files)===1?'':'s'):'').'.');
+        redirect('client-reuirement.php#request-'.$requirementId);
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) db()->rollBack();
+        foreach ($copiedFiles as $path) if (is_file($path)) @unlink($path);
+        $error=mutation_error($e);
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement'],true)) {
     require_roles(['client']); check_csrf(); $storedFiles=[];
     try {
         if (($_POST['action']??'')!=='submit_requirement') throw new InvalidArgumentException('Invalid request.');
@@ -445,5 +507,38 @@ $crTaskBlock=static function (string $i, int $number, array $task) use ($crTypes
 </script>
 <?php else: ?><p class="muted"><?= is_staff()?'Client requests are visible to management and the selected department.':'Client requests for your department appear here alongside your assigned briefs.' ?></p><?php endif; ?>
 <?php if (!$isClient && $assignments): ?><section class="panel"><h2>Assigned work</h2><?php foreach ($assignments as $assignment): ?><article class="requirement-card"><div class="panel-heading"><h3><?= h($assignment['title']) ?></h3><?= status_badge($assignment['status']) ?></div><p class="muted"><?= h($assignment['client_name']) ?> · <?= h($assignment['employee_name']) ?> · <?= h(date('d-m-Y',strtotime($assignment['work_date']))) ?></p><p><?= nl2br(h($assignment['description'])) ?></p></article><?php endforeach; ?></section><?php endif; ?>
-<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,original_file_name,file_size_bytes FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?><article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>" id="request-<?= (int)$requirement['id'] ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?php if ($files): ?><h4>Attached files</h4><ul class="requirement-file-list"><?php foreach ($files as $file): ?><li><a href="download-requirement-file.php?id=<?= (int)$file['id'] ?>"><?= h($file['original_file_name']) ?></a><span><?= h(number_format((int)$file['file_size_bytes']/1024/1024,1)) ?> MB</span></li><?php endforeach; ?></ul><?php endif; ?><?php if ($isProof && is_staff() && in_array($requirement['status'],['assigned','in_progress'],true)): $proofValues=payment_proof_values((string)$requirement['brief']); ?><div class="proof-box"><p class="proof-title">Check your bank / UPI, then confirm</p><form method="post" class="proof-confirm"><?= csrf_field() ?><input type="hidden" name="action" value="confirm_payment"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><label>Amount received (₹)<input type="number" name="amount" min="1" step="0.01" value="<?= h($proofValues['amount']) ?>" required></label><label>Paid on<input type="date" name="payment_date" max="<?= h(today()) ?>" value="<?= h($proofValues['date'] ?: today()) ?>" required></label><button type="submit" class="proof-yes">✓ Confirm payment</button></form><form method="post" class="proof-reject" onsubmit="return confirm('Mark this payment as not received? The client will see your note.')"><?= csrf_field() ?><input type="hidden" name="action" value="reject_payment"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><input name="note" maxlength="1000" placeholder="Note for the client (optional)"><button type="submit" class="proof-no">Not received</button></form><small>Confirming adds this amount to the client’s payments and updates their balance.</small></div><?php endif; ?></article><?php endforeach; ?></section><?php endif; ?>
+<?php
+// Admin / manager: "Send to employee" box on each client request (see the assign_requirement action above).
+$crAssignBox=static function (array $requirement, array $files): void {};
+if (is_staff()) {
+    $crEmployees=array_values(array_filter(employees(),static fn($e)=>$e['account_status']==='active'));
+    $crAssignBox=static function (array $requirement, array $files) use ($crEmployees): void {
+        $sent=rows('SELECT a.id,a.status,a.work_date,a.started_at,u.full_name FROM work_assignments a JOIN users u ON u.id=a.employee_id WHERE a.requirement_id=? AND a.deleted_at IS NULL ORDER BY a.id',[$requirement['id']]);
+        $open=in_array($requirement['status'],['assigned','in_progress'],true);
+        if (!$sent && !$open) return;
+        $groups=[]; foreach ($crEmployees as $e) $groups[$e['department_name']][]=$e;
+        // The request's own team first.
+        uksort($groups,static fn($a,$b)=>[$a!==($requirement['department_name']??''),$a]<=>[$b!==($requirement['department_name']??''),$b]);
+        $taken=array_column($sent,'full_name');
+        $date=$requirement['due_date'] && $requirement['due_date']>=today()?$requirement['due_date']:today();
+        $urgent=str_starts_with((string)$requirement['title'],'URGENT');
+        ?><div class="cr-assign">
+            <?php if ($sent): ?><ul class="cr-assign-sent"><?php foreach ($sent as $a): $state=$a['status']==='completed'?['done','✓ Done']:(!empty($a['started_at'])?['work','▶ Working']:['wait','⏳ Not started']); ?><li><span class="cr-assign-avatar"><?= h(mb_strtoupper(mb_substr($a['full_name'],0,1))) ?></span><span>Sent to <b><?= h($a['full_name']) ?></b> · <?= h(date('d M Y',strtotime($a['work_date']))) ?></span><span class="cr-assign-state is-<?= $state[0] ?>"><?= $state[1] ?></span></li><?php endforeach; ?></ul><?php endif; ?>
+            <?php if ($open): ?>
+            <details class="cr-assign-box"<?= $sent?'':' open' ?>>
+                <summary><?= icon('send') ?> <?= $sent?'Send to another employee':'Send this request to an employee' ?></summary>
+                <form method="post" class="cr-assign-form"><?= csrf_field() ?><input type="hidden" name="action" value="assign_requirement"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>">
+                    <label class="cr-assign-emp"><span>Employee</span><select name="employee_id" required><option value="">Choose employee…</option><?php foreach ($groups as $dept=>$list): ?><optgroup label="<?= h($dept) ?>"><?php foreach ($list as $e): ?><option value="<?= (int)$e['id'] ?>"<?= in_array($e['full_name'],$taken,true)?' disabled':'' ?>><?= h($e['full_name']) ?><?= $e['designation']?' · '.h($e['designation']):'' ?><?= in_array($e['full_name'],$taken,true)?' (already sent)':'' ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></label>
+                    <label><span>Work date</span><input type="date" name="work_date" min="<?= h(today()) ?>" value="<?= h($date) ?>" required></label>
+                    <label><span>Priority</span><select name="priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent"<?= $urgent?' selected':'' ?>>Urgent</option></select></label>
+                    <label class="cr-assign-note"><span>Note for the employee <small>(optional)</small></span><textarea name="note" rows="2" maxlength="2000" placeholder="e.g. Use the new logo. Send the first draft by 4 PM."></textarea></label>
+                    <div class="cr-assign-foot"><small><?= $files?'📎 '.count($files).' client file'.(count($files)===1?'':'s').' will be attached as task-1-file-1 … task-1-file-'.count($files):'No client files to attach' ?> · The client’s message goes with the task.</small><button type="submit" class="primary"><?= icon('send') ?> Send to employee</button></div>
+                </form>
+            </details>
+            <?php endif; ?>
+        </div><?php
+    };
+}
+?>
+<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,original_file_name,file_size_bytes FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?><article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>" id="request-<?= (int)$requirement['id'] ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?php if ($files): ?><h4>Attached files</h4><ul class="requirement-file-list"><?php foreach ($files as $file): ?><li><a href="download-requirement-file.php?id=<?= (int)$file['id'] ?>"><?= h($file['original_file_name']) ?></a><span><?= h(number_format((int)$file['file_size_bytes']/1024/1024,1)) ?> MB</span></li><?php endforeach; ?></ul><?php endif; ?><?php if (!$isProof && is_staff()) $crAssignBox($requirement,$files); ?><?php if ($isProof && is_staff() && in_array($requirement['status'],['assigned','in_progress'],true)): $proofValues=payment_proof_values((string)$requirement['brief']); ?><div class="proof-box"><p class="proof-title">Check your bank / UPI, then confirm</p><form method="post" class="proof-confirm"><?= csrf_field() ?><input type="hidden" name="action" value="confirm_payment"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><label>Amount received (₹)<input type="number" name="amount" min="1" step="0.01" value="<?= h($proofValues['amount']) ?>" required></label><label>Paid on<input type="date" name="payment_date" max="<?= h(today()) ?>" value="<?= h($proofValues['date'] ?: today()) ?>" required></label><button type="submit" class="proof-yes">✓ Confirm payment</button></form><form method="post" class="proof-reject" onsubmit="return confirm('Mark this payment as not received? The client will see your note.')"><?= csrf_field() ?><input type="hidden" name="action" value="reject_payment"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><input name="note" maxlength="1000" placeholder="Note for the client (optional)"><button type="submit" class="proof-no">Not received</button></form><small>Confirming adds this amount to the client’s payments and updates their balance.</small></div><?php endif; ?></article><?php endforeach; ?></section><?php endif; ?>
 <?php page_end(); ?>
