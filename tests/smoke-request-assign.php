@@ -93,6 +93,23 @@ try {
     $c = $cl->req('client-reuirement.php')['body'];
     ok(!str_contains($c, 'assign_requirement') && !str_contains($c, 'Ravi Kumar'), 'client does not see the assign box or employee names');
     ok($cl->post('client-reuirement.php', ['action' => 'assign_requirement', 'requirement_id' => $req['id'], 'employee_id' => $ravi, 'work_date' => $due])['status'] === 403, 'client cannot assign');
+
+    echo "Download client files\n";
+    $f1 = $pdo->query('SELECT * FROM requirement_files WHERE requirement_id=' . (int) $req['id'] . ' ORDER BY id')->fetchAll();
+    $d = $admin->req('download-requirement-file.php?id=' . $f1[0]['id']);
+    ok($d['status'] === 200 && $d['body'] === $png && str_contains($d['headers']['content-disposition'] ?? '', 'My%20Logo.png'), 'MD downloads the client file');
+    ok($emp->req('download-requirement-file.php?id=' . $f1[1]['id'])['body'] === $pdf, 'assigned employee downloads it too');
+    ok($cl->req('download-requirement-file.php?id=' . $f1[1]['id'])['body'] === $pdf, 'client downloads own file');
+    // Saved path points to an old folder (server move) but the file is still in storage/requirements.
+    $pdo->prepare('UPDATE requirement_files SET file_path=? WHERE id=?')->execute(['old-site/storage/requirements/' . basename($f1[0]['file_path']), $f1[0]['id']]);
+    ok($admin->req('download-requirement-file.php?id=' . $f1[0]['id'])['body'] === $png, 'file found even when the saved folder is wrong');
+    // File really gone from the server.
+    $moved = dirname(__DIR__) . '/' . $f1[1]['file_path'] . '.bak'; rename(dirname(__DIR__) . '/' . $f1[1]['file_path'], $moved);
+    $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
+    ok($d['status'] === 303 && !str_contains($d['body'], 'Request file is unavailable'), 'missing file: no bare error page, goes back');
+    $page = $admin->req('client-reuirement.php')['body'];
+    ok(str_contains($page, 'is not on the server any more') && str_contains($page, 'Missing on the server'), 'clear message + file marked missing in the list');
+    rename($moved, dirname(__DIR__) . '/' . $f1[1]['file_path']);
     echo "\nAll $checks checks passed.\n";
 } finally {
     if ($process) { proc_terminate($process); proc_close($process); }

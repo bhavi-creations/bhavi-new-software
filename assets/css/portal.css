@@ -4935,3 +4935,7 @@ tr.sc-soon td{background:#f3fbf6}
 .zm-url{overflow-wrap:anywhere}
 .zm-url a{color:#1f4f9c}
 @media(max-width:560px){.zm-mode{grid-template-columns:minmax(0,1fr)}}
+/* Client request files that are missing on the server */
+.requirement-file-list li.is-missing{background:#fff6f5;border-color:#f5c2bd}
+.requirement-file-list li.is-missing s{color:#7a8597}
+.requirement-file-list li.is-missing span{color:#b42318;font-weight:700}

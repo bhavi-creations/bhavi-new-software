@@ -4,6 +4,7 @@ require_once __DIR__ . '/layout.php';
 require_once __DIR__ . '/work.php';
 require_once __DIR__ . '/office-timing.php';
 require_once __DIR__ . '/salary-calc.php';
+require_once __DIR__ . '/requirement-files.php';
 
 
 $user = require_roles(['employee']);
@@ -3500,12 +3501,12 @@ $awBrief = static function (?string $text): string {
     <section class="aw-card aw-requests" id="client-requests">
         <div class="aw-requests-head"><h3>Client requests for <?= h($user['department_name']) ?></h3><span class="aw-chip"><?= count($departmentRequirements) ?> requests</span></div>
         <?php if (!$departmentRequirements): ?><p class="muted">No client requests for your department yet.</p><?php endif; ?>
-        <?php foreach ($departmentRequirements as $request): $requestFiles = rows('SELECT id,original_file_name FROM requirement_files WHERE requirement_id=? ORDER BY id', [$request['id']]); ?>
+        <?php foreach ($departmentRequirements as $request): $requestFiles = rows('SELECT id,original_file_name,file_path FROM requirement_files WHERE requirement_id=? ORDER BY id', [$request['id']]); ?>
             <article class="requirement-card aw-request">
                 <div class="aw-request-top"><div><strong><?= h($request['client_name']) ?></strong><small>Due <?= $request['due_date'] ? h(date('d-m-Y', strtotime($request['due_date']))) : 'No deadline' ?></small></div><?= status_badge($request['status']) ?></div>
                 <p class="requirement-remark"><?= nl2br(h($request['brief'])) ?></p>
                 <?php if ($request['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($request['approved_text'])) ?></p><?php endif; ?>
-                <?php if ($requestFiles): ?><ul class="requirement-file-list"><?php foreach ($requestFiles as $requestFile): ?><li><a href="download-requirement-file.php?id=<?= (int) $requestFile['id'] ?>"><?= h($requestFile['original_file_name']) ?></a></li><?php endforeach; ?></ul><?php endif; ?>
+                <?php if ($requestFiles): ?><ul class="requirement-file-list"><?php foreach ($requestFiles as $requestFile): ?><li<?= requirement_file_path($requestFile) ? '' : ' class="is-missing"' ?>><?php if (requirement_file_path($requestFile)): ?><a href="download-requirement-file.php?id=<?= (int) $requestFile['id'] ?>"><?= h($requestFile['original_file_name']) ?></a><?php else: ?><s><?= h($requestFile['original_file_name']) ?></s><span>⚠ Missing on the server</span><?php endif; ?></li><?php endforeach; ?></ul><?php endif; ?>
             </article>
         <?php endforeach; ?>
     </section>
