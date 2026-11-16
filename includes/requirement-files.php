@@ -67,7 +67,22 @@ function requirement_files_html(array $files, string $heading = 'Attached files'
         $names = array_map(static fn($f) => (string) $f['original_file_name'], $missing);
         $out .= '<div class="rq-missing"><b>⚠ ' . count($missing) . ' file' . (count($missing) === 1 ? ' is' : 's are') . ' not on the server</b>'
             . '<span>' . h(implode(', ', $names)) . '</span>'
-            . '<small>Ask the client to send ' . (count($missing) === 1 ? 'it' : 'them') . ' again. Managing Director: open Hosting checks to see why.</small></div>';
+            . '<small>Ask the client to send ' . (count($missing) === 1 ? 'it' : 'them') . ' again.</small>';
+        if (function_exists('is_staff') && is_staff()) {
+            // Where the files were uploaded (saved with new uploads) compared with this site: shows if another copy of the portal took them.
+            $here = 'Uploaded on ' . preg_replace('/[^A-Za-z0-9.:-]/', '', (string) ($_SERVER['HTTP_HOST'] ?? '')) . ' · ' . str_replace('\\', '/', dirname(__DIR__));
+            $where = array_values(array_unique(array_filter(array_map(static fn($f) => (string) ($f['description'] ?? ''), $missing), static fn($d) => str_starts_with($d, 'Uploaded on '))));
+            if ($where) {
+                $other = array_values(array_filter($where, static fn($d) => $d !== $here));
+                $out .= '<small class="rq-missing-why">' . ($other
+                    ? 'These files were uploaded on another copy of the portal: <b>' . h(substr($other[0], 12)) . '</b>. This site is <b>' . h(substr($here, 12)) . '</b>. Ask the client to use this site’s link, or point both to the same folder.'
+                    : 'They were uploaded on this same site and folder, and were later removed from the server (for example by an update that replaced the storage folder). Keep the storage folder when you update.') . '</small>';
+            } else {
+                $out .= '<small class="rq-missing-why">These were uploaded before upload tracking was added. Ask the client to send one file again: if it also goes missing, this notice will show the reason.</small>';
+            }
+            if ((current_user()['role'] ?? '') === 'admin') $out .= '<a class="rq-missing-check" href="hosting-check.php">Open Hosting checks →</a>';
+        }
+        $out .= '</div>';
     }
     return $out . '</div>';
 }
