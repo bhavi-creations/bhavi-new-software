@@ -35,5 +35,20 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     $_SESSION['hosting_probe']=true;
     $add('Session persistence',$previous===true,$previous===true?'Session data persisted between checks.':'Run checks once more to verify session data persists.');
 }
+// Client request files (Client requests → Attached files): are the saved files really on this server?
+require_once __DIR__.'/includes/requirement-files.php';
+$reqDir=__DIR__.'/storage/requirements';
+$add('storage/requirements folder',is_dir($reqDir) && is_writable($reqDir),is_dir($reqDir)?(is_writable($reqDir)?'Exists and is writable · '.count(glob($reqDir.'/*.dat')?:[]).' file(s) inside · '.(realpath($reqDir)?:$reqDir):'Exists but PHP cannot write to it. Give the PHP account write access.'):'Missing. It is created on the first client upload; if uploads fail, create it and make it writable.');
+$openBasedir=(string)ini_get('open_basedir');
+if ($openBasedir!=='') $add('PHP open_basedir',true,'Restricted to: '.$openBasedir);
+try {
+    $reqRows=rows('SELECT f.id,f.original_file_name,f.file_path,f.uploaded_at,u.role FROM requirement_files f LEFT JOIN users u ON u.id=f.uploaded_by ORDER BY f.id DESC LIMIT 500');
+    $reqMissing=array_values(array_filter($reqRows,static fn($r)=>requirement_file_path($r)===null));
+    $add('Client request files on disk',!$reqMissing,count($reqRows)-count($reqMissing).' of '.count($reqRows).' recent files found on this server.'.($reqMissing?' Missing files were saved by another server/copy of the portal or deleted.':''));
+    foreach (array_slice($reqMissing,0,3) as $r) {
+        $saved=__DIR__.'/'.ltrim(str_replace('\\','/',(string)$r['file_path']),'/');
+        $add('Missing file #'.(int)$r['id'],false,'Uploaded '.$r['uploaded_at'].' by '.($r['role']?:'?').' · saved path “'.$r['file_path'].'” · looked in '.$saved.' (folder '.(is_dir(dirname($saved))?'exists':'does not exist').')');
+    }
+} catch (Throwable $e) { $add('Client request files on disk',false,'Could not check: '.$e->getMessage()); }
 page_start('Hosting checks','hosting-check.php');
 ?><section class="panel"><p>Checks for this server only. Database passwords, encryption keys and employee data are never shown.</p><p>PHP upload limit: <strong><?= h(ini_get('upload_max_filesize')) ?></strong>; total request limit: <strong><?= h(ini_get('post_max_size')) ?></strong>; maximum files: <strong><?= h(ini_get('max_file_uploads')) ?></strong>.</p><p>Images are stored in <strong>uploads/photos/</strong>; PDFs in <strong>uploads/pdf/</strong>. PHP hosting limits can be lower than the application's file-size limits.</p><form method="post"><?= csrf_field() ?><button class="primary">Run storage and session checks</button></form></section><section class="panel"><div class="table-scroll"><table><thead><tr><th>Check</th><th>Status</th><th>Result / action</th></tr></thead><tbody><?php foreach ($checks as [$label,$ok,$message]): ?><tr><td><?= h($label) ?></td><td><?= $ok?'PASS':'CHECK' ?></td><td><?= h($message) ?></td></tr><?php endforeach; ?></tbody></table></div></section><p class="help">A passing check does not verify every save operation. For a failed save, also share its exact message including the Save step. Do not delete the credential key.</p><?php page_end(); ?>

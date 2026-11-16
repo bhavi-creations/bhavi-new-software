@@ -210,11 +210,11 @@ error_message($error);
                         <small><?= h($label) ?></small>
                         <small>Meeting ID <b><?= h(trim(chunk_split($m['meeting_number'], 4, ' '))) ?></b><?= $m['passcode'] !== '' ? ' · Passcode <b>' . h($m['passcode']) . '</b>' : '' ?><?= $m['creator'] ? ' · by ' . h($m['creator']) : '' ?></small>
                         <small class="zm-url"><a href="<?= h($link) ?>" target="_blank" rel="noopener noreferrer"><?= h($link) ?></a></small>
-                        <?php if ($m['notes'] !== ''): ?><small class="zm-notes"><?= h($m['notes']) ?></small><?php endif; ?>
+                        <?php if ($canManage && empty($m['auto_created']) && empty($m['is_instant'])): ?><small class="zm-host-hint">Pasted link: start it in the Zoom app with the Zoom account that created it, or employees will wait for the host.</small><?php endif; ?><?php if ($m['notes'] !== ''): ?><small class="zm-notes"><?= h($m['notes']) ?></small><?php endif; ?>
                     </div>
                     <div class="zm-actions">
                         <button type="button" class="zm-link" data-copy="<?= h($invite) ?>">Copy invite</button>
-                        <?php if (zoom_ready()): ?><a class="ot-gold zm-btn" href="zoom-join.php?id=<?= (int) $m['id'] ?>">Join here</a><?php endif; ?>
+                        <?php $asHost = zoom_host_can_start($m, $user); if (zoom_ready()): ?><a class="ot-gold zm-btn" href="zoom-join.php?id=<?= (int) $m['id'] ?>"><?= $asHost ? 'Start as host' : 'Join here' ?></a><?php endif; ?>
                         <a class="zm-link" href="<?= h($m['join_url'] ?: 'https://zoom.us/j/' . $m['meeting_number']) ?>" target="_blank" rel="noopener noreferrer">Open in Zoom app</a>
                         <?php if ($canManage): ?><form method="post" data-confirm="Delete the meeting “<?= h($m['title']) ?>”?"><?= csrf_field() ?><input type="hidden" name="action" value="delete_meeting"><input type="hidden" name="id" value="<?= (int) $m['id'] ?>"><button type="submit" class="zm-del">Delete</button></form><?php endif; ?>
                     </div>

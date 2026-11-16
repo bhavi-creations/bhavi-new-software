@@ -8,9 +8,10 @@ $meeting = $id ? one('SELECT * FROM zoom_meetings WHERE id=? AND deleted_at IS N
 if (!$meeting) fail(404, 'Meeting not found.');
 if (!zoom_ready()) fail(503, 'Zoom is not connected yet. Ask the Managing Director to add the Zoom details on the Zoom meetings page.');
 $passcode = $meeting['passcode'] !== '' ? $meeting['passcode'] : (zoom_parse_link($meeting['join_url'])['pwd'] ?? '');
-// The person who started an instant meeting joins as host (needs the account's ZAK token); everyone else as attendee.
+// Meetings the portal made on the connected Zoom account (instant, or "Create Zoom link automatically") are started
+// by the person who made them, or by the Managing Director, as host (needs the account's ZAK token); everyone else joins as attendee.
 $role = 0; $zak = '';
-if ((int) ($meeting['is_instant'] ?? 0) === 1 && (int) $meeting['created_by'] === (int) $user['id'] && zoom_connected()) {
+if (zoom_host_can_start($meeting, $user)) {
     try { $zak = zoom_zak(); $role = $zak !== '' ? 1 : 0; } catch (Throwable $e) { error_log($e->getMessage()); }
 }
 // After leaving, go back to the chat the meeting was started from (only local chat/meeting pages are allowed).

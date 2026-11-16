@@ -108,7 +108,7 @@ try {
     $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
     ok($d['status'] === 303 && !str_contains($d['body'], 'Request file is unavailable'), 'missing file: no bare error page, goes back');
     $page = $admin->req('client-reuirement.php')['body'];
-    ok(str_contains($page, 'is not on the server any more') && str_contains($page, 'Missing on the server'), 'clear message + file marked missing in the list');
+    ok(str_contains($page, 'is not on the server any more') && str_contains($page, 'file is not on the server') && str_contains($page, 'rq-file-dl'), 'clear message + file marked missing in the list');
     rename($moved, dirname(__DIR__) . '/' . $f1[1]['file_path']);
     echo "\nAll $checks checks passed.\n";
 } finally {

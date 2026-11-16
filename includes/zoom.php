@@ -238,3 +238,10 @@ function zoom_delete_remote_meeting(string $meetingNumber): void
 {
     try { zoom_api('DELETE', '/meetings/' . rawurlencode($meetingNumber)); } catch (Throwable $e) { error_log('Zoom meeting delete: ' . $e->getMessage()); }
 }
+
+/** True when this user starts the meeting as host: it was made on the connected account and they made it, or they are the Managing Director. */
+function zoom_host_can_start(array $meeting, array $user): bool
+{
+    $onAccount = (int) ($meeting['is_instant'] ?? 0) === 1 || (int) ($meeting['auto_created'] ?? 0) === 1;
+    return $onAccount && zoom_connected() && ((int) $meeting['created_by'] === (int) $user['id'] || $user['role'] === 'admin');
+}
