@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 53;
+const PORTAL_SCHEMA_VERSION = 54;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -785,6 +785,15 @@ function portal_install(PDO $pdo, string $database): void
         // Zoom meetings whose link the portal created on the connected Zoom account (deleted there too).
         $addColumn('zoom_meetings','auto_created','TINYINT(1) NOT NULL DEFAULT 0');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (53)');
+        // Backup copy of client request files in the database (512 KB pieces), so a file still opens if the server folder loses it.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS requirement_file_chunks (
+            file_id BIGINT UNSIGNED NOT NULL,
+            seq INT UNSIGNED NOT NULL,
+            data MEDIUMBLOB NOT NULL,
+            PRIMARY KEY (file_id,seq),
+            FOREIGN KEY (file_id) REFERENCES requirement_files(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (54)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

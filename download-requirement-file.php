@@ -15,10 +15,18 @@ $path=requirement_file_path($file);
 if (!$path) {
     // The database has the file but the server folder does not (e.g. lost in a server move or update upload).
     error_log('Request file missing on disk: id '.(int)$file['id'].' path '.$file['file_path']);
-    flash('“'.$file['original_file_name'].'” is not on the server any more, so it cannot be downloaded. '.($user['role']==='client'?'Please send this file again with a new request.':'Ask the client to send this file again.'),'error');
+    $message='“'.$file['original_file_name'].'” is not on the server any more, so it cannot be downloaded. '.($user['role']==='client'?'Please send this file again with a new request.':'Ask the client to send this file again.');
+    if ($user['role']==='admin') {
+        // Reason for the Managing Director: where the file was saved, and what this server has.
+        $dir=__DIR__.'/storage/requirements';
+        $count=is_dir($dir)?count(glob($dir.'/*.dat')?:[]):0;
+        $message.=' Details: this server’s folder '.str_replace('\\','/',$dir).' '.(is_dir($dir)?'has '.$count.' file(s)':'does not exist').'.'
+            .((string)$file['description']!==''?' The file was '.lcfirst((string)$file['description']).'.':' (Uploaded before upload tracking was added.)');
+    }
+    flash($message,'error');
     $back=(string)parse_url((string)($_SERVER['HTTP_REFERER']??''),PHP_URL_PATH);
     $back=preg_match('~/([a-z0-9-]+\.php)$~',$back,$m)&&$m[1]!=='download-requirement-file.php'?$m[1]:'client-reuirement.php';
-    redirect($back.'#request-'.(int)$file['requirement_id']);
+    redirect($back); // no #anchor: the message is at the top of the page, so it must be in view
 }
 $name=basename(str_replace('\\','/',(string)$file['original_file_name']));
 session_write_close();

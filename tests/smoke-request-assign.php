@@ -109,15 +109,25 @@ try {
     // Saved path points to an old folder (server move) but the file is still in storage/requirements.
     $pdo->prepare('UPDATE requirement_files SET file_path=? WHERE id=?')->execute(['old-site/storage/requirements/' . basename($f1[0]['file_path']), $f1[0]['id']]);
     ok($admin->req('download-requirement-file.php?id=' . $f1[0]['id'])['body'] === $png, 'file found even when the saved folder is wrong');
-    // File really gone from the server.
-    $moved = dirname(__DIR__) . '/' . $f1[1]['file_path'] . '.bak'; rename(dirname(__DIR__) . '/' . $f1[1]['file_path'], $moved);
+    // File deleted from the server folder: it comes back from the database backup copy.
+    ok((int) val('SELECT COUNT(*) FROM requirement_file_chunks WHERE file_id=?', [$f1[1]['id']]) >= 1, 'database backup copy saved at upload');
+    $disk = dirname(__DIR__) . '/' . $f1[1]['file_path'];
+    unlink($disk);
     $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
-    ok($d['status'] === 303 && !str_contains($d['body'], 'Request file is unavailable'), 'missing file: no bare error page, goes back');
+    ok($d['status'] === 200 && $d['body'] === $pdf && is_file($disk), 'deleted file still downloads (restored from the backup)');
     $page = $admin->req('client-reuirement.php')['body'];
-    ok(str_contains($page, 'is not on the server any more') && str_contains($page, '<h4>Attached files</h4><ul class="requirement-file-list">') && !str_contains($page, 'rq-missing'), 'clear message after click; list keeps the old simple look');
+    unlink($disk);
+    ok(str_contains($admin->req('client-reuirement.php')['body'], 'Download all (2 files)') && is_file($disk), 'Download all still shown: files come back from the backup');
+    ok($admin->req('download-requirement-files.php?id=' . $req['id'])['status'] === 200, 'Download all works after a file was deleted');
+    // No backup and no file: clear message instead of an error page.
+    $pdo->prepare('DELETE FROM requirement_file_chunks WHERE file_id=?')->execute([$f1[1]['id']]);
+    $moved = $disk . '.bak'; rename($disk, $moved);
+    $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
+    ok($d['status'] === 303 && !str_contains($d['headers']['location'] ?? '', '#'), 'really missing: goes back to the top of the page');
+    $page = $admin->req('client-reuirement.php')['body'];
+    ok(str_contains($page, 'is not on the server any more') && str_contains($page, 'Details: this server') && str_contains($page, 'uploaded on 127.0.0.1') && str_contains($page, '<h4>Attached files</h4><ul class="requirement-file-list">'), 'clear message with the reason for the MD; old list look');
     ok(!str_contains($page, 'download-requirement-files.php?id=' . $req['id']), 'Download all hidden when fewer than 2 files are on the server');
-    ok(str_starts_with((string) val('SELECT description FROM requirement_files WHERE id=?', [$f1[1]['id']]), 'Uploaded on 127.0.0.1'), 'upload place saved for Hosting checks');
-    rename($moved, dirname(__DIR__) . '/' . $f1[1]['file_path']);
+    rename($moved, $disk);
     echo "\nAll $checks checks passed.\n";
 } finally {
     if ($process) { proc_terminate($process); proc_close($process); }

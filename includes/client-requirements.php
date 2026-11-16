@@ -240,6 +240,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['conf
                 if (!is_file($absolute) || filesize($absolute)!==(int)$file['size']) throw new InvalidArgumentException('“'.$file['name'].'” did not upload completely. Please try again.');
                 $storedFiles[]=$absolute;
                 query('INSERT INTO requirement_files (requirement_id,file_type,description,original_file_name,file_path,mime_type,file_size_bytes,uploaded_by) VALUES (?,?,?,?,?,?,?,?)',[$requirementId,$file['type'],mb_substr('Uploaded on '.preg_replace('/[^A-Za-z0-9.:-]/','',(string)($_SERVER['HTTP_HOST']??'')).' · '.str_replace('\\','/',dirname(__DIR__)),0,255),$file['name'],$relative,$file['mime'],$file['size'],$user['id']]);
+                requirement_file_backup((int)db()->lastInsertId(),$absolute); // database copy, so the file still opens if the folder loses it
             }
             $noticeTitle=($task['urgent']?'URGENT · ':'').'New client request · '.$clientRecord['client_name'];
             $noticeMessage=$task['label'].' · '.($task['department']['name']??'Management').' · Due '.$task['due'].' · '.$task['remark'];

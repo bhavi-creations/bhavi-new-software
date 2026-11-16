@@ -32,7 +32,68 @@ function requirement_file_path(array $file): ?string
         $path = realpath($candidate);
         if ($inRoot($path)) return $path;
     }
-    return null;
+    // Not in the folder: put it back from the database backup copy, if there is one.
+    return requirement_file_restore($file);
+}
+
+const REQUIREMENT_BACKUP_MAX_BYTES = 30 * 1024 * 1024; // files up to 30 MB get a database backup copy
+const REQUIREMENT_BACKUP_CHUNK = 512 * 1024;           // stored in 512 KB pieces (fits small MySQL packet limits)
+
+/** Saves a backup copy of a request file in the database (requirement_file_chunks). Larger files are skipped. */
+function requirement_file_backup(int $fileId, string $path): bool
+{
+    $size = @filesize($path);
+    if ($size === false || $size <= 0 || $size > REQUIREMENT_BACKUP_MAX_BYTES) return false;
+    $handle = @fopen($path, 'rb');
+    if (!$handle) return false;
+    try {
+        query('DELETE FROM requirement_file_chunks WHERE file_id=?', [$fileId]);
+        $insert = db()->prepare('INSERT INTO requirement_file_chunks (file_id,seq,data) VALUES (?,?,?)');
+        for ($seq = 0; !feof($handle); $seq++) {
+            $chunk = fread($handle, REQUIREMENT_BACKUP_CHUNK);
+            if ($chunk === false || $chunk === '') break;
+            $insert->bindValue(1, $fileId, PDO::PARAM_INT);
+            $insert->bindValue(2, $seq, PDO::PARAM_INT);
+            $insert->bindValue(3, $chunk, PDO::PARAM_LOB);
+            $insert->execute();
+        }
+        return true;
+    } catch (Throwable $e) {
+        error_log('Request file backup failed for #' . $fileId . ': ' . $e->getMessage());
+        try { query('DELETE FROM requirement_file_chunks WHERE file_id=?', [$fileId]); } catch (Throwable $ignored) {}
+        return false;
+    } finally {
+        fclose($handle);
+    }
+}
+
+/** Writes the database backup copy back to storage/requirements and returns its path, or null when there is no copy. */
+function requirement_file_restore(array $file): ?string
+{
+    $fileId = (int) ($file['id'] ?? 0);
+    if ($fileId <= 0) return null;
+    try {
+        if (!one('SELECT 1 FROM requirement_file_chunks WHERE file_id=? LIMIT 1', [$fileId])) return null;
+        $dir = dirname(__DIR__) . '/storage/requirements';
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) return null;
+        $name = basename(str_replace('\\', '/', (string) ($file['file_path'] ?? '')));
+        if (!preg_match('/^[A-Za-z0-9._-]+$/', $name)) $name = bin2hex(random_bytes(20)) . '.dat';
+        $target = $dir . '/' . $name;
+        $tmp = $target . '.part';
+        $out = @fopen($tmp, 'wb');
+        if (!$out) return null;
+        $stmt = db()->prepare('SELECT data FROM requirement_file_chunks WHERE file_id=? ORDER BY seq');
+        $stmt->execute([$fileId]);
+        while (($data = $stmt->fetchColumn()) !== false) fwrite($out, is_resource($data) ? stream_get_contents($data) : (string) $data);
+        fclose($out);
+        $expected = (int) ($file['file_size_bytes'] ?? 0);
+        if (($expected > 0 && filesize($tmp) !== $expected) || !@rename($tmp, $target)) { @unlink($tmp); return null; }
+        error_log('Request file #' . $fileId . ' restored from the database backup.');
+        return realpath($target) ?: null;
+    } catch (Throwable $e) {
+        error_log('Request file restore failed for #' . $fileId . ': ' . $e->getMessage());
+        return null;
+    }
 }
 
 /**
