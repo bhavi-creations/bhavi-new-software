@@ -49,8 +49,10 @@ function requirement_files_html(array $files, bool $withHeading = true): string
             . ($withHeading && isset($file['file_size_bytes']) ? '<span>' . h(number_format((int) $file['file_size_bytes'] / 1024 / 1024, 1)) . ' MB</span>' : '') . '</li>';
     }
     $out .= '</ul>';
-    if (count($files) > 1 && !empty($files[0]['requirement_id'])) {
-        $out .= '<a class="rq-download-all" href="download-requirement-files.php?id=' . (int) $files[0]['requirement_id'] . '">⬇ Download all (' . count($files) . ' files)</a>';
+    // Only files that are really on the server go in the ZIP, so the button shows only when 2 or more are there.
+    $found = count(array_filter($files, static fn($f) => requirement_file_path($f) !== null));
+    if ($found > 1 && !empty($files[0]['requirement_id'])) {
+        $out .= '<a class="rq-download-all" href="download-requirement-files.php?id=' . (int) $files[0]['requirement_id'] . '">⬇ Download all (' . $found . ' files)</a>';
     }
     return $out;
 }

@@ -115,6 +115,7 @@ try {
     ok($d['status'] === 303 && !str_contains($d['body'], 'Request file is unavailable'), 'missing file: no bare error page, goes back');
     $page = $admin->req('client-reuirement.php')['body'];
     ok(str_contains($page, 'is not on the server any more') && str_contains($page, '<h4>Attached files</h4><ul class="requirement-file-list">') && !str_contains($page, 'rq-missing'), 'clear message after click; list keeps the old simple look');
+    ok(!str_contains($page, 'download-requirement-files.php?id=' . $req['id']), 'Download all hidden when fewer than 2 files are on the server');
     ok(str_starts_with((string) val('SELECT description FROM requirement_files WHERE id=?', [$f1[1]['id']]), 'Uploaded on 127.0.0.1'), 'upload place saved for Hosting checks');
     rename($moved, dirname(__DIR__) . '/' . $f1[1]['file_path']);
     echo "\nAll $checks checks passed.\n";

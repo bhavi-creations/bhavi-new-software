@@ -4960,3 +4960,6 @@ tr.sc-soon td{background:#f3fbf6}
 .rq-download-all{justify-self:start;display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:10px;background:#1f4f9c;color:#fff!important;font-size:13px;font-weight:800;text-decoration:none}
 .rq-download-all:hover{filter:brightness(1.1)}
 .requirement-file-list+.rq-download-all{margin-top:10px}
+/* Client requests: the request opened from a link (#request-N) gets a soft frame with inner space */
+.requirement-card:target{margin:0 -16px;padding:18px 16px;border-radius:14px;background:#fffdf6;box-shadow:0 0 0 2px #ecd9a0}
+.requirement-card:target+.requirement-card{border-top-color:transparent}
