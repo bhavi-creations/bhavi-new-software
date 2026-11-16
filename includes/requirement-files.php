@@ -130,7 +130,7 @@ function requirement_files_html(array $files, bool $withHeading = true): string
     $out = ($withHeading ? '<h4>Attached files</h4>' : '') . '<ul class="requirement-file-list">';
     foreach ($files as $file) {
         $out .= '<li><a href="download-requirement-file.php?id=' . (int) $file['id'] . '">' . h($file['original_file_name']) . '</a>'
-            . ($withHeading && isset($file['file_size_bytes']) ? '<span>' . h(number_format((int) $file['file_size_bytes'] / 1024 / 1024, 1)) . ' MB</span>' : '') . '</li>';
+            . ($withHeading && isset($file['file_size_bytes']) ? '<span>' . h(number_format((int) $file['file_size_bytes'] / 1024 / 1024, 1)) . ' MB</span>' : '') . '<a class="rq-file-btn" href="download-requirement-file.php?id=' . (int) $file['id'] . '" title="Download ' . h($file['original_file_name']) . '">⬇ Download</a></li>';
     }
     $out .= '</ul>';
     // Only files that are really on the server go in the ZIP, so the button shows only when 2 or more are there.

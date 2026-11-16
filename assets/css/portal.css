@@ -4972,3 +4972,25 @@ tr.sc-soon td{background:#f3fbf6}
 .cr-assign-foot{padding-top:4px;border-top:1px solid #eef2f8;margin-top:2px}
 .cr-assign-foot small{flex:1 1 280px;font-size:12.5px;line-height:1.5}
 .cr-assign-foot button{height:44px;padding:0 20px;border-radius:10px}
+/* Client requests: Download button on each file, Assign button, Show to all employees */
+.requirement-file-list li{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.requirement-file-list li>a:first-child{min-width:0;overflow-wrap:anywhere}
+.requirement-file-list li .rq-file-btn{margin-left:auto;padding:5px 12px;border-radius:8px;background:#1f4f9c;color:#fff!important;font-size:12px;font-weight:800;text-decoration:none;white-space:nowrap}
+.requirement-file-list li .rq-file-btn:hover{filter:brightness(1.1)}
+.cr-assign-box{border:0;background:transparent}
+.cr-assign-box>summary.cr-assign-btn{display:inline-flex;align-items:center;gap:8px;width:auto;padding:10px 20px;border:0;border-radius:10px;background:#1f4f9c;color:#fff;font-size:14px;font-weight:800;cursor:pointer}
+.cr-assign-box>summary.cr-assign-btn svg{width:16px;height:16px}
+.cr-assign-box[open]>summary.cr-assign-btn{border-bottom:0;background:#163b78}
+.cr-assign-box[open]{margin-top:2px;padding-bottom:4px;border:1px solid #c9d7f0;border-radius:14px;background:#fff;padding:14px}
+.cr-assign-title{margin:12px 0 0;color:#172b49;font-size:13.5px;font-weight:800}
+.cr-assign-box .cr-assign-form{padding:10px 0 4px}
+.cr-assign-or{display:flex;align-items:center;gap:10px;margin:10px 0;color:#7a8597;font-size:12px;font-weight:700;text-transform:uppercase}
+.cr-assign-or::before,.cr-assign-or::after{content:"";flex:1;height:1px;background:#e3eaf5}
+.cr-assign-all{display:grid;gap:8px;justify-items:start}
+.cr-assign-all .cr-assign-title{margin:0}
+.cr-assign-all small{color:#5c6b82;font-size:12.5px}
+.cr-assign-all-btn{height:44px;padding:0 18px;border:1.5px solid #1f4f9c;border-radius:10px;background:#f2f6fd;color:#1f4f9c;font-size:13.5px;font-weight:800;cursor:pointer}
+.cr-assign-all-btn:hover{background:#e6eefb}
+.cr-shared{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 14px;border:1px solid #b7e1c7;border-radius:10px;background:#f2fbf5;color:#1a6b3c;font-size:13px}
+.cr-shared form{margin:0}
+.cr-shared-stop{padding:6px 12px;border:1px solid #b7e1c7;border-radius:8px;background:#fff;color:#1a6b3c;font-size:12px;font-weight:700;cursor:pointer}

@@ -66,7 +66,8 @@ try {
     $admin = new B($base);
     $admin->login('md', 'Secret123!');
     $page = $admin->req('client-reuirement.php')['body'];
-    ok(str_contains($page, 'Send this request to an employee') && str_contains($page, 'name="action" value="assign_requirement"'), 'request card has Send to employee box');
+    ok(str_contains($page, '<details class="cr-assign-box">') && str_contains($page, 'Assign</summary>') && str_contains($page, 'name="action" value="assign_requirement"') && str_contains($page, 'Show to all employees'), 'Assign button (closed) opens the form: one employee or all employees');
+    ok(substr_count($page, 'class="rq-file-btn"') === 2, 'Download button on every single file');
     ok(str_contains($page, '>Ravi Kumar') && str_contains($page, 'task-1-file-1 … task-1-file-2'), 'employee list + file note shown');
     $send = fn(int $emp, string $date = '') => $admin->post('client-reuirement.php', ['action' => 'assign_requirement', 'requirement_id' => $req['id'], 'employee_id' => $emp, 'work_date' => $date ?: $due, 'priority' => 'high', 'note' => 'Use gold colours']);
     $r = $send($ravi, date('Y-m-d', strtotime('-1 day')));
@@ -82,7 +83,7 @@ try {
     ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='1 task assigned'", [$ravi]) === 1, 'Ravi notified');
     ok($send($ravi)['status'] === 200, 'cannot send the same request to Ravi twice');
     $page = $admin->req('client-reuirement.php')['body'];
-    ok(str_contains($page, 'Sent to <b>Ravi Kumar</b>') && str_contains($page, 'Send to another employee') && str_contains($page, '(already sent)'), 'card shows Sent to Ravi + send another');
+    ok(str_contains($page, 'Sent to <b>Ravi Kumar</b>') && str_contains($page, 'Assign again</summary>') && str_contains($page, '(already sent)'), 'card shows Sent to Ravi + Assign again');
     ok($send($sita)['status'] === 303 && (int) val('SELECT COUNT(*) FROM work_assignments WHERE requirement_id=?', [$req['id']]) === 2, 'can also send to Sita');
 
     echo "Employee gets the task\n";
@@ -96,6 +97,25 @@ try {
     ok(!str_contains($c, 'assign_requirement') && !str_contains($c, 'Ravi Kumar'), 'client does not see the assign box or employee names');
     ok($cl->post('client-reuirement.php', ['action' => 'assign_requirement', 'requirement_id' => $req['id'], 'employee_id' => $ravi, 'work_date' => $due])['status'] === 403, 'client cannot assign');
 
+
+    echo "Show to all employees\n";
+    // Anil works in another department: before sharing he cannot see this request.
+    $dept2 = (int) val('SELECT id FROM departments WHERE id<>? AND id<>COALESCE(?,0) ORDER BY id LIMIT 1', [$dept, $req['department_id']]);
+    $pdo->prepare("INSERT INTO users (full_name,username,password_hash,role,must_change_password) VALUES ('Anil Varma','anil',?,'employee',0)")->execute([password_hash('Secret123!', PASSWORD_DEFAULT)]);
+    $anil = (int) $pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO employee_profiles (user_id,department_id,designation,joining_date) VALUES (?,?,'Writer','2025-01-01')")->execute([$anil, $dept2]);
+    $an = new B($base); $an->login('anil', 'Secret123!');
+    $f1 = $pdo->query('SELECT * FROM requirement_files WHERE requirement_id=' . (int) $req['id'] . ' ORDER BY id')->fetchAll();
+    ok($an->req('download-requirement-file.php?id=' . $f1[0]['id'])['status'] === 403 && !str_contains($an->req('client-reuirement.php')['body'], 'Diwali poster with 15% offer'), 'before: other-department employee cannot see it');
+    ok($admin->post('client-reuirement.php', ['action' => 'share_requirement', 'requirement_id' => $req['id'], 'share' => '1'])['status'] === 303, 'MD clicks Show to all employees');
+    ok((int) val('SELECT shared_with_all FROM client_requirements WHERE id=?', [$req['id']]) === 1 && (int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND requirement_id=?", [$anil, $req['id']]) === 1, 'saved + every employee notified');
+    $page = $admin->req('client-reuirement.php')['body'];
+    ok(str_contains($page, 'Visible to all employees') && str_contains($page, 'Stop showing to all') && !str_contains($page, '👥 Show to all employees'), 'MD sees "Visible to all employees"');
+    $ap = $an->req('client-reuirement.php')['body'];
+    ok(str_contains($ap, 'Diwali poster with 15% offer') && str_contains($ap, 'class="rq-file-btn"'), 'after: employee sees the request with Download buttons');
+    ok($an->req('download-requirement-file.php?id=' . $f1[0]['id'])['body'] === $png && $an->req('download-requirement-files.php?id=' . $req['id'])['status'] === 200, 'employee downloads single files and all files');
+    ok($admin->post('client-reuirement.php', ['action' => 'share_requirement', 'requirement_id' => $req['id'], 'share' => '0'])['status'] === 303 && $an->req('download-requirement-file.php?id=' . $f1[0]['id'])['status'] === 403, 'Stop showing to all works');
+    ok($an->post('client-reuirement.php', ['action' => 'share_requirement', 'requirement_id' => $req['id'], 'share' => '1'])['status'] === 403, 'employee cannot share');
     echo "Download client files\n";
     $f1 = $pdo->query('SELECT * FROM requirement_files WHERE requirement_id=' . (int) $req['id'] . ' ORDER BY id')->fetchAll();
     $d = $admin->req('download-requirement-file.php?id=' . $f1[0]['id']);

@@ -6,11 +6,11 @@ require_once __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/requirement-files.php';
 $user=require_roles(['admin','manager','employee','client']);
 $requirementId=positive_id($_GET['id']??null);
-$requirement=one('SELECT r.id,r.client_id,r.department_id,r.title,c.client_name FROM client_requirements r JOIN clients c ON c.id=r.client_id WHERE r.id=? AND c.deleted_at IS NULL',[$requirementId]);
+$requirement=one('SELECT r.id,r.client_id,r.department_id,r.shared_with_all,r.title,c.client_name FROM client_requirements r JOIN clients c ON c.id=r.client_id WHERE r.id=? AND c.deleted_at IS NULL',[$requirementId]);
 if (!$requirement) fail(404,'Request not found.');
 if ($user['role']==='client') {
     if (!one('SELECT id FROM clients WHERE id=? AND user_id=?',[$requirement['client_id'],$user['id']])) fail(403,'You cannot access these files.');
-} elseif ($user['role']==='employee' && (int)$requirement['department_id']!==(int)$user['department_id'] && !one('SELECT requirement_id FROM requirement_assignments WHERE requirement_id=? AND employee_id=?',[$requirementId,$user['id']])) {
+} elseif ($user['role']==='employee' && !(int)$requirement['shared_with_all'] && (int)$requirement['department_id']!==(int)$user['department_id'] && !one('SELECT requirement_id FROM requirement_assignments WHERE requirement_id=? AND employee_id=?',[$requirementId,$user['id']])) {
     fail(403,'This request belongs to another department.');
 }
 

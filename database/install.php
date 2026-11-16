@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 54;
+const PORTAL_SCHEMA_VERSION = 55;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -794,6 +794,9 @@ function portal_install(PDO $pdo, string $database): void
             FOREIGN KEY (file_id) REFERENCES requirement_files(id) ON DELETE CASCADE
         ) ENGINE=InnoDB");
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (54)');
+        // Client request shown to every employee (Managing Director: Assign → Show to all employees).
+        $addColumn('client_requirements','shared_with_all','TINYINT(1) NOT NULL DEFAULT 0');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (55)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

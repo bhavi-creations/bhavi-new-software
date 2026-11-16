@@ -2377,7 +2377,7 @@ foreach (
 
 $departmentRequirements=[];
 if ($employeeView==='assigned') {
-    $departmentRequirements=rows("SELECT r.*,c.client_name,d.name AS department_name FROM client_requirements r JOIN clients c ON c.id=r.client_id LEFT JOIN departments d ON d.id=r.department_id WHERE c.deleted_at IS NULL AND c.is_active=1 AND (r.department_id=? OR EXISTS (SELECT 1 FROM requirement_assignments ra WHERE ra.requirement_id=r.id AND ra.employee_id=?)) ORDER BY r.due_date,r.created_at DESC",[$user['department_id'],$user['id']]);
+    $departmentRequirements=rows("SELECT r.*,c.client_name,d.name AS department_name FROM client_requirements r JOIN clients c ON c.id=r.client_id LEFT JOIN departments d ON d.id=r.department_id WHERE c.deleted_at IS NULL AND c.is_active=1 AND (r.department_id=? OR r.shared_with_all=1 OR EXISTS (SELECT 1 FROM requirement_assignments ra WHERE ra.requirement_id=r.id AND ra.employee_id=?)) ORDER BY r.due_date,r.created_at DESC",[$user['department_id'],$user['id']]);
 }
 
 

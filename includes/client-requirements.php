@@ -167,7 +167,31 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='assign_requ
     }
 }
 
-if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement'],true)) {
+// Admin / manager: show a client request to every employee (they see it under Client requests and can download its files), or stop.
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='share_requirement') {
+    require_roles(['admin','manager']); check_csrf();
+    try {
+        $requirementId=positive_id($_POST['requirement_id']??null);
+        $requirement=one("SELECT r.*,c.client_name FROM client_requirements r JOIN clients c ON c.id=r.client_id WHERE r.id=? AND c.deleted_at IS NULL",[$requirementId]);
+        if (!$requirement || is_payment_proof($requirement)) throw new InvalidArgumentException('Client request not found.');
+        $share=($_POST['share']??'1')==='1';
+        query('UPDATE client_requirements SET shared_with_all=? WHERE id=?',[$share?1:0,$requirementId]);
+        if ($share) {
+            if ($requirement['status']==='assigned') query("UPDATE client_requirements SET status='in_progress',approved_text=COALESCE(NULLIF(approved_text,''),?) WHERE id=?",['Our team has started working on this.',$requirementId]);
+            try {
+                query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) SELECT u.id,?,'requirement',?,?,? FROM users u WHERE u.role='employee' AND u.account_status='active' AND u.deleted_at IS NULL",[$user['id'],'Client request · '.$requirement['client_name'],mb_substr(preg_replace('/^URGENT · /u','',(string)$requirement['title']).' · '.trim((string)$requirement['brief']),0,500),$requirementId]);
+            } catch (Throwable $notificationError) { error_log('Request shared; notification failed: '.$notificationError->getMessage()); }
+            flash('This request is now visible to all employees. They can download its files.');
+        } else {
+            flash('This request is no longer shown to all employees.');
+        }
+        redirect('client-reuirement.php#request-'.$requirementId);
+    } catch (Throwable $e) {
+        $error=mutation_error($e);
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement','share_requirement'],true)) {
     require_roles(['client']); check_csrf(); $storedFiles=[];
     try {
         if (($_POST['action']??'')!=='submit_requirement') throw new InvalidArgumentException('Invalid request.');
@@ -270,7 +294,7 @@ if (!$isClient) {
 }
 $requirementSql='SELECT r.*,c.client_name,d.name AS department_name FROM client_requirements r JOIN clients c ON c.id=r.client_id LEFT JOIN departments d ON d.id=r.department_id WHERE c.deleted_at IS NULL'; $requirementParams=[];
 if ($isClient) { $requirementSql.=' AND r.client_id=?'; $requirementParams[]=$clientRecord['id']; }
-elseif (!is_staff()) { $requirementSql.=' AND (r.department_id=? OR EXISTS (SELECT 1 FROM requirement_assignments ra WHERE ra.requirement_id=r.id AND ra.employee_id=?))'; $requirementParams[]=$user['department_id']; $requirementParams[]=$user['id']; }
+elseif (!is_staff()) { $requirementSql.=' AND (r.department_id=? OR r.shared_with_all=1 OR EXISTS (SELECT 1 FROM requirement_assignments ra WHERE ra.requirement_id=r.id AND ra.employee_id=?))'; $requirementParams[]=$user['department_id']; $requirementParams[]=$user['id']; }
 elseif ($clientFilter>0) { $requirementSql.=' AND r.client_id=?'; $requirementParams[]=$clientFilter; }
 $requirements=rows($requirementSql.' ORDER BY r.created_at DESC,r.id DESC',$requirementParams);
 $departments=departments();
@@ -528,16 +552,26 @@ if (is_staff()) {
         $urgent=str_starts_with((string)$requirement['title'],'URGENT');
         ?><div class="cr-assign">
             <?php if ($sent): ?><ul class="cr-assign-sent"><?php foreach ($sent as $a): $state=$a['status']==='completed'?['done','✓ Done']:(!empty($a['started_at'])?['work','▶ Working']:['wait','⏳ Not started']); ?><li><span class="cr-assign-avatar"><?= h(mb_strtoupper(mb_substr($a['full_name'],0,1))) ?></span><span>Sent to <b><?= h($a['full_name']) ?></b> · <?= h(date('d M Y',strtotime($a['work_date']))) ?></span><span class="cr-assign-state is-<?= $state[0] ?>"><?= $state[1] ?></span></li><?php endforeach; ?></ul><?php endif; ?>
+            <?php $shared=!empty($requirement['shared_with_all']); if ($shared): ?><div class="cr-shared"><span>👥 <b>Visible to all employees</b> · they can see this request and download its files</span><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="share_requirement"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><input type="hidden" name="share" value="0"><button type="submit" class="cr-shared-stop">Stop showing to all</button></form></div><?php endif; ?>
             <?php if ($open): ?>
-            <details class="cr-assign-box"<?= $sent?'':' open' ?>>
-                <summary><?= icon('send') ?> <?= $sent?'Send to another employee':'Send this request to an employee' ?></summary>
+            <details class="cr-assign-box">
+                <summary class="cr-assign-btn"><?= icon('send') ?> <?= $sent||$shared?'Assign again':'Assign' ?></summary>
+                <p class="cr-assign-title">1. Assign to one employee</p>
                 <form method="post" class="cr-assign-form"><?= csrf_field() ?><input type="hidden" name="action" value="assign_requirement"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>">
                     <label class="cr-assign-emp"><span>Employee</span><select name="employee_id" required><option value="">Choose employee…</option><?php foreach ($groups as $dept=>$list): ?><optgroup label="<?= h($dept) ?>"><?php foreach ($list as $e): ?><option value="<?= (int)$e['id'] ?>"<?= in_array($e['full_name'],$taken,true)?' disabled':'' ?>><?= h($e['full_name']) ?><?= $e['designation']?' · '.h($e['designation']):'' ?><?= in_array($e['full_name'],$taken,true)?' (already sent)':'' ?></option><?php endforeach; ?></optgroup><?php endforeach; ?></select></label>
                     <label><span>Work date</span><input type="date" name="work_date" min="<?= h(today()) ?>" value="<?= h($date) ?>" required></label>
                     <label><span>Priority</span><select name="priority"><option value="normal">Normal</option><option value="high">High</option><option value="urgent"<?= $urgent?' selected':'' ?>>Urgent</option></select></label>
                     <label class="cr-assign-note"><span>Note for the employee <small>(optional)</small></span><textarea name="note" rows="2" maxlength="2000" placeholder="e.g. Use the new logo. Send the first draft by 4 PM."></textarea></label>
-                    <div class="cr-assign-foot"><small><?= $files?'📎 '.count($files).' client file'.(count($files)===1?'':'s').' will be attached as task-1-file-1 … task-1-file-'.count($files):'No client files to attach' ?> · The client’s message goes with the task.</small><button type="submit" class="primary"><?= icon('send') ?> Send to employee</button></div>
+                    <div class="cr-assign-foot"><small><?= $files?'📎 '.count($files).' client file'.(count($files)===1?'':'s').' will be attached as task-1-file-1 … task-1-file-'.count($files):'No client files to attach' ?> · The client’s message goes with the task.</small><button type="submit" class="primary"><?= icon('send') ?> Assign to employee</button></div>
                 </form>
+                <?php if (!$shared): ?>
+                <div class="cr-assign-or"><span>or</span></div>
+                <form method="post" class="cr-assign-all"><?= csrf_field() ?><input type="hidden" name="action" value="share_requirement"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><input type="hidden" name="share" value="1">
+                    <p class="cr-assign-title">2. Show to all employees</p>
+                    <small>Every employee sees this request with the client’s message and can download the files. They get a notification.</small>
+                    <button type="submit" class="cr-assign-all-btn">👥 Show to all employees</button>
+                </form>
+                <?php endif; ?>
             </details>
             <?php endif; ?>
         </div><?php
