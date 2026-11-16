@@ -97,7 +97,13 @@ try {
     echo "Download client files\n";
     $f1 = $pdo->query('SELECT * FROM requirement_files WHERE requirement_id=' . (int) $req['id'] . ' ORDER BY id')->fetchAll();
     $d = $admin->req('download-requirement-file.php?id=' . $f1[0]['id']);
-    ok($d['status'] === 200 && $d['body'] === $png && str_contains($d['headers']['content-disposition'] ?? '', 'My%20Logo.png'), 'MD downloads the client file');
+    ok($d['status'] === 200 && $d['body'] === $png && str_contains($d['headers']['content-disposition'] ?? '', 'filename="My Logo.png"') && str_contains($d['headers']['content-disposition'] ?? '', 'My%20Logo.png'), 'MD downloads the client file with the same name');
+    ok(($d['headers']['content-type'] ?? '') === 'image/png', 'same file type as the client sent (image/png)');
+    $page = $admin->req('client-reuirement.php')['body'];
+    ok(str_contains($page, 'download-requirement-files.php?id=' . $req['id']) && str_contains($page, 'Download all (2 files)'), 'Download all button under the client files');
+    $zip = $admin->req('download-requirement-files.php?id=' . $req['id']);
+    ok($zip['status'] === 200 && str_starts_with($zip['body'], "PK\x03\x04") && str_contains($zip['body'], 'My Logo.png') && str_contains($zip['body'], 'offer text.pdf') && str_contains($zip['body'], $pdf) && str_contains($zip['body'], $png), 'ZIP has both files with the client\'s names');
+    ok($cl->req('download-requirement-files.php?id=' . $req['id'])['status'] === 200, 'client can download all own files');
     ok($emp->req('download-requirement-file.php?id=' . $f1[1]['id'])['body'] === $pdf, 'assigned employee downloads it too');
     ok($cl->req('download-requirement-file.php?id=' . $f1[1]['id'])['body'] === $pdf, 'client downloads own file');
     // Saved path points to an old folder (server move) but the file is still in storage/requirements.

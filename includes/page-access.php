@@ -26,7 +26,7 @@ function page_access_features(): array
         'tools' => ['Tools / Apps (passwords)', 'tools.php', ['tools.php']],
         'references' => ['References', 'references.php', ['references.php']],
         'departments' => ['Departments', 'departments.php', ['departments.php']],
-        'client_requests' => ['Client requests', 'client-reuirement.php', ['client-reuirement.php', 'download-requirement-file.php']],
+        'client_requests' => ['Client requests', 'client-reuirement.php', ['client-reuirement.php', 'download-requirement-file.php', 'download-requirement-files.php']],
         'payslips' => ['Employee payslips', 'payslips.php', ['payslips.php', 'download-payslip.php']],
         'holidays' => ['Holidays', 'admin-holidays.php', ['admin-holidays.php']],
     ];

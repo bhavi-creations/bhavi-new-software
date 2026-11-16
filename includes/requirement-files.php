@@ -62,6 +62,9 @@ function requirement_files_html(array $files, string $heading = 'Attached files'
                 . '<a class="rq-file-dl" href="' . h($url) . '">⬇ Download</a></li>';
         }
         $out .= '</ul>';
+        if (count($ok) > 1 && !empty($ok[0]['requirement_id'])) {
+            $out .= '<a class="rq-download-all" href="download-requirement-files.php?id=' . (int) $ok[0]['requirement_id'] . '">⬇ Download all (' . count($ok) . ' files)</a>';
+        }
     }
     if ($missing) {
         $names = array_map(static fn($f) => (string) $f['original_file_name'], $missing);

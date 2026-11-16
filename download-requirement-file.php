@@ -26,9 +26,11 @@ while (ob_get_level()>0) ob_end_clean();
 @set_time_limit(0);
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store');
-header('Content-Type: application/octet-stream');
+// Same name and same file type as the client sent (e.g. “Diwali offer.png” opens as an image), always as a download.
+$mime=strtolower(trim((string)$file['mime_type']));
+header('Content-Type: '.(preg_match('~^[a-z0-9.+-]+/[a-z0-9.+-]+$~',$mime)?$mime:'application/octet-stream'));
 header('Content-Length: '.filesize($path));
-header('Content-Disposition: attachment; filename="'.(preg_replace('/[^A-Za-z0-9._-]/','_',$name)?:'client-file').'"; filename*=UTF-8\'\''.rawurlencode($name));
+header('Content-Disposition: attachment; filename="'.(trim((string)preg_replace('/[^\x20-\x7E]|["\\\\]/','_',$name))?:'client-file').'"; filename*=UTF-8\'\''.rawurlencode($name));
 $handle=fopen($path,'rb');
 if (!$handle) fail(500,'Unable to open request file.');
 while (!feof($handle)) { $chunk=fread($handle,1024*1024); if ($chunk===false || $chunk==='') break; echo $chunk; flush(); }

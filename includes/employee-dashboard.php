@@ -3501,7 +3501,7 @@ $awBrief = static function (?string $text): string {
     <section class="aw-card aw-requests" id="client-requests">
         <div class="aw-requests-head"><h3>Client requests for <?= h($user['department_name']) ?></h3><span class="aw-chip"><?= count($departmentRequirements) ?> requests</span></div>
         <?php if (!$departmentRequirements): ?><p class="muted">No client requests for your department yet.</p><?php endif; ?>
-        <?php foreach ($departmentRequirements as $request): $requestFiles = rows('SELECT id,original_file_name,file_size_bytes,file_path,description FROM requirement_files WHERE requirement_id=? ORDER BY id', [$request['id']]); ?>
+        <?php foreach ($departmentRequirements as $request): $requestFiles = rows('SELECT id,requirement_id,original_file_name,file_size_bytes,file_path,description FROM requirement_files WHERE requirement_id=? ORDER BY id', [$request['id']]); ?>
             <article class="requirement-card aw-request">
                 <div class="aw-request-top"><div><strong><?= h($request['client_name']) ?></strong><small>Due <?= $request['due_date'] ? h(date('d-m-Y', strtotime($request['due_date']))) : 'No deadline' ?></small></div><?= status_badge($request['status']) ?></div>
                 <p class="requirement-remark"><?= nl2br(h($request['brief'])) ?></p>
