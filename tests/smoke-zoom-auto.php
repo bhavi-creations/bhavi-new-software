@@ -45,6 +45,8 @@ try {
     $mockDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'zmock' . bin2hex(random_bytes(4)); mkdir($mockDir); $calls = $mockDir . '/calls.log';
     file_put_contents($mockDir . '/router.php', '<?php $b = file_get_contents("php://input"); file_put_contents(' . var_export($calls, true) . ', json_encode(["m" => $_SERVER["REQUEST_METHOD"], "p" => $_SERVER["REQUEST_URI"], "auth" => $_SERVER["HTTP_AUTHORIZATION"] ?? "", "b" => json_decode($b ?: "null", true)]) . "\n", FILE_APPEND);
 if ($_SERVER["REQUEST_METHOD"] === "POST" && $_SERVER["REQUEST_URI"] === "/users/me/meetings") { $in = json_decode($b, true); if (($in["topic"] ?? "") === "Fail me") { http_response_code(400); echo json_encode(["message" => "Invalid field."]); return; } http_response_code(201); header("Content-Type: application/json"); echo json_encode(["id" => 85512345678, "password" => "Zx91Ab", "join_url" => "https://us06web.zoom.us/j/85512345678?pwd=TokenXyz.1", "topic" => $in["topic"], "start_time" => $in["start_time"]]); return; }
+if ($_SERVER["REQUEST_METHOD"] === "GET" && str_starts_with($_SERVER["REQUEST_URI"], "/users/me/token") && is_file(__DIR__ . "/nozak")) { http_response_code(400); echo json_encode(["message" => "Invalid access token, does not contain scopes:[user:read:zak]."]); return; }
+if ($_SERVER["REQUEST_METHOD"] === "GET" && str_starts_with($_SERVER["REQUEST_URI"], "/meetings/")) { header("Content-Type: application/json"); echo json_encode(["start_url" => "https://us06web.zoom.us/s/85512345678?zak=host-start"]); return; }
 if ($_SERVER["REQUEST_METHOD"] === "GET" && str_starts_with($_SERVER["REQUEST_URI"], "/users/me/token")) { header("Content-Type: application/json"); echo json_encode(["token" => "zak-123"]); return; }
 if ($_SERVER["REQUEST_METHOD"] === "DELETE") { http_response_code(204); return; }
 http_response_code(404); echo "{}";');
@@ -94,6 +96,11 @@ http_response_code(404); echo "{}";');
     $empJoin = $emp->req('zoom-join.php?id=' . $m['id'])['body'];
     ok(str_contains($empJoin, '"zak":""'), 'employee joins as participant');
     ok(str_contains($admin->req('zoom-meetings.php')['body'], 'Start as host') && !str_contains($ep, 'Start as host'), 'MD sees Start as host, employee sees Join here');
+    touch($mockDir . '/nozak');
+    $hp = $admin->req('zoom-join.php?id=' . $m['id'])['body'];
+    ok(str_contains($hp, 'needs its host') && str_contains($hp, 'does not contain scopes:[user:read:zak]') && str_contains($hp, 'https://us06web.zoom.us/s/85512345678?zak=host-start') && !str_contains($hp, 'ZoomMtg.join'), 'no host key: clear reason + Start in Zoom app (host), not a silent wait');
+    ok(str_contains($admin->req('zoom-join.php?id=' . $m['id'] . '&as_guest=1')['body'], '"zak":""'), 'Join here as participant still possible');
+    unlink($mockDir . '/nozak');
 
     echo "Errors and delete\n";
     $r = $admin->post('zoom-meetings.php', ['action' => 'add_meeting', 'zoom_mode' => 'auto', 'title' => 'Fail me', 'starts_at' => '2026-11-20T11:00', 'duration_minutes' => '60']);
