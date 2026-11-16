@@ -1,13 +1,36 @@
 <?php
 // Where a client's request file (requirement_files row) is on disk.
-// Files are saved as storage/requirements/<random>.dat. After a server move or an update upload the saved
-// path can point to the wrong folder, so the file is also looked for by its name in the other known folders.
+// New files are saved OUTSIDE the website folder (next to public_html, in bhavi-private/requirements), because
+// updating the site replaces the website folder and removed storage/requirements with every client file in it.
+// Older files were saved in storage/requirements; every file is looked for by its name in all these folders.
+
+/** Folder for new client request files: outside the website folder when the server allows it. */
+function requirement_storage_dir(): string
+{
+    static $dir;
+    if ($dir !== null) return $dir;
+    $env = getenv('BHAVI_REQUIREMENT_DIR');
+    $candidates = is_string($env) && $env !== '' ? [$env] : [];
+    $candidates[] = dirname(dirname(__DIR__)) . '/bhavi-private/requirements';
+    $candidates[] = dirname(__DIR__) . '/storage/requirements';
+    foreach ($candidates as $candidate) {
+        if (!is_dir($candidate)) @mkdir($candidate, 0700, true);
+        if (is_dir($candidate) && is_writable($candidate)) {
+            // Never served by the web server, even if this folder is inside a web root (e.g. XAMPP htdocs).
+            $guard = dirname($candidate) . '/.htaccess';
+            if (!is_file($guard)) @file_put_contents($guard, "Require all denied\n");
+            return $dir = rtrim(str_replace('\\', '/', $candidate), '/');
+        }
+    }
+    return $dir = dirname(__DIR__) . '/storage/requirements';
+}
 
 /** Folders that can hold request files (only these are ever read). */
 function requirement_file_roots(): array
 {
     $roots = [];
-    foreach ([dirname(__DIR__) . '/storage/requirements', __DIR__ . '/storage/requirements'] as $dir) {
+    $env = getenv('BHAVI_REQUIREMENT_DIR');
+    foreach (array_filter([is_string($env) ? $env : '', dirname(dirname(__DIR__)) . '/bhavi-private/requirements', dirname(__DIR__) . '/storage/requirements', __DIR__ . '/storage/requirements']) as $dir) {
         $real = realpath($dir);
         if ($real && is_dir($real)) $roots[] = rtrim($real, '/\\') . DIRECTORY_SEPARATOR;
     }
@@ -74,7 +97,7 @@ function requirement_file_restore(array $file): ?string
     if ($fileId <= 0) return null;
     try {
         if (!one('SELECT 1 FROM requirement_file_chunks WHERE file_id=? LIMIT 1', [$fileId])) return null;
-        $dir = dirname(__DIR__) . '/storage/requirements';
+        $dir = requirement_storage_dir();
         if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) return null;
         $name = basename(str_replace('\\', '/', (string) ($file['file_path'] ?? '')));
         if (!preg_match('/^[A-Za-z0-9._-]+$/', $name)) $name = bin2hex(random_bytes(20)) . '.dat';

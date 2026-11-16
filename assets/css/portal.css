@@ -4963,3 +4963,12 @@ tr.sc-soon td{background:#f3fbf6}
 /* Client requests: the request opened from a link (#request-N) gets a soft frame with inner space */
 .requirement-card:target{margin:0 -16px;padding:18px 16px;border-radius:14px;background:#fffdf6;box-shadow:0 0 0 2px #ecd9a0}
 .requirement-card:target+.requirement-card{border-top-color:transparent}
+/* Send this request to an employee: same field style and height as the rest of the portal */
+.cr-assign-form{align-items:end;gap:14px 16px;padding:16px 18px 18px}
+.cr-assign-form label>span{font-size:12.5px;font-weight:800;color:#33445e}
+.cr-assign-form select,.cr-assign-form input[type=date]{box-sizing:border-box;height:44px;padding:0 12px;border:1px solid #cfd9e8;border-radius:10px;background-color:#fff;color:#172b49;font:inherit;font-size:14px}
+.cr-assign-form textarea{box-sizing:border-box;min-height:84px;padding:10px 12px;border:1px solid #cfd9e8;border-radius:10px;background:#fff;color:#172b49;font:inherit;font-size:14px;resize:vertical}
+.cr-assign-form select:focus,.cr-assign-form input:focus,.cr-assign-form textarea:focus{outline:none;border-color:#1f4f9c;box-shadow:0 0 0 3px #1f4f9c22}
+.cr-assign-foot{padding-top:4px;border-top:1px solid #eef2f8;margin-top:2px}
+.cr-assign-foot small{flex:1 1 280px;font-size:12.5px;line-height:1.5}
+.cr-assign-foot button{height:44px;padding:0 20px;border-radius:10px}

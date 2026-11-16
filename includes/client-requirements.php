@@ -223,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['conf
             $anyFiles=$anyFiles||$files!==[];
             $tasks[]=['type'=>$requestType,'label'=>$requestType!==''?$requestTypes[$requestType]['label']:'Client request','department'=>$department,'departmentId'=>$departmentId,'remark'=>$remark,'due'=>$dueDate,'urgent'=>$urgent,'files'=>$files];
         }
-        $directory=dirname(__DIR__).'/storage/requirements';
+        $directory=requirement_storage_dir(); // outside the website folder when possible, so site updates do not delete client files
         if ($anyFiles && !is_dir($directory) && !mkdir($directory,0700,true) && !is_dir($directory)) throw new InvalidArgumentException('Unable to create secure requirement file storage.');
         if ($anyFiles && !is_writable($directory)) throw new InvalidArgumentException('Secure requirement file storage is not writable by PHP.');
         db()->beginTransaction();
@@ -233,8 +233,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['conf
             query("INSERT INTO client_requirements (client_id,department_id,title,brief,due_date,status,created_by) VALUES (?,?,?, ?,?,'assigned',?)",[$clientRecord['id'],$task['departmentId'],$title,$task['remark'],$task['due'],$user['id']]);
             $requirementId=(int)db()->lastInsertId();
             foreach ($task['files'] as $file) {
-                $relative='storage/requirements/'.bin2hex(random_bytes(20)).'.dat';
-                $absolute=dirname(__DIR__).'/'.$relative;
+                $storedName=bin2hex(random_bytes(20)).'.dat';
+                $relative='storage/requirements/'.$storedName; // found by its name in requirement_file_roots()
+                $absolute=$directory.'/'.$storedName;
                 if (!move_uploaded_file($file['tmp'],$absolute)) throw new InvalidArgumentException('A file could not be saved. Check available disk space and storage permissions.');
                 clearstatcache(true,$absolute);
                 if (!is_file($absolute) || filesize($absolute)!==(int)$file['size']) throw new InvalidArgumentException('“'.$file['name'].'” did not upload completely. Please try again.');

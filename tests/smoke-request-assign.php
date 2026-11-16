@@ -40,6 +40,8 @@ try {
 
     $sock = stream_socket_server('tcp://127.0.0.1:0'); $addr = stream_socket_get_name($sock, false); fclose($sock);
     $env = getenv(); foreach ($config as $k => $v) $env['BHAVI_' . strtoupper($k)] = (string) $v; $env['BHAVI_APP_ENV'] = 'local'; $env['BHAVI_DB_NAME'] = $database;
+    // Client files go to a private folder outside the website (like bhavi-private/requirements on the live server).
+    $reqDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'bhavi-req-' . bin2hex(random_bytes(4)); mkdir($reqDir); $env['BHAVI_REQUIREMENT_DIR'] = $reqDir;
     $log = tempnam(sys_get_temp_dir(), 'bl'); $tmp[] = $log;
     $process = proc_open([PHP_BINARY, '-d', 'session.save_path=' . sys_get_temp_dir(), '-d', 'display_errors=1', '-d', 'error_reporting=E_ALL', '-S', $addr, '-t', dirname(__DIR__)], [0 => ['pipe', 'r'], 1 => ['file', $log, 'a'], 2 => ['file', $log, 'a']], $pipes, dirname(__DIR__), $env);
     for ($i = 0; $i < 50 && !@stream_socket_client('tcp://' . $addr, $e1, $e2, 0.1); $i++) usleep(100000);
@@ -111,7 +113,8 @@ try {
     ok($admin->req('download-requirement-file.php?id=' . $f1[0]['id'])['body'] === $png, 'file found even when the saved folder is wrong');
     // File deleted from the server folder: it comes back from the database backup copy.
     ok((int) val('SELECT COUNT(*) FROM requirement_file_chunks WHERE file_id=?', [$f1[1]['id']]) >= 1, 'database backup copy saved at upload');
-    $disk = dirname(__DIR__) . '/' . $f1[1]['file_path'];
+    ok(is_file($reqDir . '/' . basename($f1[1]['file_path'])) && !is_file(dirname(__DIR__) . '/' . $f1[1]['file_path']), 'client file saved outside the website folder');
+    $disk = $reqDir . '/' . basename($f1[1]['file_path']);
     unlink($disk);
     $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
     ok($d['status'] === 200 && $d['body'] === $pdf && is_file($disk), 'deleted file still downloads (restored from the backup)');
@@ -133,6 +136,7 @@ try {
     if ($process) { proc_terminate($process); proc_close($process); }
     try { foreach ($pdo->query("SELECT file_path FROM `$database`.work_assignment_attachments")->fetchAll(PDO::FETCH_COLUMN) as $fp) @unlink(dirname(__DIR__) . '/includes/' . $fp); } catch (Throwable $e) {}
     try { foreach ($pdo->query("SELECT file_path FROM `$database`.requirement_files")->fetchAll(PDO::FETCH_COLUMN) as $fp) @unlink(dirname(__DIR__) . '/' . $fp); } catch (Throwable $e) {}
+    if (!empty($reqDir)) { foreach (glob($reqDir . '/*') ?: [] as $x) @unlink($x); @rmdir($reqDir); }
     $pdo->exec("DROP DATABASE IF EXISTS `$database`");
     foreach ($tmp as $f) @unlink($f);
 }
