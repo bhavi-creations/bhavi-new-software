@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 49;
+const PORTAL_SCHEMA_VERSION = 51;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -746,6 +746,38 @@ function portal_install(PDO $pdo, string $database): void
         // Instant Zoom meetings created through the connected Zoom account (host joins with a ZAK token).
         $addColumn('zoom_meetings','is_instant','TINYINT(1) NOT NULL DEFAULT 0');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (49)');
+        // Client meetings & shoots: the Managing Director plans a meeting (live / Google Meet / other) and a shoot
+        // (our team / client / other) for a client; the client sees it and confirms or asks for a change.
+        $pdo->exec("CREATE TABLE IF NOT EXISTS client_engagements (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            client_id BIGINT UNSIGNED NOT NULL,
+            title VARCHAR(150) NOT NULL DEFAULT '',
+            meeting_type VARCHAR(20) NOT NULL DEFAULT 'none',
+            meeting_other VARCHAR(150) NOT NULL DEFAULT '',
+            meeting_at DATETIME NULL,
+            meeting_place VARCHAR(2048) NOT NULL DEFAULT '',
+            shoot_type VARCHAR(20) NOT NULL DEFAULT 'none',
+            shoot_other VARCHAR(150) NOT NULL DEFAULT '',
+            shoot_at DATETIME NULL,
+            shoot_place VARCHAR(500) NOT NULL DEFAULT '',
+            notes VARCHAR(2000) NOT NULL DEFAULT '',
+            status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+            client_response VARCHAR(20) NOT NULL DEFAULT 'pending',
+            client_note VARCHAR(1000) NOT NULL DEFAULT '',
+            responded_at DATETIME NULL,
+            created_by BIGINT UNSIGNED NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_client_engagements_client (client_id,deleted_at),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (50)');
+        // (Unused now — the duration field was removed; clash checks use 1 h per meeting, 3 h per shoot.)
+        $addColumn('client_engagements','meeting_minutes','SMALLINT UNSIGNED NOT NULL DEFAULT 60');
+        $addColumn('client_engagements','shoot_minutes','SMALLINT UNSIGNED NOT NULL DEFAULT 180');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (51)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

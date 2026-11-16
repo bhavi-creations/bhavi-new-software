@@ -36,6 +36,7 @@ function icon(string $name): string
         'inbox' => '<path d="M22 13h-6l-2 3h-4l-2-3H2M5 5h14l3 8v6H2v-6Z"/>',
         'chevron' => '<path d="m6 9 6 6 6-6"/>',
         'pen' => '<path d="m12 19 7-7 3 3-7 7-3-3Z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5ZM2 2l7.6 7.6"/><circle cx="11" cy="11" r="2"/>',
+        'camera' => '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
         'video' => '<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 6-3v10l-6-3"/>',
         'code' => '<path d="m8 8-5 4 5 4m8-8 5 4-5 4M14 4l-4 16"/>',
         'search' => '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
@@ -85,6 +86,7 @@ function page_start(string $title, string $active = ''): void
     if (!is_staff()) $nav['employee-work-history.php']='My submitted work';
     if (!is_staff()) $nav['employee-profile.php']='My profile & salary';
     if (is_staff()) $nav['payslips.php'] = 'Employee payslips';
+    if (is_staff()) { $cmChange=count_value("SELECT COUNT(*) FROM client_engagements WHERE deleted_at IS NULL AND status='scheduled' AND client_response='change_requested'"); $nav['client-meetings.php'] = 'Client meetings & shoots'.($cmChange?' ('.$cmChange.')':''); }
     if (is_staff()) { $reviewCount=pending_review_count(); $nav['attendance-approvals.php']='Attendance approvals'.($reviewCount?' ('.$reviewCount.')':''); $nav['employee-salary.php']='Employee salary'; }
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
@@ -92,7 +94,7 @@ function page_start(string $title, string $active = ''): void
     if (in_array($user['role'],['admin','manager','employee'],true)) { $nav['chat.php']='Chat'; $nav['zoom-meetings.php']='Zoom meetings'; }
     $nav['change-password.php'] = 'Change password';
     if (!is_staff() && $user['role']==='employee') $nav['apply-leaves.php']='Apply leave';
-    if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
+    if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-meetings.php'=>'Meetings & shoots','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
     $adminNav = null;
     if ($user['role'] === 'admin') {
         // New work reports the admin has not seen yet (cleared when the Daily Work Report page is opened).
@@ -114,6 +116,7 @@ function page_start(string $title, string $active = ''): void
                 ]],
                 ['href' => 'manager-assign-work.php', 'label' => 'Tasks', 'icon' => 'tasks'],
                 ['href' => 'add-client.php', 'label' => 'Projects & Clients', 'icon' => 'folder'],
+                ['href' => 'client-meetings.php', 'label' => 'Meetings & shoots', 'icon' => 'camera', 'badge' => count_value("SELECT COUNT(*) FROM client_engagements WHERE deleted_at IS NULL AND status='scheduled' AND client_response='change_requested'"), 'match' => ['client-meetings.php', 'client-meeting-form.php', 'client-meeting-view.php']],
                 ['href' => 'vendors.php', 'label' => 'Vendors', 'icon' => 'store'],
                 ['href' => 'invoices.php', 'label' => 'Invoices', 'icon' => 'document'],
                 ['href' => 'content-schedule.php', 'label' => 'Content schedule', 'icon' => 'calendar', 'badge' => count_value("SELECT COUNT(*) FROM content_schedule WHERE status='scheduled' AND deleted_at IS NULL AND scheduled_at<=?", [date('Y-m-d H:i:s', time() + SCHEDULE_REMIND_BEFORE_MIN * 60)])],
@@ -212,6 +215,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'client-details.php', 'label' => 'Project details', 'icon' => 'briefcase'],
                 ['href' => 'client-payments.php', 'label' => 'Payments', 'icon' => 'card'],
                 ['href' => 'client-reports.php', 'label' => 'Work reports', 'icon' => 'calendar', 'dot' => $newDeliveries > 0, 'dotTitle' => 'New work delivered'],
+                ['href' => 'client-meetings.php', 'label' => 'Meetings & shoots', 'icon' => 'camera', 'badge' => $clientRow ? count_value("SELECT COUNT(*) FROM client_engagements WHERE client_id=? AND deleted_at IS NULL AND status='scheduled' AND client_response='pending'", [$clientRow['id']]) : 0],
             ],
             'Account' => [
                 ['href' => 'change-password.php', 'label' => 'Change password', 'icon' => 'lock'],
@@ -231,7 +235,7 @@ function page_start(string $title, string $active = ''): void
 <nav aria-label="Main navigation"><?php foreach ($nav as $href => $label): ?><a href="<?= h($href) ?>" class="<?= $active === $href || str_starts_with($active,explode('#',$href)[0]) && str_contains($href,'#') ? 'active' : '' ?>" <?= $active === $href ? 'aria-current="page"' : '' ?>><?= icon(str_contains($href,'dashboard')?'dashboard':(str_contains($href,'employee') && !str_contains($href,'work') && !str_contains($href,'brands')?'people':(str_contains($href,'notification')?'bell':(str_contains($href,'password')?'lock':(str_contains($href,'leave') || str_contains($href,'holiday')?'calendar':(str_contains($href,'client') || str_contains($href,'department')?'briefcase':'document')))))) ?><span><?= h($label) ?></span></a><?php endforeach; ?></nav><?php endif; ?>
 <form class="signout" method="post" action="logout.php"><?= csrf_field() ?><button type="submit"><?= icon('logout') ?>Sign out</button></form></aside>
 <div class="portal-main"><header class="portal-topbar"><div class="topbar-left"><button type="button" class="menu-toggle" aria-label="Toggle menu" aria-controls="portalSidebar" aria-expanded="false">☰</button><span>Bhavi <span class="muted">/ <?= h($title) ?></span></span></div><?php if ($tickerItems): $tickerParts=array_map(static fn($a)=>trim($a["title"])." — ".trim(preg_replace('/\s+/u'," ",$a["message"])),$tickerItems); $tickerText=implode(' ',$tickerParts); $tickerHtml=implode('',array_map(static fn($t)=>'<span class="ticker-item">'.h($t).'</span>',$tickerParts)); ?><a class="topbar-ticker" href="manager-notification.php" title="Open announcements" style="--ticker-duration:<?= max(15,min(90,(int)ceil((mb_strlen($tickerText)+count($tickerParts)*18)/6))) ?>s"><span class="ticker-label"><?= icon("megaphone") ?></span><span class="ticker-window"><span class="ticker-track"><span><?= $tickerHtml ?></span><span aria-hidden="true"><?= $tickerHtml ?></span></span></span></a><?php endif; ?><div class="topbar-account"><time datetime="<?= today() ?>"><?= date('d M Y') ?></time><div class="account-name"><strong><?= h($user['full_name']) ?></strong><?php if (!empty($user['department_name'])): ?><small><?= h($user['department_name']) ?></small><?php endif; ?></div><span class="badge role-badge"><?= h(role_label($user['role'])) ?></span></div></header>
-<main class="portal-content<?= $user['role']==='admin' && $title==='Managing Director dashboard'?' admin-dashboard-shell':'' ?>"><?php if (!($user['role']==='admin' && in_array($title,['Managing Director dashboard','Departments'],true)) && !in_array($title,['Add employee','Edit employee','Add client','Edit client','New assignment','Assigned work status','Employee attendance','Leave requests','Chat','Brand assets','Update daily work','My assigned work','My submitted work','Holidays','Request work','Project details','Payments','Work reports','Office timings','My attendance','My salary','Employee salary','Attendance approvals','My desk','Invoices','New invoice','Edit invoice','Content schedule','New schedule','Edit schedule'],true) && !str_ends_with($title,' · Attendance') && !($user['role']==='employee' && str_ends_with($title,' dashboard')) && !($user['role']==='client' && $title==='Dashboard')): ?><div class="page-heading"><h1><?= h($title) ?></h1></div><?php endif; ?>
+<main class="portal-content<?= $user['role']==='admin' && $title==='Managing Director dashboard'?' admin-dashboard-shell':'' ?>"><?php if (!($user['role']==='admin' && in_array($title,['Managing Director dashboard','Departments'],true)) && !in_array($title,['Add employee','Edit employee','Add client','Edit client','New assignment','Assigned work status','Employee attendance','Leave requests','Chat','Brand assets','Update daily work','My assigned work','My submitted work','Holidays','Request work','Project details','Payments','Work reports','Office timings','My attendance','My salary','Employee salary','Attendance approvals','My desk','Invoices','New invoice','Edit invoice','Content schedule','New schedule','Edit schedule','Meetings & shoots','New meeting & shoot','Edit meeting & shoot','Meeting & shoot details'],true) && !str_ends_with($title,' · Attendance') && !($user['role']==='employee' && str_ends_with($title,' dashboard')) && !($user['role']==='client' && $title==='Dashboard')): ?><div class="page-heading"><h1><?= h($title) ?></h1></div><?php endif; ?>
 <?php foreach ($_SESSION['flash'] ?? [] as $message): ?><div class="alert <?= h($message['type']) ?>" role="status"><?= h($message['message']) ?></div><?php endforeach; unset($_SESSION['flash']);
 }
 function page_end(): void

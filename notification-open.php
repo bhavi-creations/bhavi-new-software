@@ -48,6 +48,11 @@ if ($notification['submission_id']) {
 } elseif ($notification['notification_type']==='general' && (str_starts_with($title,'send to client now') || str_starts_with($title,'scheduled post due'))) {
     // Content schedule reminder: open the posts that are due now.
     $destination='content-schedule.php?tab=due';
+} elseif ($notification['notification_type']==='general' && str_starts_with($title,'meeting & shoot')) {
+    // Client meetings & shoots: client confirmed / asked for a change (staff), or a new / updated plan (client).
+    $destination=is_staff()
+        ? 'client-meetings.php?tab='.(str_contains($title,'change requested')?'change':(str_contains($title,'confirmed')?'confirmed':'all'))
+        : 'client-meetings.php';
 } else {
     // Announcements and other messages: show the full message on the Notifications page.
     $destination='manager-notification.php?open='.$notificationId.'#notification-'.$notificationId;

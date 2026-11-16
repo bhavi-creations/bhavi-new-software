@@ -86,6 +86,7 @@ page_start('Dashboard','client-dashboard.php');
     <div class="cd-shortcuts">
         <a class="cd-card cd-shortcut" href="client-details.php"><span class="cd-short-icon"><?= icon('briefcase') ?></span><h3>Project details</h3><p>Contact details, package and social accounts.</p><b>View details →</b></a>
         <a class="cd-card cd-shortcut" href="client-reports.php"><span class="cd-short-icon"><?= icon('calendar') ?></span><h3>Work reports</h3><p>Follow each item from content received to upload.</p><b>Open calendar →</b></a>
+        <a class="cd-card cd-shortcut" href="client-meetings.php"><span class="cd-short-icon"><?= icon('camera') ?></span><h3>Meetings &amp; shoots</h3><p>Your planned meetings and shoot days with our team.</p><b>View schedule →</b></a>
         <a class="cd-card cd-shortcut" href="client-reuirement.php"><span class="cd-short-icon"><?= icon('plus') ?></span><h3>Request work</h3><p>Need an extra post, reel or a change? Tell us here.</p><b>New request →</b></a>
     </div>
 </div>
