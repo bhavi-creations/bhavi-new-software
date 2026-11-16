@@ -13,7 +13,7 @@ function page_access_features(): array
         'salary' => ['Salary', 'employee-salary.php', ['employee-salary.php']],
         'daily_work_report' => ['Daily work report', 'manager-dailywork.php', ['manager-dailywork.php', 'download-work.php', 'manager-work-details.php', 'manager-review-work.php']],
         'client_work_report' => ['Client work report', 'admin-client-work-report.php', ['admin-client-work-report.php', 'download-client-report.php']],
-        'tasks' => ['Tasks (assign work)', 'manager-assign-work.php', ['manager-assign-work.php', 'manager-assigned-status.php', 'download-assignments.php', 'assignment-file.php', 'admin-all-work.php']],
+        'tasks' => ['Tasks (assign work)', 'manager-assign-work.php', ['manager-assign-work.php', 'manager-assigned-status.php', 'download-assignments.php', 'assignment-file.php', 'download-assignment-files.php', 'admin-all-work.php']],
         'clients' => ['Projects & clients', 'add-client.php', ['add-client.php', 'admin-add-client.php', 'client-profile.php', 'client-logo.php', 'client-reveal-password.php', 'download-asset.php', 'download-all-logos.php']],
         'vendors' => ['Vendors', 'vendors.php', ['vendors.php']],
         'invoices' => ['Invoices', 'invoices.php', ['invoices.php', 'invoice-print.php']],

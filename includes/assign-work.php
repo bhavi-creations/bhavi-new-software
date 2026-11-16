@@ -249,7 +249,8 @@ function assignment_task_uploaded_files(
 function save_assignment_attachments(
     int $assignmentId,
     int $taskIndex,
-    int $uploadedBy
+    int $uploadedBy,
+    int $taskNumber = 0
 ): void {
 
 
@@ -417,6 +418,18 @@ function save_assignment_attachments(
             .
             '. Give the PHP/web-server user write permission to this folder.'
         );
+    }
+
+    /*
+     * Files are renamed task-1-file-1.jpg, task-1-file-2.mp4 … (task number = its place in the form).
+     * New files on an edited task continue the numbering after the files it already has.
+     */
+    $fileNumber = 0;
+    if ($taskNumber > 0) {
+        foreach (assignment_attachments($assignmentId) as $existing) {
+            if (preg_match('/^task-\d+-file-(\d+)\./i', (string) $existing['original_name'], $m)) $fileNumber = max($fileNumber, (int) $m[1]);
+            else $fileNumber++;
+        }
     }
 
     $fileInfo =
@@ -650,7 +663,9 @@ function save_assignment_attachments(
 
             [
                 $assignmentId,
-                $originalName,
+                $taskNumber > 0
+                    ? 'task-' . $taskNumber . '-file-' . (++$fileNumber) . '.' . $extension
+                    : $originalName,
                 $storedName,
                 $relativePath,
                 $mimeType,
@@ -668,6 +683,15 @@ function save_assignment_attachments(
 /* =========================================================
    GET ATTACHMENTS
 ========================================================= */
+
+/** Task number used in an edited task's file names: keeps "task-2" when its files are already named task-2-file-N. */
+function assignment_task_number(int $assignmentId): int
+{
+    foreach (assignment_attachments($assignmentId) as $attachment) {
+        if (preg_match('/^task-(\d+)-file-\d+\./i', (string) $attachment['original_name'], $m)) return max(1, (int) $m[1]);
+    }
+    return 1;
+}
 
 function assignment_attachments(
     int $assignmentId
@@ -1395,7 +1419,8 @@ if (
             save_assignment_attachments(
                 $editId,
                 $task['upload_index'],
-                (int) $user['id']
+                (int) $user['id'],
+                assignment_task_number((int) $editId)
             );
 
 
@@ -1442,7 +1467,7 @@ if (
 
 
             foreach (
-                $taskItems as $task
+                $taskItems as $taskPosition => $task
             ) {
 
 
@@ -1495,7 +1520,8 @@ if (
                 save_assignment_attachments(
                     $assignmentId,
                     $task['upload_index'],
-                    (int) $user['id']
+                    (int) $user['id'],
+                    $taskPosition + 1
                 );
 
 
@@ -2060,6 +2086,7 @@ foreach ($assignments as $assignment) {
     if ($attachments) {
         echo '<script>document.addEventListener("DOMContentLoaded",function(){var d=document.getElementById(' . json_encode('assignment-' . $assignment['id']) . ');if(!d)return;var p=document.createElement("div");p.className="st-dialog-files";';
         foreach ($attachments as $attachment) echo 'var a=document.createElement("a");a.href=' . json_encode('assignment-file.php?id=' . (int) $attachment['id']) . ';a.target="_blank";a.rel="noopener";a.textContent=' . json_encode($attachment['original_name']) . ';p.appendChild(a);';
+        if (count($attachments) > 1) echo 'var z=document.createElement("a");z.href=' . json_encode('download-assignment-files.php?id=' . (int) $assignment['id']) . ';z.className="st-dialog-zip";z.textContent="⬇ Download all (' . count($attachments) . ' files)";p.appendChild(z);';
         echo 'd.appendChild(p);});</script>';
     }
 }

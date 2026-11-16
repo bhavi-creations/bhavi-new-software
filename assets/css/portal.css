@@ -4890,3 +4890,8 @@ tr.sc-soon td{background:#f3fbf6}
 @media(max-width:900px){.cmv-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:560px){.cmv-field{grid-template-columns:minmax(0,1fr);gap:2px}}
 @media(max-width:760px){.cm-page .cm-table tbody tr td:last-child{width:auto}.cm-page .cm-table tbody tr td{background:#fff!important}}
+/* Assigned task files: "Download all" as one ZIP */
+.aw-download-all{display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;margin-top:4px;border-radius:10px;background:var(--aw-brand,#1f4f9c);color:#fff;font-size:12.5px;font-weight:800;text-decoration:none}
+.aw-download-all svg{width:15px;height:15px}
+.aw-download-all:hover{filter:brightness(1.08)}
+.st-dialog-zip{display:inline-flex;margin-top:6px;padding:8px 14px;border-radius:9px;background:#1f4f9c;color:#fff!important;font-weight:800;text-decoration:none}

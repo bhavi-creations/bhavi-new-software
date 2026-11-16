@@ -3460,7 +3460,9 @@ $awBrief = static function (?string $text): string {
                         <?php endif; ?>
                         <?php if ($files): foreach ($files as $file): $mime = strtolower((string) $file['mime_type']); $fileIcon = str_starts_with($mime, 'image/') ? '🖼️' : (str_starts_with($mime, 'video/') ? '🎬' : ($mime === 'application/pdf' ? '📄' : '📎')); ?>
                             <div class="aw-file"><span class="aw-file-icon"><?= $fileIcon ?></span><span class="aw-file-name"><?= h($file['original_name']) ?></span><a href="assignment-file.php?id=<?= (int) $file['id'] ?>&amp;mode=view" target="_blank" rel="noopener noreferrer">Open</a><a href="assignment-file.php?id=<?= (int) $file['id'] ?>&amp;mode=download">Save</a></div>
-                        <?php endforeach; else: ?>
+                        <?php endforeach; ?>
+                            <?php if (count($files) > 1): ?><a class="aw-download-all" href="download-assignment-files.php?id=<?= (int) $sel['id'] ?>"><?= icon('download') ?> Download all (<?= count($files) ?> files)</a><?php endif; ?>
+                        <?php else: ?>
                             <span class="aw-file is-empty"><span class="aw-file-icon">📄</span><span>No attached files</span></span>
                         <?php endif; ?>
                         <?php if (!empty($sel['client_logo']) && $sel['client_id']): ?>
