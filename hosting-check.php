@@ -37,8 +37,8 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 }
 // Client request files (Client requests → Attached files): are the saved files really on this server?
 require_once __DIR__.'/includes/requirement-files.php';
-$reqDir=requirement_storage_dir();
-$add('Client request files folder',is_dir($reqDir) && is_writable($reqDir),is_dir($reqDir)?(is_writable($reqDir)?'Exists and is writable · '.count(glob($reqDir.'/*.dat')?:[]).' file(s) inside · '.(realpath($reqDir)?:$reqDir):'Exists but PHP cannot write to it. Give the PHP account write access.'):'Missing. It is created on the first client upload; if uploads fail, create it and make it writable.');
+$reqOk=true; foreach (REQUIREMENT_UPLOAD_FOLDERS as $reqFolder) { $reqPath=requirement_upload_base().'/'.$reqFolder; if (is_dir($reqPath) && !is_writable($reqPath)) $reqOk=false; }
+$add('Client request files folders',$reqOk,requirement_upload_summary().' · images go to uploads/photos, PDFs to uploads/pdf, other files to uploads/files.');
 $openBasedir=(string)ini_get('open_basedir');
 if ($openBasedir!=='') $add('PHP open_basedir',true,'Restricted to: '.$openBasedir);
 try {

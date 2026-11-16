@@ -18,9 +18,8 @@ if (!$path) {
     $message='“'.$file['original_file_name'].'” is not on the server any more, so it cannot be downloaded. '.($user['role']==='client'?'Please send this file again with a new request.':'Ask the client to send this file again.');
     if ($user['role']==='admin') {
         // Reason for the Managing Director: where the file was saved, and what this server has.
-        $dir=requirement_storage_dir();
-        $count=is_dir($dir)?count(glob($dir.'/*.dat')?:[]):0;
-        $message.=' Details: this server’s folder '.str_replace('\\','/',$dir).' '.(is_dir($dir)?'has '.$count.' file(s)':'does not exist').'.'
+        $where=requirement_upload_summary();
+        $message.=' Details: this server has '.$where.'.'
             .((string)$file['description']!==''?' The file was '.lcfirst((string)$file['description']).'.':' (Uploaded before upload tracking was added.)');
     }
     flash($message,'error');

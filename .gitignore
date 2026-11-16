@@ -14,3 +14,7 @@
 /uploads/pdf/*
 !/uploads/pdf/.htaccess
 /config.zoom.php
+
+!/uploads/files/
+/uploads/files/*
+!/uploads/files/.htaccess

@@ -133,8 +133,8 @@ try {
     ok($admin->req('download-requirement-file.php?id=' . $f1[0]['id'])['body'] === $png, 'file found even when the saved folder is wrong');
     // File deleted from the server folder: it comes back from the database backup copy.
     ok((int) val('SELECT COUNT(*) FROM requirement_file_chunks WHERE file_id=?', [$f1[1]['id']]) >= 1, 'database backup copy saved at upload');
-    ok(is_file($reqDir . '/' . basename($f1[1]['file_path'])) && !is_file(dirname(__DIR__) . '/' . $f1[1]['file_path']), 'client file saved outside the website folder');
-    $disk = $reqDir . '/' . basename($f1[1]['file_path']);
+    ok(str_starts_with($f1[0]['file_path'], 'uploads/photos/client-') && str_ends_with($f1[0]['file_path'], '.png') && str_starts_with($f1[1]['file_path'], 'uploads/pdf/client-') && str_ends_with($f1[1]['file_path'], '.pdf') && is_file($reqDir . '/' . $f1[1]['file_path']), 'image saved in uploads/photos, PDF in uploads/pdf: ' . $f1[0]['file_path'] . ', ' . $f1[1]['file_path']);
+    $disk = $reqDir . '/' . $f1[1]['file_path'];
     unlink($disk);
     $d = $admin->req('download-requirement-file.php?id=' . $f1[1]['id']);
     ok($d['status'] === 200 && $d['body'] === $pdf && is_file($disk), 'deleted file still downloads (restored from the backup)');
@@ -156,7 +156,7 @@ try {
     if ($process) { proc_terminate($process); proc_close($process); }
     try { foreach ($pdo->query("SELECT file_path FROM `$database`.work_assignment_attachments")->fetchAll(PDO::FETCH_COLUMN) as $fp) @unlink(dirname(__DIR__) . '/includes/' . $fp); } catch (Throwable $e) {}
     try { foreach ($pdo->query("SELECT file_path FROM `$database`.requirement_files")->fetchAll(PDO::FETCH_COLUMN) as $fp) @unlink(dirname(__DIR__) . '/' . $fp); } catch (Throwable $e) {}
-    if (!empty($reqDir)) { foreach (glob($reqDir . '/*') ?: [] as $x) @unlink($x); @rmdir($reqDir); }
+    if (!empty($reqDir)) { foreach (glob($reqDir . '/uploads/*/{.htaccess,*}', GLOB_BRACE) ?: [] as $x) @unlink($x); foreach (glob($reqDir . '/uploads/*') ?: [] as $x) @rmdir($x); @rmdir($reqDir . '/uploads'); @rmdir($reqDir); }
     $pdo->exec("DROP DATABASE IF EXISTS `$database`");
     foreach ($tmp as $f) @unlink($f);
 }

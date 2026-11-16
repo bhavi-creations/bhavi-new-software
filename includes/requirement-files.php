@@ -1,36 +1,62 @@
 <?php
 // Where a client's request file (requirement_files row) is on disk.
-// New files are saved OUTSIDE the website folder (next to public_html, in bhavi-private/requirements), because
-// updating the site replaces the website folder and removed storage/requirements with every client file in it.
-// Older files were saved in storage/requirements; every file is looked for by its name in all these folders.
+// New files are saved by type, next to the other uploads: images in uploads/photos, PDFs in uploads/pdf,
+// everything else (videos, Word, ZIP …) in uploads/files. These folders are blocked from direct web access;
+// files are only given out through download-requirement-file.php.
+// Older files were saved in storage/requirements (or bhavi-private/requirements); every file is also looked for
+// by its name in all these folders, and comes back from the database backup copy when it is lost.
 
-/** Folder for new client request files: outside the website folder when the server allows it. */
+const REQUIREMENT_UPLOAD_FOLDERS = ['uploads/photos', 'uploads/pdf', 'uploads/files'];
+
+/** Base folder that holds uploads/… (the portal folder; BHAVI_REQUIREMENT_DIR only in tests). */
+function requirement_upload_base(): string
+{
+    $env = getenv('BHAVI_REQUIREMENT_DIR');
+    return rtrim(str_replace('\\', '/', is_string($env) && $env !== '' ? $env : dirname(__DIR__)), '/');
+}
+
+/** uploads/photos for images, uploads/pdf for PDFs, uploads/files for everything else. */
+function requirement_upload_folder(string $mime, string $name): string
+{
+    $mime = strtolower($mime);
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (str_starts_with($mime, 'image/') && $mime !== 'image/svg+xml') return 'uploads/photos';
+    if ($mime === 'application/pdf' || ($ext === 'pdf' && $mime === 'application/octet-stream')) return 'uploads/pdf';
+    return 'uploads/files';
+}
+
+/**
+ * [relative path saved in the database, absolute path] for a new client file, e.g.
+ * ['uploads/photos/client-1a2b….png', '/home/…/public_html/uploads/photos/client-1a2b….png'].
+ */
+function requirement_upload_target(string $mime, string $name): array
+{
+    $folder = requirement_upload_folder($mime, $name);
+    $dir = requirement_upload_base() . '/' . $folder;
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) throw new InvalidArgumentException('Unable to create the ' . $folder . ' folder for client files.');
+    if (!is_writable($dir)) throw new InvalidArgumentException('The ' . $folder . ' folder is not writable by PHP. Give it write permission.');
+    // Never served directly by the web server (photos/pdf already have this file).
+    if (!is_file($dir . '/.htaccess')) @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (!preg_match('/^[a-z0-9]{1,8}$/', $ext)) $ext = $folder === 'uploads/pdf' ? 'pdf' : 'bin';
+    if (in_array($ext, ['php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php7', 'php8', 'cgi', 'pl', 'htaccess', 'html', 'htm', 'svg'], true)) $ext = 'bin';
+    $stored = 'client-' . bin2hex(random_bytes(16)) . '.' . $ext;
+    return [$folder . '/' . $stored, $dir . '/' . $stored];
+}
+
+/** Folder shown in Hosting checks / the missing-file message (where new client files go). */
 function requirement_storage_dir(): string
 {
-    static $dir;
-    if ($dir !== null) return $dir;
-    $env = getenv('BHAVI_REQUIREMENT_DIR');
-    $candidates = is_string($env) && $env !== '' ? [$env] : [];
-    $candidates[] = dirname(dirname(__DIR__)) . '/bhavi-private/requirements';
-    $candidates[] = dirname(__DIR__) . '/storage/requirements';
-    foreach ($candidates as $candidate) {
-        if (!is_dir($candidate)) @mkdir($candidate, 0700, true);
-        if (is_dir($candidate) && is_writable($candidate)) {
-            // Never served by the web server, even if this folder is inside a web root (e.g. XAMPP htdocs).
-            $guard = dirname($candidate) . '/.htaccess';
-            if (!is_file($guard)) @file_put_contents($guard, "Require all denied\n");
-            return $dir = rtrim(str_replace('\\', '/', $candidate), '/');
-        }
-    }
-    return $dir = dirname(__DIR__) . '/storage/requirements';
+    return requirement_upload_base() . '/uploads';
 }
 
 /** Folders that can hold request files (only these are ever read). */
 function requirement_file_roots(): array
 {
     $roots = [];
-    $env = getenv('BHAVI_REQUIREMENT_DIR');
-    foreach (array_filter([is_string($env) ? $env : '', dirname(dirname(__DIR__)) . '/bhavi-private/requirements', dirname(__DIR__) . '/storage/requirements', __DIR__ . '/storage/requirements']) as $dir) {
+    $dirs = array_map(static fn($f) => requirement_upload_base() . '/' . $f, REQUIREMENT_UPLOAD_FOLDERS);
+    array_push($dirs, dirname(dirname(__DIR__)) . '/bhavi-private/requirements', dirname(__DIR__) . '/storage/requirements', __DIR__ . '/storage/requirements');
+    foreach ($dirs as $dir) {
         $real = realpath($dir);
         if ($real && is_dir($real)) $roots[] = rtrim($real, '/\\') . DIRECTORY_SEPARATOR;
     }
@@ -48,7 +74,7 @@ function requirement_file_path(array $file): ?string
         foreach ($roots as $root) if (strncasecmp($path, $root, strlen($root)) === 0) return true;
         return false;
     };
-    $candidates = [dirname(__DIR__) . '/' . $relative, __DIR__ . '/' . $relative];
+    $candidates = [requirement_upload_base() . '/' . $relative, dirname(__DIR__) . '/' . $relative, __DIR__ . '/' . $relative];
     $name = basename($relative);
     if (preg_match('/^[A-Za-z0-9._-]+$/', $name)) foreach ($roots as $root) $candidates[] = $root . $name;
     foreach ($candidates as $candidate) {
@@ -90,16 +116,20 @@ function requirement_file_backup(int $fileId, string $path): bool
     }
 }
 
-/** Writes the database backup copy back to storage/requirements and returns its path, or null when there is no copy. */
+/** Writes the database backup copy back to its uploads folder and returns its path, or null when there is no copy. */
 function requirement_file_restore(array $file): ?string
 {
     $fileId = (int) ($file['id'] ?? 0);
     if ($fileId <= 0) return null;
     try {
         if (!one('SELECT 1 FROM requirement_file_chunks WHERE file_id=? LIMIT 1', [$fileId])) return null;
-        $dir = requirement_storage_dir();
-        if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) return null;
-        $name = basename(str_replace('\\', '/', (string) ($file['file_path'] ?? '')));
+        $relative = ltrim(str_replace('\\', '/', (string) ($file['file_path'] ?? '')), '/');
+        $folder = dirname($relative);
+        if (!in_array($folder, REQUIREMENT_UPLOAD_FOLDERS, true)) $folder = requirement_upload_folder((string) ($file['mime_type'] ?? ''), (string) ($file['original_file_name'] ?? ''));
+        $dir = requirement_upload_base() . '/' . $folder;
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) return null;
+        if (!is_file($dir . '/.htaccess')) @file_put_contents($dir . '/.htaccess', "Require all denied\n");
+        $name = basename($relative);
         if (!preg_match('/^[A-Za-z0-9._-]+$/', $name)) $name = bin2hex(random_bytes(20)) . '.dat';
         $target = $dir . '/' . $name;
         $tmp = $target . '.part';
@@ -139,4 +169,15 @@ function requirement_files_html(array $files, bool $withHeading = true): string
         $out .= '<a class="rq-download-all" href="download-requirement-files.php?id=' . (int) $files[0]['requirement_id'] . '">⬇ Download all (' . $found . ' files)</a>';
     }
     return $out;
+}
+
+/** "uploads/photos: 3 client files · uploads/pdf: 1 · uploads/files: 0" (Hosting checks, missing-file message). */
+function requirement_upload_summary(): string
+{
+    $parts = [];
+    foreach (REQUIREMENT_UPLOAD_FOLDERS as $folder) {
+        $dir = requirement_upload_base() . '/' . $folder;
+        $parts[] = $folder . ': ' . (is_dir($dir) ? count(glob($dir . '/client-*') ?: []) . ' client file(s)' . (is_writable($dir) ? '' : ' (NOT writable)') : 'folder missing');
+    }
+    return implode(' · ', $parts);
 }
