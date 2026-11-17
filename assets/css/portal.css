@@ -5204,3 +5204,15 @@ tr.sc-soon td{background:#f3fbf6}
 .mtg-change-btn{padding:6px 12px;border-radius:8px;background:#b42318;color:#fff!important;font-size:12.5px;font-weight:800;text-decoration:none;white-space:nowrap}
 .mtg-change-btn:hover{filter:brightness(1.1)}
 .mtg-ask{flex:1 1 100%;color:#b42318;font-size:12.5px;font-weight:600;overflow-wrap:anywhere}
+/* Client: change the monthly meeting date right on the countdown card */
+.mm-change-box{flex:1 1 100%;display:grid;gap:8px}
+.mm-change-wait{margin:0;padding:8px 12px;border-radius:10px;background:#fff3d6;color:#5c4100;font-size:13px}
+.mm-change-inline>summary{display:inline-flex;list-style:none;cursor:pointer}
+.mm-change-inline>summary::-webkit-details-marker{display:none}
+.mm-change-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:10px;padding:14px;border:1px solid #e3e8f1;border-radius:14px;background:#fff}
+.mm-change-form label{display:grid;gap:4px;font-size:12.5px;font-weight:700;color:#5b6b82}
+.mm-change-form label[hidden]{display:none}
+.mm-change-form input,.mm-change-form select,.mm-change-form textarea{padding:8px 10px;border:1px solid #d9e1ee;border-radius:8px;font:inherit;color:#172b49}
+.mm-change-reason,.mm-change-send{grid-column:1/-1}
+.mm-change-send{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.mm-change-send small{color:#6a7b94}

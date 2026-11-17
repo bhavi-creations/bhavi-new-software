@@ -64,6 +64,18 @@ try {
     $client = new B($base); $dash = $client->login('kiran', 'Secret123!');
     ok(str_contains($dash['body'], 'Your next monthly meeting') && str_contains($dash['body'], date('d-m-Y', $target)) && str_contains($dash['body'], 'days to go'), 'client dashboard shows countdown');
     ok(str_contains($dash['body'], 'Join Google Meet'), 'Google Meet link on dashboard');
+    ok(str_contains($dash['body'], 'Change meeting date') && str_contains($dash['body'], 'name="back" value="client-dashboard.php"') && str_contains($dash['body'], 'Send to Managing Director'), 'dashboard card has Change meeting date form');
+    $cardDate = date('Y-m-d', strtotime('+6 days'));
+    $r = $client->post('client-monthly-meeting.php', ['action' => 'request_change', 'back' => 'client-dashboard.php', 'new_date' => $cardDate, 'new_time' => '15:00', 'scope' => 'once', 'reason' => 'Card request']);
+    ok($r['status'] === 303 && str_starts_with($r['headers']['location'] ?? '', 'client-dashboard.php') && (int) val("SELECT COUNT(*) FROM client_meeting_changes WHERE reason='Card request' AND status='pending'") === 1, 'request from the card is saved and goes back to the dashboard');
+    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title LIKE 'Monthly meeting change requested%' AND message LIKE '%Card request%'", [$md]) === 1, 'Managing Director is notified');
+    $mdDash = $admin->req('admin-dashboard.php');
+    ok(str_contains($mdDash['body'], 'Change requests from clients') && str_contains($mdDash['body'], 'Card request'), 'request shows on the MD dashboard');
+    $dash = $client->req('client-dashboard.php');
+    ok(str_contains($dash['body'], 'is waiting for the Managing Director') && str_contains($dash['body'], 'Change my request'), 'client sees it is waiting');
+    $r = $client->post('client-monthly-meeting.php', ['action' => 'request_change', 'back' => 'client-dashboard.php', 'new_date' => $cardDate, 'new_time' => '15:00', 'scope' => 'once', 'reason' => '']);
+    ok($r['status'] === 303 && str_contains($r['headers']['location'] ?? '', 'client-dashboard.php#mm-change-open'), 'error goes back to the card');
+    $pdo->exec("DELETE FROM client_meeting_changes WHERE reason='Card request'"); $pdo->exec("DELETE FROM notifications WHERE message LIKE '%Card request%'");
     $pd = $client->req('client-details.php');
     ok(str_contains($pd['body'], 'Every month on the'), 'project details show the monthly rule');
     $mp = $client->req('client-monthly-meeting.php');

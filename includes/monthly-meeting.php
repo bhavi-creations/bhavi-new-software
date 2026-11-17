@@ -131,6 +131,43 @@ function mm_pending_count(): int
     return count_value("SELECT COUNT(*) FROM client_meeting_changes m JOIN clients c ON c.id=m.client_id WHERE m.status='pending' AND c.deleted_at IS NULL");
 }
 
+/**
+ * Client: "Change meeting date" right on the countdown card. The request goes to the Managing Director
+ * (notification + dashboard), who approves it or sets another date. Shows the open request while it waits.
+ */
+function mm_client_change_box(array $client, array $next): void
+{
+    if (basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) === 'client-monthly-meeting.php') return; // that page has the full form
+    $pending = one("SELECT * FROM client_meeting_changes WHERE client_id=? AND status='pending' ORDER BY id DESC LIMIT 1", [(int) $client['id']]);
+    $back = basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) === 'client-details.php' ? 'client-details.php' : 'client-dashboard.php';
+    $pendingDate = $pending ? date('Y-m-', strtotime($pending['start_month'])) . sprintf('%02d', min((int) $pending['meeting_day'], (int) date('t', strtotime($pending['start_month'])))) : '';
+    ?>
+    <div class="mm-change-box" id="mm-change">
+        <?php if ($pending): ?><p class="mm-change-wait">⏳ Your request to move the meeting to <b><?= h(date('D, j M Y', strtotime($pendingDate))) ?> · <?= h(mm_time_label($pending['meeting_time'])) ?></b> (<?= h(mm_scope_label($pending)) ?>) is waiting for the Managing Director.</p><?php endif; ?>
+        <details class="mm-change-inline">
+            <summary class="mm-btn"><?= $pending ? 'Change my request' : 'Change meeting date' ?></summary>
+            <form method="post" action="client-monthly-meeting.php" class="mm-change-form" data-mm-inline><?= csrf_field() ?>
+                <input type="hidden" name="action" value="request_change"><input type="hidden" name="back" value="<?= h($back) ?>">
+                <label><span>New date *</span><input type="date" name="new_date" min="<?= h(date('Y-m-d')) ?>" value="<?= h($next['date']) ?>" required></label>
+                <label><span>New time *</span><input type="time" name="new_time" value="<?= h(substr((string) ($next['time'] ?: '11:00:00'), 0, 5)) ?>" required></label>
+                <label><span>For how long?</span><select name="scope" data-mm-scope><option value="once">Only this month</option><option value="months">For some months</option><option value="permanent">Every month from now</option></select></label>
+                <label data-mm-n hidden><span>How many months?</span><input type="number" name="months" min="1" max="24" value="3"></label>
+                <label class="mm-change-reason"><span>Reason *</span><textarea name="reason" rows="2" maxlength="1000" required placeholder="e.g. We have an event that day. Please move it to the 23rd."></textarea></label>
+                <div class="mm-change-send"><button class="mm-btn is-gold" type="submit">Send to Managing Director</button><small>The Managing Director will approve it or suggest another date.</small></div>
+            </form>
+        </details>
+    </div>
+    <script>
+    document.querySelectorAll('[data-mm-inline]').forEach(function (f) {
+        var s = f.querySelector('[data-mm-scope]'), n = f.querySelector('[data-mm-n]');
+        var sync = function () { n.hidden = s.value !== 'months'; };
+        s.addEventListener('change', sync); sync();
+        if (location.hash === '#mm-change-open') f.closest('details').open = true; // reopened after an error
+    });
+    </script>
+    <?php
+}
+
 /** Small countdown card (client dashboard, project details). */
 function mm_countdown_card(array $client, bool $forClient): string
 {
@@ -148,8 +185,9 @@ function mm_countdown_card(array $client, bool $forClient): string
         </div>
         <div class="mm-count-actions">
             <?php if (($client['meeting_mode'] ?? '') === 'google_meet' && preg_match('#^https?://#i', (string) $client['meeting_place'])): ?><a class="mm-btn is-gold" href="<?= h($client['meeting_place']) ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a><?php endif; ?>
-            <a class="mm-btn" href="client-monthly-meeting.php<?= $forClient ? '' : '?client=' . (int) $client['id'] ?>"><?= $forClient ? 'Change meeting time' : 'Change time' ?></a>
+            <?php if (!$forClient): ?><a class="mm-btn" href="client-monthly-meeting.php?client=<?= (int) $client['id'] ?>">Change time</a><?php endif; ?>
         </div>
+        <?php if ($forClient): mm_client_change_box($client, $next); endif; ?>
     </section>
     <?php return (string) ob_get_clean();
 }

@@ -30,8 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             query('INSERT INTO client_meeting_changes (client_id,meeting_day,meeting_time,start_month,months,reason,status,requested_by) VALUES (?,?,?,?,?,?,?,?)', [$ownClient['id'], $in['meeting_day'], $in['meeting_time'], $in['start_month'], $in['months'], $reason, 'pending', $user['id']]);
             query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) SELECT id,?,'general',?,? FROM users WHERE deleted_at IS NULL AND account_status='active' AND role IN ('admin','manager')", [$user['id'], MM_NOTICE_PREFIX . ' change requested by ' . $ownClient['client_name'], $changeText($in) . "\nReason: " . $reason]);
             db()->commit();
-            flash('Your request was sent. We will confirm the new meeting time soon.');
-            redirect('client-monthly-meeting.php');
+            flash('Your request was sent to the Managing Director. We will confirm the new meeting date soon.');
+            // Sent from the countdown card (dashboard / project details): go back there.
+            $back = (string) ($_POST['back'] ?? '');
+            redirect(in_array($back, ['client-dashboard.php', 'client-details.php'], true) ? $back . '#mm-change' : 'client-monthly-meeting.php');
         }
 
         if ($action === 'decide') {
@@ -74,6 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $e) {
         if (db()->inTransaction()) db()->rollBack();
         $error = mutation_error($e);
+        // Request sent from the countdown card: show the problem back on that page.
+        $back = (string) ($_POST['back'] ?? '');
+        if ($isClient && in_array($back, ['client-dashboard.php', 'client-details.php'], true)) { flash($error, 'error'); redirect($back . '#mm-change-open'); }
     }
 }
 
