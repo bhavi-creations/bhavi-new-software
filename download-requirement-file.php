@@ -15,7 +15,7 @@ $path=requirement_file_path($file);
 if (!$path) {
     // The database has the file but the server folder does not (e.g. lost in a server move or update upload).
     error_log('Request file missing on disk: id '.(int)$file['id'].' path '.$file['file_path']);
-    $message='“'.$file['original_file_name'].'” is not on the server any more, so it cannot be downloaded. '.($user['role']==='client'?'Please send this file again with a new request.':'Ask the client to send this file again.');
+    $message='“'.$file['original_file_name'].'” is not on the server any more, so it cannot be downloaded. '.($user['role']==='client'?'Please send this file again with a new request.':'On the Client requests page use “Upload this file” (if you have it) or “Ask client to send again”.');
     if ($user['role']==='admin') {
         // Reason for the Managing Director: where the file was saved, and what this server has.
         $where=requirement_upload_summary();

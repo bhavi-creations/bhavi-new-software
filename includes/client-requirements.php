@@ -218,7 +218,45 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='share_requi
     }
 }
 
-if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement','share_requirement','complete_requirement'],true)) {
+// Admin / manager: a client file is missing on the server — upload it again (e.g. from WhatsApp), or ask the client to resend it.
+if ($_SERVER['REQUEST_METHOD']==='POST' && in_array($_POST['action']??'',['replace_requirement_file','ask_resend_file'],true)) {
+    require_roles(['admin','manager']); check_csrf(); $savedPath=null;
+    try {
+        $file=one('SELECT f.*,r.client_id,r.title,c.client_name,c.user_id AS client_user_id FROM requirement_files f JOIN client_requirements r ON r.id=f.requirement_id JOIN clients c ON c.id=r.client_id WHERE f.id=? AND c.deleted_at IS NULL',[positive_id($_POST['file_id']??null)]);
+        if (!$file) throw new InvalidArgumentException('Request file not found.');
+        $back='client-reuirement.php#request-'.(int)$file['requirement_id'];
+        if ($_POST['action']==='ask_resend_file') {
+            if (!$file['client_user_id']) throw new InvalidArgumentException($file['client_name'].' has no portal login. Ask them on phone / WhatsApp to send the file again.');
+            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) VALUES (?,?,'requirement',?,?,?)",[$file['client_user_id'],$user['id'],'Please send a file again',mb_substr('We could not open “'.$file['original_file_name'].'” from your request “'.preg_replace('/^URGENT · /u','',(string)$file['title']).'”. Please send it again with a new request.',0,500),$file['requirement_id']]);
+            flash('The client was asked to send “'.$file['original_file_name'].'” again.');
+            redirect($back);
+        }
+        $up=$_FILES['replacement']??null;
+        if (!$up || ($up['error']??UPLOAD_ERR_NO_FILE)===UPLOAD_ERR_NO_FILE) throw new InvalidArgumentException('Choose the file to upload.');
+        if ($up['error']!==UPLOAD_ERR_OK || !is_uploaded_file($up['tmp_name'])) throw new InvalidArgumentException('The upload failed. Check the server upload limit and try again.');
+        $size=(int)filesize($up['tmp_name']);
+        $mime=substr((new finfo(FILEINFO_MIME_TYPE))->file($up['tmp_name'])?:'application/octet-stream',0,100);
+        $name=preg_replace('/[\x00-\x1F\x7F]/u','',basename(str_replace('\\','/',(string)$up['name'])))?:'client-file';
+        if (strlen($name)>255) $name=substr($name,0,255);
+        $type=str_starts_with($mime,'image/')?'image':(str_starts_with($mime,'video/')?'video':(str_starts_with($mime,'text/')?'text':'other'));
+        [$relative,$absolute]=requirement_upload_target($mime,$name);
+        if (!move_uploaded_file($up['tmp_name'],$absolute)) throw new InvalidArgumentException('The file could not be saved. Check disk space and folder permissions.');
+        $savedPath=$absolute;
+        clearstatcache(true,$absolute);
+        if (!is_file($absolute) || filesize($absolute)!==$size) throw new InvalidArgumentException('“'.$name.'” did not upload completely. Please try again.');
+        query('UPDATE requirement_files SET file_type=?,description=?,original_file_name=?,file_path=?,mime_type=?,file_size_bytes=? WHERE id=?',[$type,mb_substr('Uploaded again by '.$user['full_name'].' on '.preg_replace('/[^A-Za-z0-9.:-]/','',(string)($_SERVER['HTTP_HOST']??'')),0,255),$name,$relative,$mime,$size,$file['id']]);
+        $savedPath=null;
+        requirement_file_backup((int)$file['id'],$absolute); // database copy, so it cannot go missing again
+        flash('“'.$name.'” is uploaded. It can be downloaded now.');
+        redirect($back);
+    } catch (Throwable $e) {
+        if ($savedPath && is_file($savedPath)) @unlink($savedPath);
+        flash(mutation_error($e),'error');
+        redirect('client-reuirement.php');
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement','share_requirement','complete_requirement','replace_requirement_file','ask_resend_file'],true)) {
     require_roles(['client']); check_csrf(); $storedFiles=[];
     try {
         if (($_POST['action']??'')!=='submit_requirement') throw new InvalidArgumentException('Invalid request.');
@@ -637,5 +675,5 @@ if (is_staff()) {
     };
 }
 ?>
-<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,requirement_id,original_file_name,file_size_bytes,file_path,description FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?><article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>" id="request-<?= (int)$requirement['id'] ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?= requirement_files_html($files) ?><?php if (!$isProof && is_staff()) $crAssignBox($requirement,$files); ?></article><?php endforeach; ?></section><?php endif; ?>
+<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,requirement_id,original_file_name,file_size_bytes,file_path,mime_type,description FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?><article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>" id="request-<?= (int)$requirement['id'] ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?= requirement_files_html($files,true,is_staff()) ?><?php if (!$isProof && is_staff()) $crAssignBox($requirement,$files); ?></article><?php endforeach; ?></section><?php endif; ?>
 <?php page_end(); ?>

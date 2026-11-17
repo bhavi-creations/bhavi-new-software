@@ -5145,3 +5145,7 @@ tr.sc-soon td{background:#f3fbf6}
 .live-toast-close:hover{background:#eef3fb;color:#172b49}
 @keyframes live-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media(max-width:560px){.live-toasts{right:16px;left:16px;bottom:16px;width:auto}}
+/* Missing client file: upload it again / ask the client */
+.requirement-file-list li.is-missing .rq-replace-form{margin-left:auto}
+.requirement-file-list li.is-missing .rq-replace-form .rq-file-btn{cursor:pointer;display:inline-block}
+.requirement-file-list li.is-missing .button{padding:5px 12px;font-size:12px}
