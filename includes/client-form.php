@@ -2,10 +2,19 @@
 require_once __DIR__ . '/layout.php';
 require_once __DIR__.'/finance.php';
 require_once __DIR__.'/monthly-meeting.php';
+require_once __DIR__.'/meeting-agenda.php';
 $user=require_roles(['admin','manager']);
 $id=(int)($_GET['id'] ?? 0);
 $record=$id?one('SELECT * FROM clients WHERE id=? AND deleted_at IS NULL',[$id]):null;
 if ($id && !$record) fail(404,'Client not found.');
+// Live check from the meeting date box: is that day free? (one client a day — no other client's meeting or shoot)
+if (isset($_GET['meeting_check'])) {
+    $checkDate=(string)$_GET['meeting_check'];
+    header('Content-Type: application/json; charset=utf-8'); header('Cache-Control: no-store');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$checkDate) || !checkdate((int)substr($checkDate,5,2),(int)substr($checkDate,8,2),(int)substr($checkDate,0,4))) { echo json_encode(['ok'=>false]); exit; }
+    echo json_encode(['ok'=>true,'clashes'=>meeting_day_clashes($checkDate,($_GET['scope']??'permanent')!=='months',$id)],JSON_UNESCAPED_UNICODE);
+    exit;
+}
 $login=$record && $record['user_id']?one('SELECT username,credential_cipher FROM users WHERE id=?',[$record['user_id']]):null;
 $error=null;
 const CLIENT_INDUSTRIES=['Retail & shops','Manufacturing','Real estate','Healthcare & clinics','Education','Food & restaurants','Hotels & hospitality','Fashion & beauty','Automobile','Finance & insurance','IT & software','Construction','Events & entertainment','Other'];
@@ -104,6 +113,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             if ($months===false || $months===null) throw new InvalidArgumentException('Enter for how many months the new meeting date applies (1 to 24).');
             $meetingOverride=['meeting_day'=>$extra['meeting_day'],'meeting_time'=>$extra['meeting_time'],'start_month'=>$startMonth.'-01','months'=>$months];
             $extra['meeting_day']=(int)$record['meeting_day']; $extra['meeting_time']=(string)$record['meeting_time'];
+        }
+        // One client a day: a new or changed meeting date must be free — no other client's monthly meeting or shoot
+        // that day (and, for a date that repeats every month, no other client on the same day of the month).
+        $meetingDayChanged=$meetingOverride!==null || ($extra['meeting_day']!==null && (!$record || (int)$extra['meeting_day']!==(int)($record['meeting_day']??0)));
+        if ($meetingDayChanged && $meetingDate!=='') {
+            $clashes=meeting_day_clashes($meetingDate,$meetingOverride===null,$id);
+            if ($clashes) throw new InvalidArgumentException('This meeting date is not available (one client a day). Already booked: '.implode('; ',$clashes).'. Please choose another date.');
         }
         $meetingMode=(string)($_POST['meeting_mode']??'live');
         $extra['meeting_mode']=in_array($meetingMode,['live','google_meet','phone','zoom'],true)?$meetingMode:'live';
@@ -403,6 +419,40 @@ foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; $savedS
         hint.textContent = (n === 1 ? monthName(from) : monthName(from) + ' – ' + monthName(to)) + ': meeting on the ' + ord(day) + ' at ' + timeLabel(mTime.value) + '. From ' + monthName(back) + ' it goes back to the usual ' + ord(+mScope.dataset.origDay) + ' at ' + timeLabel(mScope.dataset.origTime) + '.';
     }
     if (mDay) { form.addEventListener('change', meetingPreview); form.addEventListener('input', meetingPreview); meetingPreview(); }
+    // One client a day: when a meeting date is picked, ask the server if that day is free. If another client has a
+    // meeting or a shoot then, show a popup with who is booked and put the date back.
+    if (mDay) {
+        var mPrev = mDay.value, clientId = new URLSearchParams(location.search).get('id') || '';
+        var busyPopup = function (date, clashes) {
+            var when = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'});
+            var dlg = document.createElement('dialog'); dlg.className = 'mm-busy';
+            var h = document.createElement('h3'); h.textContent = '📅 ' + when + ' is not available';
+            var p = document.createElement('p'); p.textContent = 'Only one client a day. That day is already booked for:';
+            var ul = document.createElement('ul'); clashes.forEach(function (c) { var li = document.createElement('li'); li.textContent = c; ul.appendChild(li); });
+            var ok = document.createElement('button'); ok.type = 'button'; ok.className = 'emp-btn emp-btn-gold'; ok.textContent = 'Choose another date';
+            ok.addEventListener('click', function () { dlg.close(); });
+            dlg.addEventListener('close', function () { dlg.remove(); mDay.focus(); });
+            dlg.append(h, p, ul, ok); document.body.appendChild(dlg);
+            if (dlg.showModal) dlg.showModal(); else { alert(h.textContent + '\n' + clashes.join('\n')); dlg.remove(); }
+        };
+        var checkMeetingDay = function (force) {
+            if (!mDay.value || (!force && mDay.value === mPrev)) return;
+            var picked = form.querySelector('[name="meeting_scope"]:checked');
+            var scope = mScope && !mScope.hidden && picked ? picked.value : 'permanent';
+            // Same usual day as before (only the month in the box moved): nothing new to check.
+            if (mScope && scope === 'permanent' && dayOf() === +mScope.dataset.origDay) { mPrev = mDay.value; return; }
+            var date = mDay.value;
+            fetch(location.pathname + '?' + (clientId ? 'id=' + encodeURIComponent(clientId) + '&' : '') + 'meeting_check=' + encodeURIComponent(date) + '&scope=' + scope, {credentials: 'same-origin', cache: 'no-store'})
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (mDay.value !== date) return;
+                    if (data.ok && data.clashes && data.clashes.length) { busyPopup(date, data.clashes); mDay.value = mPrev; meetingPreview(); }
+                    else mPrev = date;
+                }).catch(function () {});
+        };
+        mDay.addEventListener('change', function () { checkMeetingDay(false); });
+        form.querySelectorAll('[name="meeting_scope"]').forEach(function (r) { r.addEventListener('change', function () { checkMeetingDay(true); }); });
+    }
     var logo = form.querySelector('[data-cl-logo]'), img = form.querySelector('[data-cl-logo-img]'), icon = form.querySelector('[data-cl-logo-icon]');
     form.querySelector('[data-cl-logo-btn]').addEventListener('click', function () { logo.click(); });
     logo.addEventListener('change', function () { var f = logo.files[0]; if (!f) return; img.src = URL.createObjectURL(f); img.hidden = false; if (icon) icon.hidden = true; });

@@ -344,7 +344,9 @@ document.querySelectorAll('form[data-upload-progress]').forEach(form => form.add
         try { const r = Notification.requestPermission(done); if (r && r.then) r.then(done); } catch (_) { bar.remove(); }
       });
       later.addEventListener('click', () => { bar.remove(); try { sessionStorage.setItem('bhaviAlertsLater', '1'); } catch (_) {} });
-      bar.append(text, on, later); document.body.appendChild(bar);
+      bar.append(text, on, later);
+      // Shown at the top of the page content (not floating), so it never covers the top bar or the popups.
+      const main = document.querySelector('.portal-content'); if (main) main.prepend(bar); else document.body.appendChild(bar);
     }
   }
   let busy = false;

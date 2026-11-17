@@ -156,6 +156,27 @@ try {
     $d = $admin->req('admin-dashboard.php?mtg_from=' . $shootDay . '&mtg_to=' . $shootDay);
     ok(str_contains($d['body'], 'is-shoot is-asked') && str_contains($d['body'], 'href="client-meeting-form.php?id=' . $sid . '">✎ Change the date') && str_contains($d['body'], 'Please make it Sunday'), 'shoot the client wants changed shows Change the date');
 
+    echo "One client a day
+";
+    $pdo->exec("INSERT INTO clients (client_name,website_url,logo_path,is_active,created_by,package,payment_total,client_type) VALUES ('Ravi Textiles','','',1," . (int) $md . ",'50000',50000,'premium')");
+    $rv = (int) val("SELECT id FROM clients WHERE client_name='Ravi Textiles'");
+    $check = fn(string $date, string $scope = 'permanent') => json_decode($admin->req('admin-add-client.php?id=' . $rv . '&meeting_check=' . $date . '&scope=' . $scope)['body'], true);
+    $c = $check($shootDay, 'months');
+    ok($c['ok'] && str_contains(implode(' ', $c['clashes']), 'Kiran Foods — shoot'), 'day with another client\'s shoot is not available');
+    $day15 = date('Y-m-15', strtotime('first day of +6 months'));
+    $c = $check($day15);
+    ok($c['ok'] && str_contains(implode(' ', $c['clashes']), 'Kiran Foods — monthly meeting on the 15th of every month'), 'same day of the month as another client is not available');
+    $free = date('Y-m-27', strtotime('first day of +6 months'));
+    ok($check($free)['clashes'] === [], 'free day has no clash');
+    $rf = ['client_name' => 'Ravi Textiles', 'login_username' => '', 'contact_person' => 'Ravi', 'phone' => '9876500000', 'whatsapp' => '9876500000', 'meeting_mode' => 'live', 'meeting_place' => ''] + $fields;
+    $r = $admin->post('admin-add-client.php?id=' . $rv, ['meeting_date' => $day15, 'meeting_time' => '10:00'] + $rf);
+    ok($r['status'] === 200 && str_contains($r['body'], 'not available') && val('SELECT meeting_day FROM clients WHERE id=?', [$rv]) === null, 'save refused on a booked day');
+    $r = $admin->post('admin-add-client.php?id=' . $rv, ['meeting_date' => $free, 'meeting_time' => '10:00'] + $rf);
+    if ($r['status'] !== 303 && preg_match('/class="alert error"[^>]*>(.*?)</s', $r['body'], $em)) echo '    error: ' . strip_tags($em[1]) . "
+";
+    ok($r['status'] === 303 && (int) val('SELECT meeting_day FROM clients WHERE id=?', [$rv]) === 27, 'free day saved');
+    $pdo->exec('DELETE FROM clients WHERE id=' . $rv);
+
     echo "Bank accounts, GST per service, quotations\n";
     $ba = $admin->req('bank-accounts.php');
     ok(str_contains($ba['body'], 'Add bank account'), 'bank accounts page');

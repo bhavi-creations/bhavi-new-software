@@ -5216,3 +5216,23 @@ tr.sc-soon td{background:#f3fbf6}
 .mm-change-reason,.mm-change-send{grid-column:1/-1}
 .mm-change-send{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .mm-change-send small{color:#6a7b94}
+/* Form alignment: a label in a grid row is stretched to the tallest one in that row (e.g. "GST type" with a hint
+   under it). Keep its title and box at the top instead of spreading them, so all boxes in a row line up. */
+.ot-form label,.emp-page label,.dept-form>label,.pp-dialog label,.wr-range label,.proof-confirm label,.cr-assign-form label,.mtg-filter label,.mm-change-form label{align-content:start}
+.ot-form label.ws-all{align-content:normal}
+/* Client form: "this meeting date is not available" popup (one client a day) */
+.mm-busy{width:min(440px,calc(100vw - 32px));padding:20px 22px;border:0;border-top:4px solid #b42318;border-radius:16px;box-shadow:0 24px 60px #0d2f6640;color:#172b49;font-family:"Plus Jakarta Sans",system-ui,sans-serif}
+.mm-busy::backdrop{background:#0d2f6659}
+.mm-busy h3{margin:0 0 6px;font-size:17px;color:#b42318}
+.mm-busy p{margin:0 0 8px;color:#5b6b82;font-size:13.5px}
+.mm-busy ul{margin:0 0 16px;padding-left:18px;display:grid;gap:4px;font-size:13.5px;font-weight:600}
+/* Alignment sweep fixes */
+/* Pages that draw their own header: hide the layout's plain title so it does not show twice (Vendors, Services, Zoom…). */
+.portal-content:has(.ot-head)>.page-heading,.portal-content:has(.emp-header)>.page-heading{display:none}
+/* "Turn on alerts" sits at the top of the page content instead of floating over the top bar. */
+.portal-content>.live-alerts-ask{position:static;transform:none;width:auto;margin:0 0 16px}
+/* Tasks: the Priority box shares a class with the small priority badge; keep the box a normal form block. */
+fieldset.aw-priority{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;width:auto;padding:0;border-radius:0;font-size:inherit;font-weight:inherit;letter-spacing:normal}
+/* Search box + button on one line, same height (Invoices, Content schedule…). */
+.inv-search{align-items:stretch}
+.inv-search>*{margin:0}

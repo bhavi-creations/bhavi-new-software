@@ -59,6 +59,27 @@ function agenda_items(string $from, string $to): array
     return $items;
 }
 
+/**
+ * One client a day: what is already on $date for other clients (their monthly meeting or a shoot), and — for a
+ * date that repeats every month ($everyMonth) — other clients who meet on the same day of every month.
+ * @return list<string> e.g. "Kiran Foods — monthly meeting on Thu, 19 Nov 2026 at 11:00 AM"
+ */
+function meeting_day_clashes(string $date, bool $everyMonth, int $excludeClientId): array
+{
+    $out = [];
+    foreach (agenda_items($date, $date) as $i) {
+        if ($i['client_id'] === $excludeClientId) continue;
+        $out[$i['client_id'] . $i['kind']] = $i['client'] . ' — ' . ($i['kind'] === 'shoot' ? 'shoot' : 'monthly meeting') . ' on ' . date('D, j M Y', strtotime($date)) . ($i['time'] !== '' ? ' at ' . mm_time_label($i['time']) : '');
+    }
+    if ($everyMonth) {
+        $day = (int) date('j', strtotime($date));
+        foreach (rows('SELECT id,client_name,meeting_time FROM clients WHERE deleted_at IS NULL AND is_active=1 AND meeting_day=? AND id<>?', [$day, $excludeClientId]) as $c) {
+            $out[$c['id'] . 'meeting'] = $c['client_name'] . ' — monthly meeting on the ' . mm_ordinal($day) . ' of every month' . ($c['meeting_time'] ? ' at ' . mm_time_label($c['meeting_time']) : '');
+        }
+    }
+    return array_values($out);
+}
+
 /** The dashboard card. Reads ?mtg_from=&mtg_to= (dates) from the URL; default: today + 6 days. */
 function agenda_card_html(string $dashboard): string
 {
