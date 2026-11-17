@@ -245,15 +245,19 @@ document.querySelectorAll('form[data-upload-progress]').forEach(form => form.add
   xhr.send(data);
 }));
 
-// Live alerts on every page: new chat messages and other notifications pop up, and the Chat / Notifications
-// badges in the sidebar update without reloading. Polls notifications-poll.php every 15 seconds.
+// Live alerts on every page: new chat messages and other notifications pop up (WhatsApp-style card with the
+// sender and the message, plus a screen notification when the window is not in front), and the Chat /
+// Notifications badges in the sidebar update without reloading. Polls notifications-poll.php every 8 seconds.
 (() => {
   const pollUrl = document.body && document.body.dataset.livePoll;
   if (!pollUrl || !window.fetch) return;
   const KEY = 'bhaviLiveNotifAt';
   let after = NaN;
   try { after = parseInt(localStorage.getItem(KEY) || '', 10); } catch (_) {}
-  const onChatPage = /\/chat\.php$/.test(location.pathname);
+  // The chat open on this page (chat.php?id=…), if any: its messages already show live there.
+  const openChat = () => { const room = document.querySelector('[data-chat-room][data-conversation]'); return room ? Number(room.dataset.conversation) || 0 : 0; };
+  // "Looking at the page" = tab visible AND the browser window in front (not minimised, no other app on top).
+  const looking = () => document.visibilityState === 'visible' && document.hasFocus();
   const setBadge = (href, count) => {
     document.querySelectorAll('.portal-sidebar a[href="' + href + '"]').forEach(link => {
       if (link.closest('.sectioned-nav')) {
@@ -267,30 +271,82 @@ document.querySelectorAll('form[data-upload-progress]').forEach(form => form.add
       }
     });
   };
+  // Short "ding" for a new alert. Browsers allow sound only after the user has clicked on the page once.
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let audio = null;
+  document.addEventListener('pointerdown', () => { try { if (AC && !audio) audio = new AC(); if (audio && audio.state === 'suspended') audio.resume(); } catch (_) {} }, { once: true });
+  const ding = () => {
+    try {
+      if (!audio || audio.state !== 'running') return;
+      const t = audio.currentTime;
+      [880, 1320].forEach((freq, i) => {
+        const o = audio.createOscillator(), g = audio.createGain(), s = t + i * 0.12;
+        o.type = 'sine'; o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(0.18, s + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, s + 0.2);
+        o.connect(g); g.connect(audio.destination); o.start(s); o.stop(s + 0.22);
+      });
+    } catch (_) {}
+  };
+  // WhatsApp-style popup card: round avatar with initials, sender name, "now", the message, and Reply / Open.
   let box = null;
+  const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p.charAt(0).toUpperCase()).join('') || '•';
   const toast = item => {
     if (!box) { box = document.createElement('div'); box.className = 'live-toasts'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
-    const card = document.createElement('a'); card.className = 'live-toast'; card.href = item.url;
-    const title = document.createElement('strong'); title.textContent = item.title;
-    const text = document.createElement('span'); text.textContent = item.message;
+    const isChat = item.chat > 0 || item.title.indexOf('💬') === 0;
+    const name = item.title.replace(/^💬\s*/u, '');
+    const card = document.createElement('a'); card.className = 'live-toast' + (isChat ? ' is-chat' : ''); card.href = item.url;
+    const avatar = document.createElement('span'); avatar.className = 'live-toast-avatar'; avatar.textContent = isChat ? initials(name.split(' · ')[0]) : '🔔'; avatar.setAttribute('aria-hidden', 'true');
+    const head = document.createElement('span'); head.className = 'live-toast-head';
+    const title = document.createElement('strong'); title.textContent = name;
+    const when = document.createElement('small'); when.textContent = 'now';
+    head.append(title, when);
+    const text = document.createElement('span'); text.className = 'live-toast-msg'; text.textContent = item.message;
+    const action = document.createElement('span'); action.className = 'live-toast-action'; action.textContent = isChat ? '↩ Reply' : 'Open →';
     const close = document.createElement('button'); close.type = 'button'; close.className = 'live-toast-close'; close.setAttribute('aria-label', 'Close'); close.textContent = '×';
     close.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); card.remove(); });
-    card.append(title, text, close); box.prepend(card);
+    const body = document.createElement('span'); body.className = 'live-toast-body'; body.append(head, text, action);
+    card.append(avatar, body, close); box.prepend(card);
     while (box.children.length > 3) box.lastElementChild.remove();
-    setTimeout(() => card.remove(), 9000);
+    // Stays 20 s for chat (10 s for others); paused while the mouse is on it.
+    let timer = setTimeout(() => card.remove(), isChat ? 20000 : 10000);
+    card.addEventListener('mouseenter', () => clearTimeout(timer));
+    card.addEventListener('mouseleave', () => { timer = setTimeout(() => card.remove(), 6000); });
   };
   const desktop = item => {
     try {
       if (!('Notification' in window) || Notification.permission !== 'granted') return false;
-      const n = new Notification(item.title, { body: item.message, tag: 'bhavi-' + item.id, icon: 'assets/img/favicon.svg' });
+      // The tag changes with each newer message, so a chat that gets another message alerts again.
+      const n = new Notification(item.title, { body: item.message, tag: 'bhavi-' + item.id + '-' + item.at, icon: 'assets/img/favicon.svg', requireInteraction: item.chat > 0 });
       n.onclick = () => { window.focus(); location.href = item.url; n.close(); };
       return true;
     } catch (_) { return false; }
   };
-  // Ask once for desktop alerts, on the first click (browsers only allow it after a user action).
-  document.addEventListener('click', () => {
-    try { if ('Notification' in window && Notification.permission === 'default' && !sessionStorage.getItem('bhaviAskedAlerts')) { sessionStorage.setItem('bhaviAskedAlerts', '1'); Notification.requestPermission(); } } catch (_) {}
-  }, { once: true });
+  // Unseen alerts show in the tab title, e.g. "(2) Chat · Bhavi", until the window is in front again.
+  const baseTitle = document.title; let unseen = 0;
+  const markUnseen = () => { unseen++; document.title = '(' + unseen + ') ' + baseTitle; };
+  window.addEventListener('focus', () => { if (unseen) { unseen = 0; document.title = baseTitle; } });
+  // "Turn on alerts" button: browsers only allow the permission prompt after a click, so show a clear button
+  // until the user allows (or blocks) screen notifications. Needs https:// (or localhost).
+  const canAsk = () => { try { return 'Notification' in window && window.isSecureContext && Notification.permission === 'default'; } catch (_) { return false; } };
+  if (canAsk()) {
+    let dismissed = false; try { dismissed = sessionStorage.getItem('bhaviAlertsLater') === '1'; } catch (_) {}
+    if (!dismissed) {
+      const bar = document.createElement('div'); bar.className = 'live-alerts-ask'; bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Message alerts');
+      const text = document.createElement('span'); text.textContent = 'Get chat and message alerts on your screen, even when this tab is in the background.';
+      const on = document.createElement('button'); on.type = 'button'; on.className = 'live-alerts-on'; on.textContent = '🔔 Turn on alerts';
+      const later = document.createElement('button'); later.type = 'button'; later.className = 'live-alerts-later'; later.textContent = 'Later';
+      on.addEventListener('click', () => {
+        let answered = false;
+        const done = res => {
+          if (answered) return; answered = true; bar.remove();
+          if (res === 'granted') { try { new Notification('Alerts are on', { body: 'New chat messages and notifications will show here.', icon: 'assets/img/favicon.svg' }); } catch (_) {} }
+        };
+        try { const r = Notification.requestPermission(done); if (r && r.then) r.then(done); } catch (_) { bar.remove(); }
+      });
+      later.addEventListener('click', () => { bar.remove(); try { sessionStorage.setItem('bhaviAlertsLater', '1'); } catch (_) {} });
+      bar.append(text, on, later); document.body.appendChild(bar);
+    }
+  }
   let busy = false;
   async function poll() {
     if (busy) return; busy = true;
@@ -301,19 +357,21 @@ document.querySelectorAll('form[data-upload-progress]').forEach(form => form.add
       setBadge('chat.php', Number(data.chat_unread) || 0);
       setBadge('manager-notification.php', Number(data.unread) || 0);
       if (Number.isFinite(after)) {
-        const visible = document.visibilityState === 'visible';
+        let any = false;
         (data.items || []).slice().reverse().forEach(item => {
-          const isChat = item.title.indexOf('💬') === 0;
-          if (onChatPage && visible && isChat) return; // the chat page already shows it live
-          if (!visible) { desktop(item); return; }
-          toast(item);
+          item.chat = Number(item.chat) || 0;
+          if (item.chat && item.chat === openChat() && looking()) return; // reading this chat right now
+          if (!looking()) { desktop(item); markUnseen(); }
+          if (document.visibilityState === 'visible') toast(item);
+          any = true;
         });
+        if (any && document.visibilityState === 'visible') ding();
       }
       after = Math.max(Number.isFinite(after) ? after : 0, Number(data.latest) || 0);
       try { localStorage.setItem(KEY, String(after)); } catch (_) {}
     } catch (_) {} finally { busy = false; }
   }
   poll();
-  setInterval(() => { if (document.visibilityState === 'visible' || 'Notification' in window) poll(); }, 15000);
+  setInterval(poll, 8000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
 })();

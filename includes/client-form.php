@@ -80,11 +80,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $extra[$key]=$number;
         }
         $extra['monthly_work_remark']=optional_text('monthly_work_remark',5000);
-        // Monthly meeting: day of the month (1-31) + time + how we meet.
-        $meetingDay=trim((string)($_POST['meeting_day']??''));
+        // Monthly meeting: a date (its day repeats every month, e.g. 19 Nov → the 19th of every month) + time + how we meet.
+        $meetingDate=trim((string)($_POST['meeting_date']??''));
+        $meetingDay=$meetingDate!==''?(preg_match('/^\d{4}-\d{2}-\d{2}$/D',$meetingDate)&&checkdate((int)substr($meetingDate,5,2),(int)substr($meetingDate,8,2),(int)substr($meetingDate,0,4))?(int)substr($meetingDate,8,2):false):trim((string)($_POST['meeting_day']??''));
+        if ($meetingDay===false) throw new InvalidArgumentException('Choose a valid monthly meeting date.');
         if ($meetingDay!=='') {
             $meetingDay=filter_var($meetingDay,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>31]]);
-            if ($meetingDay===false) throw new InvalidArgumentException('Choose a monthly meeting day from 1 to 31.');
+            if ($meetingDay===false) throw new InvalidArgumentException('Choose a valid monthly meeting date.');
             $meetingTime=trim((string)($_POST['meeting_time']??''));
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/D',$meetingTime)) throw new InvalidArgumentException('Choose the monthly meeting time.');
             $extra['meeting_day']=$meetingDay; $extra['meeting_time']=substr($meetingTime,0,5).':00';
@@ -94,8 +96,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         $meetingOverride=null;
         if ($record && !empty($record['meeting_day']) && $extra['meeting_day']!==null && ($_POST['meeting_scope']??'permanent')==='months'
             && ((int)$extra['meeting_day']!==(int)$record['meeting_day'] || $extra['meeting_time']!==(string)$record['meeting_time'])) {
-            $startMonth=(string)($_POST['meeting_start_month']??'');
-            if (!preg_match('/^\d{4}-\d{2}$/D',$startMonth) || $startMonth<date('Y-m') || $startMonth>date('Y-m',strtotime('first day of this month +23 months'))) throw new InvalidArgumentException('Choose the month the new meeting date starts.');
+            // The changed months start from the month of the new date (e.g. 23 Dec 2026 for 3 months → Dec, Jan, Feb).
+            $startMonth=$meetingDate!==''?substr($meetingDate,0,7):date('Y-m');
+            if ($meetingDate!=='' && $meetingDate<date('Y-m-d')) throw new InvalidArgumentException('For a change of some months, choose today or a future meeting date.');
+            if ($startMonth>date('Y-m',strtotime('first day of this month +23 months'))) throw new InvalidArgumentException('Choose a meeting date within the next 2 years.');
             $months=filter_var($_POST['meeting_months']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>24]]);
             if ($months===false || $months===null) throw new InvalidArgumentException('Enter for how many months the new meeting date applies (1 to 24).');
             $meetingOverride=['meeting_day'=>$extra['meeting_day'],'meeting_time'=>$extra['meeting_time'],'start_month'=>$startMonth.'-01','months'=>$months];
@@ -234,10 +238,18 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
         <label class="cl-notes">Notes for the team<textarea name="team_notes" maxlength="5000" rows="3" placeholder="Brand guidelines, preferred colours, posting schedule, special instructions…"><?= h($value('team_notes')) ?></textarea></label>
     </section>
 
-    <section class="emp-card" id="monthly-meeting"><h3>Monthly meeting</h3><p class="emp-card-sub">The day each month you meet this client. It shows in the client’s details and dashboard with a countdown.</p>
-        <?php $meetingDayValue=(string)$value('meeting_day',''); $meetingTimeValue=substr((string)$value('meeting_time',''),0,5); $meetingModeValue=(string)$value('meeting_mode','live'); ?>
+    <section class="emp-card" id="monthly-meeting"><h3>Monthly meeting</h3><p class="emp-card-sub">Pick the meeting date — the meeting is on that date every month. It shows in the client’s details and dashboard with a countdown.</p>
+        <?php $meetingDayValue=(string)$value('meeting_day',''); $meetingTimeValue=substr((string)$value('meeting_time',''),0,5); $meetingModeValue=(string)$value('meeting_mode','live');
+        // The date box shows the next usual meeting date (this month's, or next month's if it has passed).
+        $meetingDateValue=(string)($_POST['meeting_date']??'');
+        if ($meetingDateValue==='' && !isset($_POST['meeting_date']) && $meetingDayValue!=='') {
+            $mDayInt=(int)$meetingDayValue; $mMonth=new DateTimeImmutable('first day of this month');
+            $mDate=$mMonth->format('Y-m-').sprintf('%02d',min($mDayInt,(int)$mMonth->format('t')));
+            if ($mDate<date('Y-m-d')) { $mMonth=$mMonth->modify('+1 month'); $mDate=$mMonth->format('Y-m-').sprintf('%02d',min($mDayInt,(int)$mMonth->format('t'))); }
+            $meetingDateValue=$mDate;
+        } ?>
         <div class="emp-grid">
-            <label>Meeting day of the month<select name="meeting_day" data-cl-meeting-day><option value="">No monthly meeting</option><?php for ($d=1;$d<=31;$d++): ?><option value="<?= $d ?>" <?= $meetingDayValue===(string)$d?'selected':'' ?>><?= $d ?><?= ['th','st','nd','rd'][($d%100>=11&&$d%100<=13)?0:($d%10)]??'th' ?> of every month</option><?php endfor; ?></select></label>
+            <label>Meeting date <small>(repeats every month on this date)</small><input type="date" name="meeting_date" value="<?= h($meetingDateValue) ?>" data-cl-meeting-day><small>Leave empty for no monthly meeting.</small></label>
             <label>Meeting time<input type="time" name="meeting_time" value="<?= h($meetingTimeValue) ?>" data-cl-meeting-time></label>
             <label>How you will meet<select name="meeting_mode"><?php foreach (['live'=>'Live meeting','google_meet'=>'Google Meet','phone'=>'Phone call','zoom'=>'Zoom'] as $k=>$l): ?><option value="<?= $k ?>" <?= $meetingModeValue===$k?'selected':'' ?>><?= h($l) ?></option><?php endforeach; ?></select></label>
             <label>Place / meeting link<input name="meeting_place" maxlength="2048" value="<?= h($value('meeting_place')) ?>" placeholder="e.g. Our office, or https://meet.google.com/…"></label>
@@ -245,15 +257,13 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
         <p class="emp-card-sub" data-cl-meeting-preview aria-live="polite"></p>
         <?php if ($record && !empty($record['meeting_day'])):
             $mScope=(string)($_POST['meeting_scope']??'permanent');
-            $mStart=(string)($_POST['meeting_start_month']??date('Y-m'));
             $mMonths=(string)($_POST['meeting_months']??'1'); ?>
         <fieldset class="emp-choice emp-choice-inline" data-cl-meeting-scope data-orig-day="<?= (int)$record['meeting_day'] ?>" data-orig-time="<?= h(substr((string)$record['meeting_time'],0,5)) ?>" hidden>
             <legend>You changed the meeting date / time. How long should it apply?</legend>
             <label><input type="radio" name="meeting_scope" value="permanent" <?= $mScope!=='months'?'checked':'' ?>><span>Permanently (every month from now)</span></label>
             <label><input type="radio" name="meeting_scope" value="months" <?= $mScope==='months'?'checked':'' ?>><span>Only for some months, then back to the usual date</span></label>
             <div class="emp-grid" data-cl-meeting-months<?= $mScope==='months'?'':' hidden' ?>>
-                <label>Starting month<select name="meeting_start_month"><?php for ($i=0;$i<24;$i++): $mo=date('Y-m',strtotime('first day of this month +'.$i.' months')); ?><option value="<?= $mo ?>" <?= $mStart===$mo?'selected':'' ?>><?= h(date('F Y',strtotime($mo.'-01'))) ?></option><?php endfor; ?></select></label>
-                <label>For how many months<input type="number" name="meeting_months" min="1" max="24" step="1" value="<?= h($mMonths) ?>"></label>
+                <label>For how many months <small>(from the month of the new date)</small><input type="number" name="meeting_months" min="1" max="24" step="1" value="<?= h($mMonths) ?>"></label>
             </div>
             <p class="emp-card-sub" data-cl-meeting-scope-hint></p>
         </fieldset>
@@ -362,6 +372,7 @@ foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; $savedS
     // Monthly meeting: a time is needed once a day is chosen.
     var mDay = form.querySelector('[data-cl-meeting-day]'), mTime = form.querySelector('[data-cl-meeting-time]');
     function meetingNeedsTime() { mTime.required = mDay.value !== ''; if (mDay.value !== '' && !mTime.value) mTime.value = '11:00'; }
+    var dayOf = function () { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(mDay.value); return m ? +m[3] : 0; };
     if (mDay && mTime) { mDay.addEventListener('change', meetingNeedsTime); mTime.required = mDay.value !== ''; }
     // Preview the next meeting dates, and on edit ask how long a changed date / time applies.
     var mPreview = form.querySelector('[data-cl-meeting-preview]'), mScope = form.querySelector('[data-cl-meeting-scope]');
@@ -370,7 +381,7 @@ foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; $savedS
     var timeLabel = function (t) { if (!t) return ''; var p = t.split(':'), h = +p[0]; return (h % 12 || 12) + ':' + p[1] + ' ' + (h < 12 ? 'AM' : 'PM'); };
     function meetingPreview() {
         if (!mDay || !mPreview) return;
-        var day = +mDay.value;
+        var day = dayOf();
         if (!day) { mPreview.textContent = ''; } else {
             var now = new Date(), list = [];
             for (var i = 0; list.length < 3 && i < 4; i++) {
@@ -387,7 +398,7 @@ foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; $savedS
         mScope.querySelector('[data-cl-meeting-months]').hidden = !some;
         var hint = mScope.querySelector('[data-cl-meeting-scope-hint]');
         if (!some) { hint.textContent = changed ? 'The usual date changes to the ' + ord(day) + ' for all future months.' : ''; return; }
-        var start = mScope.querySelector('[name="meeting_start_month"]').value.split('-'), n = Math.max(1, Math.min(24, parseInt(mScope.querySelector('[name="meeting_months"]').value, 10) || 1));
+        var start = mDay.value.split('-'), n = Math.max(1, Math.min(24, parseInt(mScope.querySelector('[name="meeting_months"]').value, 10) || 1));
         var from = new Date(+start[0], +start[1] - 1, 1), to = new Date(+start[0], +start[1] - 2 + n, 1), back = new Date(+start[0], +start[1] - 1 + n, 1);
         hint.textContent = (n === 1 ? monthName(from) : monthName(from) + ' – ' + monthName(to)) + ': meeting on the ' + ord(day) + ' at ' + timeLabel(mTime.value) + '. From ' + monthName(back) + ' it goes back to the usual ' + ord(+mScope.dataset.origDay) + ' at ' + timeLabel(mScope.dataset.origTime) + '.';
     }

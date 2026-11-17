@@ -49,14 +49,14 @@ try {
     echo "Monthly meeting on the client form\n";
     $admin = new B($base); $admin->login('md', 'Secret123!');
     $form = $admin->req('admin-add-client.php?id=' . $kc);
-    ok(str_contains($form['body'], 'name="meeting_day"') && str_contains($form['body'], 'Monthly meeting'), 'client form has the monthly meeting section');
+    ok(str_contains($form['body'], 'name="meeting_date"') && str_contains($form['body'], 'Monthly meeting'), 'client form has the monthly meeting section');
     $target = strtotime('+3 days'); $day = (int) date('j', $target);
-    $fields = ['client_profile' => '1', 'client_name' => 'Kiran Foods', 'website_url' => '', 'industry' => 'Food & restaurants', 'contact_person' => 'Kiran', 'phone' => '9876543210', 'whatsapp' => '9876543210', 'city' => 'Kakinada', 'services' => ['social_media'], 'starting_date' => date('Y-m-d'), 'payment_total' => '200000', 'billing_cycle' => 'monthly', 'client_status' => 'active', 'monthly_reels' => '4', 'monthly_posters' => '8', 'monthly_carousels' => '0', 'monthly_blogs' => '0', 'login_username' => 'kiran', 'meeting_day' => (string) $day, 'meeting_time' => '11:30', 'meeting_mode' => 'google_meet', 'meeting_place' => 'https://meet.google.com/abc-defg-hij'];
+    $fields = ['client_profile' => '1', 'client_name' => 'Kiran Foods', 'website_url' => '', 'industry' => 'Food & restaurants', 'contact_person' => 'Kiran', 'phone' => '9876543210', 'whatsapp' => '9876543210', 'city' => 'Kakinada', 'services' => ['social_media'], 'starting_date' => date('Y-m-d'), 'payment_total' => '200000', 'billing_cycle' => 'monthly', 'client_status' => 'active', 'monthly_reels' => '4', 'monthly_posters' => '8', 'monthly_carousels' => '0', 'monthly_blogs' => '0', 'login_username' => 'kiran', 'meeting_date' => date('Y-m-d', $target), 'meeting_time' => '11:30', 'meeting_mode' => 'google_meet', 'meeting_place' => 'https://meet.google.com/abc-defg-hij'];
     $r = $admin->post('admin-add-client.php?id=' . $kc, $fields);
     if ($r['status'] !== 303 && preg_match('/class="alert error"[^>]*>(.*?)</s', $r['body'], $em)) echo '    error: ' . strip_tags($em[1]) . "\n";
     ok($r['status'] === 303 && (int) val('SELECT meeting_day FROM clients WHERE id=?', [$kc]) === $day && val('SELECT meeting_time FROM clients WHERE id=?', [$kc]) === '11:30:00', 'meeting day and time saved');
-    $r = $admin->post('admin-add-client.php?id=' . $kc, ['meeting_day' => '40', 'meeting_time' => '11:30'] + $fields);
-    ok(str_contains($r['body'], 'from 1 to 31'), 'invalid meeting day rejected');
+    $r = $admin->post('admin-add-client.php?id=' . $kc, ['meeting_date' => '2026-02-40', 'meeting_time' => '11:30'] + $fields);
+    ok(str_contains($r['body'], 'valid monthly meeting date'), 'invalid meeting date rejected');
     $prof = $admin->req('client-profile.php?id=' . $kc);
     ok(str_contains($prof['body'], '3 days to go') && str_contains($prof['body'], 'Monthly meeting') && str_contains($prof['body'], date('d-m-Y', $target)), 'client details show next meeting and countdown');
 
@@ -97,6 +97,18 @@ try {
     ok($r['status'] === 303 && val('SELECT status FROM client_meeting_changes WHERE id=?', [$undo]) === 'cancelled', 'temporary change can be removed');
     $r = $admin->post('client-monthly-meeting.php', ['action' => 'change', 'client_id' => (string) $kc, 'new_date' => date('Y-m-d', strtotime('-2 days')), 'new_time' => '12:00', 'scope' => 'once']);
     ok(str_contains($r['body'], 'today or a future date'), 'past date rejected');
+    // Client form edit: the new date only for 3 months, then the usual 15th at 12:00 comes back.
+    $ef = $admin->req('admin-add-client.php?id=' . $kc);
+    ok(str_contains($ef['body'], 'name="meeting_months"') && str_contains($ef['body'], 'Usual date'), 'edit form: how many months + upcoming months list');
+    $tmpDate = date('Y-m-23', strtotime('first day of next month'));
+    $r = $admin->post('admin-add-client.php?id=' . $kc, ['meeting_date' => $tmpDate, 'meeting_time' => '16:00', 'meeting_scope' => 'months', 'meeting_months' => '3'] + $fields);
+    $row = $pdo->query("SELECT * FROM client_meeting_changes WHERE reason='Changed on the client form'")->fetch(PDO::FETCH_ASSOC);
+    ok($r['status'] === 303 && $row && (int) $row['months'] === 3 && (int) $row['meeting_day'] === 23 && $row['start_month'] === date('Y-m-01', strtotime($tmpDate)) && $row['status'] === 'approved', 'edit: new date saved for 3 months from its month');
+    ok((int) val('SELECT meeting_day FROM clients WHERE id=?', [$kc]) === 15 && val('SELECT meeting_time FROM clients WHERE id=?', [$kc]) === '12:00:00', 'edit: usual date stays for after the 3 months');
+    $ef = $admin->req('admin-add-client.php?id=' . $kc);
+    ok(str_contains($ef['body'], date('D, d-m-Y', strtotime($tmpDate))) && str_contains($ef['body'], 'For 3 months'), 'edit form lists the changed months');
+    $r = $admin->post('admin-add-client.php?id=' . $kc, ['meeting_date' => date('Y-m-d', strtotime('-40 days')), 'meeting_time' => '16:00', 'meeting_scope' => 'months', 'meeting_months' => '2'] + $fields);
+    ok(str_contains($r['body'], 'today or a future meeting date'), 'edit: past date for some months rejected');
 
     echo "Shoots only\n";
     $sf = $admin->req('client-meeting-form.php');
@@ -172,11 +184,12 @@ try {
 
     echo "Chat notifications\n";
     $nId = (int) val('SELECT id FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL', [$md, $clientRoom]);
-    ok($nId > 0 && val('SELECT title FROM notifications WHERE id=?', [$nId]) === '💬 New message from Kiran Foods' && val('SELECT message FROM notifications WHERE id=?', [$nId]) === 'Thanks sir', 'MD gets a "new message" notification');
+    ok($nId > 0 && val('SELECT title FROM notifications WHERE id=?', [$nId]) === '💬 Kiran Foods' && val('SELECT message FROM notifications WHERE id=?', [$nId]) === 'Thanks sir', 'MD gets a notification with the sender and the message');
     $client->post('chat.php?id=' . $clientRoom, ['action' => 'send_message', 'conversation_id' => (string) $clientRoom, 'body' => 'One more thing']);
-    ok((int) val('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL', [$md, $clientRoom]) === 1 && val('SELECT message FROM notifications WHERE id=?', [$nId]) === 'One more thing', 'one notification per chat, updated with the latest message');
+    ok((int) val('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL', [$md, $clientRoom]) === 1 && val('SELECT message FROM notifications WHERE id=?', [$nId]) === "Thanks sir
+One more thing", 'one notification per chat, showing the latest messages');
     $poll = json_decode($admin->req('notifications-poll.php?after=0')['body'], true);
-    ok($poll['ok'] && $poll['chat_unread'] === 2 && $poll['unread'] >= 1 && str_contains(json_encode($poll['items'], JSON_UNESCAPED_UNICODE), 'New message from Kiran Foods'), 'live poll gives chat unread count and the popup item');
+    ok($poll['ok'] && $poll['chat_unread'] === 2 && $poll['unread'] >= 1 && str_contains(json_encode($poll['items'], JSON_UNESCAPED_UNICODE), '💬 Kiran Foods') && str_contains(json_encode($poll['items'], JSON_UNESCAPED_UNICODE), 'One more thing'), 'live poll gives chat unread count and the popup item');
     $dashMd = $admin->req('admin-dashboard.php');
     ok(str_contains($dashMd['body'], 'data-live-poll="notifications-poll.php"') && preg_match('#href="chat.php"[^>]*>.*?<em class="nav-badge">2</em>#s', $dashMd['body']) === 1, 'sidebar Chat shows unread badge');
     $open = $admin->req('notification-open.php?id=' . $nId);
@@ -184,7 +197,7 @@ try {
     $admin->req('chat.php?id=' . $clientRoom);
     ok(val('SELECT read_at FROM notifications WHERE id=?', [$nId]) !== null && json_decode($admin->req('notifications-poll.php')['body'], true)['chat_unread'] === 0, 'opening the chat clears it');
     $cn = $client->req('manager-notification.php');
-    ok($cn['status'] === 200 && str_contains($cn['body'], 'New message from Boss MD'), 'client has a Notifications page with chat alerts');
+    ok($cn['status'] === 200 && str_contains($cn['body'], '💬 Boss MD'), 'client has a Notifications page with chat alerts');
     $r = $client->post('chat.php', ['action' => 'create_conversation', 'chat_kind' => 'group', 'user_ids' => [(string) $md], 'title' => 'x']);
     ok(str_contains($r['body'], 'Only the Managing Director can create groups'), 'client cannot create groups');
     $r = $client->post('chat.php', ['action' => 'create_conversation', 'chat_kind' => 'employee', 'user_ids' => [(string) $ravi]]);

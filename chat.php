@@ -49,20 +49,32 @@ function chat_mark_read(int $conversationId,int $userId): void
 }
 
 /**
- * New message → a notification for every other member: "New message from Ravi" (private) or "Ravi in Design team" (group).
- * One notification per conversation stays until the chat is opened; newer messages update its text and time.
+ * New message → a notification for every other member, titled with who sent it: "💬 Ravi" (private) or
+ * "💬 Ravi · Design team" (group); the text is the message itself.
+ * One notification per conversation stays until the chat is opened; newer messages are added to it (the last 3 are
+ * shown, one per line) and its time is updated, so the screen alert shows what was actually written.
  */
 function chat_notify(int $conversationId,array $sender,string $body,int $fileCount): void
 {
     try {
         $room=one('SELECT conversation_type,title FROM chat_conversations WHERE id=?',[$conversationId]);
         if (!$room) return;
-        $title=$room['conversation_type']==='group'?mb_substr('💬 '.$sender['full_name'].' in '.($room['title']?:'group chat'),0,200):mb_substr('💬 New message from '.$sender['full_name'],0,200);
-        $text=$body!==''?mb_strimwidth($body,0,300,'…'):'📎 Sent '.($fileCount===1?'a file':$fileCount.' files');
+        $title=$room['conversation_type']==='group'?mb_substr('💬 '.$sender['full_name'].' · '.($room['title']?:'Group chat'),0,200):mb_substr('💬 '.$sender['full_name'],0,200);
+        $line=$body!==''?mb_strimwidth(trim((string)preg_replace('/\s+/u',' ',$body)),0,300,'…'):'📎 Sent '.($fileCount===1?'a file':$fileCount.' files');
+        if ($body!=='' && $fileCount) $line.=' 📎';
+        // In a group, each line says who wrote it, because the title only names the latest sender.
+        if ($room['conversation_type']==='group') $line=$sender['full_name'].': '.$line;
         foreach (rows('SELECT user_id FROM chat_participants WHERE conversation_id=? AND user_id<>?',[$conversationId,(int)$sender['id']]) as $member) {
             $existing=one('SELECT id FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL ORDER BY id DESC LIMIT 1',[(int)$member['user_id'],$conversationId]);
-            if ($existing) query('UPDATE notifications SET title=?,message=?,sender_id=?,created_at=NOW() WHERE id=?',[$title,$text,(int)$sender['id'],$existing['id']]);
-            else query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,chat_conversation_id) VALUES (?,?,'general',?,?,?)",[(int)$member['user_id'],(int)$sender['id'],$title,$text,$conversationId]);
+            if ($existing) {
+                // Keep the last 3 unread messages, oldest first.
+                $lines=array_values(array_filter(explode("
+",(string)(one('SELECT message FROM notifications WHERE id=?',[$existing['id']])['message']??'')),static fn($l)=>trim($l)!==''));
+                $lines[]=$line;
+                query('UPDATE notifications SET title=?,message=?,sender_id=?,created_at=NOW() WHERE id=?',[$title,implode("
+",array_slice($lines,-3)),(int)$sender['id'],$existing['id']]);
+            }
+            else query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,chat_conversation_id) VALUES (?,?,'general',?,?,?)",[(int)$member['user_id'],(int)$sender['id'],$title,$line,$conversationId]);
         }
     } catch (Throwable $e) { error_log('Chat notification failed: '.$e->getMessage()); }
 }
@@ -681,7 +693,8 @@ page_start('Chat','chat.php'); error_message($error);
     async function refresh(forceScroll){
         if(busy)return;busy=true;
         try{
-            const stick=forceScroll||nearBottom(),seen=document.visibilityState==='visible'?1:0;
+            // Seen only while the window is really in front: a chat left open behind another window must still raise the popup.
+            const stick=forceScroll||nearBottom(),seen=document.visibilityState==='visible'&&document.hasFocus()?1:0;
             const response=await fetch(`chat.php?messages=1&id=${room.dataset.conversation}&after=${lastId}&seen=${seen}`,{credentials:'same-origin',cache:'no-store'});
             if(!response.ok)return;
             const payload=await response.json();
@@ -692,7 +705,7 @@ page_start('Chat','chat.php'); error_message($error);
             if(payload.messages.length&&stick)box.scrollTop=box.scrollHeight;
         }catch(_){}finally{busy=false;}
     }
-    box.scrollTop=box.scrollHeight;window.setInterval(()=>refresh(false),3000);
+    box.scrollTop=box.scrollHeight;window.setInterval(()=>refresh(false),3000);window.addEventListener('focus',()=>refresh(false));
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){refresh(false);refreshConversations();}});
 
     // Composer: auto-grow, Enter to send, file names, upload progress

@@ -5136,11 +5136,11 @@ tr.sc-soon td{background:#f3fbf6}
 .cr-complete-btn:hover{background:#145c33}
 .cr-complete-done{margin:10px 0 0;padding:8px 12px;border-radius:10px;background:#ebf7f0;color:#145c33;font-size:12.5px;font-weight:700}
 /* Live alerts (new chat message, request assigned …) */
-.live-toasts{position:fixed;right:18px;bottom:18px;z-index:9999;display:grid;gap:10px;width:min(340px,calc(100vw - 32px))}
-.live-toast{position:relative;display:grid;gap:3px;padding:12px 38px 12px 14px;border:1px solid #d9e1ee;border-left:4px solid #d6ad48;border-radius:12px;background:#fff;box-shadow:0 10px 28px #0d2f6626;color:#172b49;text-decoration:none;font-family:"Plus Jakarta Sans",system-ui,sans-serif;animation:live-in .25s ease-out}
+.live-toasts{position:fixed;right:18px;bottom:18px;z-index:9999;display:grid;gap:10px;width:min(360px,calc(100vw - 32px))}
+.live-toast{position:relative;display:grid;grid-template-columns:auto 1fr;align-items:start;gap:10px;padding:12px 36px 12px 12px;border:1px solid #d9e1ee;border-left:4px solid #d6ad48;border-radius:12px;background:#fff;box-shadow:0 10px 28px #0d2f6626;color:#172b49;text-decoration:none;font-family:"Plus Jakarta Sans",system-ui,sans-serif;animation:live-in .25s ease-out}
 .live-toast:hover{border-color:#103d83;border-left-color:#d6ad48}
 .live-toast strong{font-size:13.5px;font-weight:800;overflow-wrap:anywhere}
-.live-toast span{color:#4b5b74;font-size:12.5px;overflow-wrap:anywhere}
+.live-toast .live-toast-msg{color:#24364f;font-size:13px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden}
 .live-toast-close{position:absolute;top:6px;right:6px;width:26px;height:26px;padding:0;border:0;border-radius:8px;background:transparent;color:#6a7b94;font-size:18px;line-height:1;cursor:pointer}
 .live-toast-close:hover{background:#eef3fb;color:#172b49}
 @keyframes live-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -5149,3 +5149,20 @@ tr.sc-soon td{background:#f3fbf6}
 .requirement-file-list li.is-missing .rq-replace-form{margin-left:auto}
 .requirement-file-list li.is-missing .rq-replace-form .rq-file-btn{cursor:pointer;display:inline-block}
 .requirement-file-list li.is-missing .button{padding:5px 12px;font-size:12px}
+/* "Turn on alerts" bar (screen notifications for chat / messages) */
+.live-alerts-ask{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9998;display:flex;align-items:center;gap:10px;flex-wrap:wrap;width:min(560px,calc(100vw - 32px));padding:12px 14px;border:1px solid #d9e1ee;border-left:4px solid #d6ad48;border-radius:12px;background:#fff;box-shadow:0 10px 28px #0d2f6626;color:#172b49;font:600 13px/1.45 "Plus Jakarta Sans",system-ui,sans-serif}
+.live-alerts-ask span{flex:1 1 220px}
+.live-alerts-ask button{border:0;border-radius:8px;padding:7px 12px;font:800 12px "Plus Jakarta Sans",system-ui,sans-serif;cursor:pointer}
+.live-alerts-on{background:#1f4f9c;color:#fff}
+.live-alerts-later{background:#eef2f8;color:#172b49}
+/* WhatsApp-style message popup */
+.live-toast.is-chat{border-left-color:#25a35a;background:#f6fff8}
+.live-toast-avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:#103d83;color:#fff;font-size:14px;font-weight:800}
+.live-toast.is-chat .live-toast-avatar{background:#25a35a}
+.live-toast-body{display:grid;gap:3px;min-width:0}
+.live-toast-head{display:flex;align-items:baseline;gap:8px;min-width:0}
+.live-toast-head strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.live-toast-head small{color:#25a35a;font-size:11px;font-weight:700}
+.live-toast .live-toast-msg{display:-webkit-box;padding:7px 10px;border-radius:0 10px 10px 10px;background:#fff;box-shadow:0 1px 2px #0d2f661a;color:#172b49}
+.live-toast-action{justify-self:start;color:#1f4f9c;font-size:12px;font-weight:800}
+.live-toast.is-chat .live-toast-action{color:#1b8a4a}
