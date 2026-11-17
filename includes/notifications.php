@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/layout.php';
-$user=require_roles(); $error=null;
+$user=require_roles(['admin','manager','employee','client']); $error=null;
 $departments=departments();
 $activeEmployees=array_values(array_filter(employees(),static fn(array $employee): bool => $employee['account_status']==='active'));
 if ($_SERVER['REQUEST_METHOD']==='POST') {

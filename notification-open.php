@@ -1,12 +1,12 @@
 <?php
 // Opens a notification: marks it read and goes to the page it is about (task, leave, report, request…).
 require_once __DIR__ . '/includes/bootstrap.php';
-$user=require_roles();
+$user=require_roles(['admin','manager','employee','client']);
 $notificationId=filter_var($_GET['id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
 if (!$notificationId) fail(404,'Notification not found or expired.');
 $notificationId=(int)$notificationId;
 $notification=one(
-    'SELECT id,sender_id,notification_type,title,message,submission_id,leave_request_id,holiday_id,requirement_id FROM notifications WHERE id=? AND recipient_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',
+    'SELECT id,sender_id,notification_type,title,message,submission_id,leave_request_id,holiday_id,requirement_id,chat_conversation_id FROM notifications WHERE id=? AND recipient_id=? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',
     [$notificationId,$user['id']]
 );
 if (!$notification) fail(404,'Notification not found or expired.');
@@ -29,6 +29,9 @@ if ($notification['submission_id']) {
     $destination=is_staff()
         ? 'manager-work-details.php?id='.(int)$notification['submission_id']
         : 'employee-work-history.php';
+} elseif (!empty($notification['chat_conversation_id'])) {
+    // New chat message: open that conversation.
+    $destination='chat.php?id='.(int)$notification['chat_conversation_id'].'#chat-latest';
 } elseif ($notification['leave_request_id']) {
     $destination=is_staff()?'manager-leave-requist.php':'my-leave-requests.php';
 } elseif ($notification['holiday_id']) {

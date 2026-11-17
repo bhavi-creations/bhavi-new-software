@@ -44,6 +44,27 @@ function chat_short_date(?string $at): string
 function chat_mark_read(int $conversationId,int $userId): void
 {
     query('UPDATE chat_participants p SET p.last_read_message_id=GREATEST(p.last_read_message_id,COALESCE((SELECT MAX(m.id) FROM chat_messages m WHERE m.conversation_id=?),0)) WHERE p.conversation_id=? AND p.user_id=?',[$conversationId,$conversationId,$userId]);
+    // Opening the chat clears its "new message" notification.
+    try { query('UPDATE notifications SET read_at=NOW() WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL',[$userId,$conversationId]); } catch (Throwable $e) { /* older schema */ }
+}
+
+/**
+ * New message → a notification for every other member: "New message from Ravi" (private) or "Ravi in Design team" (group).
+ * One notification per conversation stays until the chat is opened; newer messages update its text and time.
+ */
+function chat_notify(int $conversationId,array $sender,string $body,int $fileCount): void
+{
+    try {
+        $room=one('SELECT conversation_type,title FROM chat_conversations WHERE id=?',[$conversationId]);
+        if (!$room) return;
+        $title=$room['conversation_type']==='group'?mb_substr('💬 '.$sender['full_name'].' in '.($room['title']?:'group chat'),0,200):mb_substr('💬 New message from '.$sender['full_name'],0,200);
+        $text=$body!==''?mb_strimwidth($body,0,300,'…'):'📎 Sent '.($fileCount===1?'a file':$fileCount.' files');
+        foreach (rows('SELECT user_id FROM chat_participants WHERE conversation_id=? AND user_id<>?',[$conversationId,(int)$sender['id']]) as $member) {
+            $existing=one('SELECT id FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL ORDER BY id DESC LIMIT 1',[(int)$member['user_id'],$conversationId]);
+            if ($existing) query('UPDATE notifications SET title=?,message=?,sender_id=?,created_at=NOW() WHERE id=?',[$title,$text,(int)$sender['id'],$existing['id']]);
+            else query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,chat_conversation_id) VALUES (?,?,'general',?,?,?)",[(int)$member['user_id'],(int)$sender['id'],$title,$text,$conversationId]);
+        }
+    } catch (Throwable $e) { error_log('Chat notification failed: '.$e->getMessage()); }
 }
 
 /** Read receipt + presence for the open conversation. */
@@ -299,6 +320,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             query('UPDATE chat_participants SET last_read_message_id=GREATEST(last_read_message_id,?) WHERE conversation_id=? AND user_id=?',[$messageId,$conversationId,$user['id']]);
             query('UPDATE chat_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?',[$conversationId]);
             db()->commit();
+            chat_notify($conversationId,$user,$body,count($files));
             redirect('chat.php?id='.$conversationId.'#chat-latest');
         }
         throw new InvalidArgumentException('Invalid chat action.');

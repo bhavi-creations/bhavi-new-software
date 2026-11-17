@@ -58,6 +58,13 @@ function icon(string $name): string
     ];
     return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . ($paths[$name] ?? '') . '</svg>';
 }
+/** Chat messages from others that this user has not read yet (sidebar badge). */
+function chat_unread_count(int $userId): int
+{
+    try {
+        return count_value('SELECT COUNT(*) FROM chat_messages m JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=? WHERE m.id>p.last_read_message_id AND m.sender_id<>? AND m.deleted_at IS NULL', [$userId, $userId]);
+    } catch (Throwable $e) { return 0; }
+}
 function page_start(string $title, string $active = ''): void
 {
     $user = require_roles(['admin','manager','employee','client']);
@@ -91,10 +98,11 @@ function page_start(string $title, string $active = ''): void
     $nav['admin-holidays.php'] = 'Holidays';
     $unread=count_value('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND read_at IS NULL AND created_at>=DATE_SUB(NOW(),INTERVAL 1 DAY)',[$user['id']]);
     $nav['manager-notification.php'] = 'Notifications'.($unread?' ('.$unread.')':'');
-    if (in_array($user['role'],['admin','manager','employee'],true)) { $nav['chat.php']='Chat'; $nav['zoom-meetings.php']='Zoom meetings'; }
+    $chatUnread=chat_unread_count((int)$user['id']);
+    if (in_array($user['role'],['admin','manager','employee'],true)) { $nav['chat.php']='Chat'.($chatUnread?' ('.$chatUnread.')':''); $nav['zoom-meetings.php']='Zoom meetings'; }
     $nav['change-password.php'] = 'Change password';
     if (!is_staff() && $user['role']==='employee') $nav['apply-leaves.php']='Apply leave';
-    if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-monthly-meeting.php'=>'Monthly meeting','client-meetings.php'=>'Shoots','chat.php'=>'Chat','client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
+    if ($user['role']==='client') $nav=['client-dashboard.php'=>'Dashboard','client-reuirement.php'=>'Request work','client-monthly-meeting.php'=>'Monthly meeting','client-meetings.php'=>'Shoots','chat.php'=>'Chat'.($chatUnread?' ('.$chatUnread.')':''),'manager-notification.php'=>'Notifications'.($unread?' ('.$unread.')':''),'client-details.php'=>'Details','client-payments.php'=>'Payments','client-reports.php'=>'Reports','change-password.php'=>'Change password'];
     $adminNav = null;
     if ($user['role'] === 'admin') {
         // New work reports the admin has not seen yet (cleared when the Daily Work Report page is opened).
@@ -140,7 +148,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'client-reuirement.php', 'label' => 'Client Requests', 'icon' => 'inbox'],
                 ['href' => 'payslips.php', 'label' => 'Employee Payslips', 'icon' => 'money'],
                 ['href' => 'admin-holidays.php', 'label' => 'Holidays', 'icon' => 'calendar'],
-                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat'],
+                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat', 'badge' => $chatUnread],
             ],
         ];
     }
@@ -174,7 +182,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'apply-leaves.php', 'label' => 'Leave & holidays', 'icon' => 'calendar', 'dot' => $holidaySoon > 0, 'match' => ['apply-leaves.php', 'my-leave-requests.php', 'check-leave.php', 'employee-leave-calendar.php']],
             ],
             'Team' => [
-                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat'],
+                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat', 'badge' => $chatUnread],
                 ['href' => 'zoom-meetings.php', 'label' => 'Zoom meetings', 'icon' => 'video'],
                 ['href' => 'manager-notification.php', 'label' => 'Notifications', 'icon' => 'bell', 'badge' => $unread],
             ],
@@ -217,7 +225,8 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'client-payments.php', 'label' => 'Payments', 'icon' => 'card'],
                 ['href' => 'client-reports.php', 'label' => 'Work reports', 'icon' => 'calendar', 'dot' => $newDeliveries > 0, 'dotTitle' => 'New work delivered'],
                 ['href' => 'client-monthly-meeting.php', 'label' => 'Monthly meeting', 'icon' => 'people'],
-                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat'],
+                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat', 'badge' => $chatUnread],
+                ['href' => 'manager-notification.php', 'label' => 'Notifications', 'icon' => 'bell', 'badge' => $unread],
                 ['href' => 'client-meetings.php', 'label' => 'Shoots', 'icon' => 'camera', 'badge' => $clientRow ? count_value("SELECT COUNT(*) FROM client_engagements WHERE client_id=? AND deleted_at IS NULL AND status='scheduled' AND client_response='pending'", [$clientRow['id']]) : 0],
             ],
             'Account' => [
@@ -231,7 +240,7 @@ function page_start(string $title, string $active = ''): void
     }
     ?><!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= h($title) ?> | Bhavi</title><link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg"><link rel="apple-touch-icon" href="assets/img/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="assets/css/portal.css?v=<?= filemtime(__DIR__.'/../assets/css/portal.css') ?>"><?php if ($user['role']==='client'): ?><link rel="stylesheet" href="assets/css/client-portal.css?v=<?= filemtime(__DIR__.'/../assets/css/client-portal.css') ?>"><?php endif; ?></head>
-<body data-role="<?= h($user['role']) ?>"><div class="portal-layout">
+<body data-role="<?= h($user['role']) ?>" data-live-poll="notifications-poll.php"><div class="portal-layout">
 <aside class="portal-sidebar" id="portalSidebar"><button type="button" class="sidebar-close" aria-label="Close menu" title="Close menu">×</button><?php if ($employeeCard): ?><a class="emp-side-card" href="employee-profile.php" title="My profile"><span class="emp-side-avatar"><?= h($employeeCard['initials']) ?></span><span class="emp-side-text"><strong><?= h($employeeCard['name']) ?></strong><small><?= h($employeeCard['sub'] ?: 'Team member') ?></small></span></a><?php elseif ($clientCard): ?><a class="emp-side-card client-side-card" href="client-details.php" title="Project details"><span class="client-side-logo"><?= h($clientCard['initials']) ?><?php if ($clientCard['logo']): ?><img src="<?= h($clientCard['logo']) ?>" alt="" onerror="this.remove()"><?php endif; ?></span><span class="emp-side-text"><strong><?= h($clientCard['name']) ?></strong><?php if ($clientCard['plan'] !== ''): ?><small class="client-side-plan"><?= h($clientCard['plan']) ?></small><?php endif; ?></span></a><?php else: ?><a class="portal-brand portal-brand-logo" href="<?= h($dashboard) ?>" aria-label="Bhavi Creations — Dashboard"><img src="assets/img/best_digital_marketing_white_logo_bhavi_creations.webp" alt="Bhavi Creations" width="554" height="279"></a><?php endif; ?>
 <?php if ($user['role']==='employee'): ?><form class="attendance-control sidebar-attendance" data-attendance-date="<?= today() ?>" method="post" action="attendance.php"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $attendance?'logout':'login' ?>"><?php if ($attendance): ?><span data-attendance-time>Login saved at <?= h(date('g:i A',strtotime($attendance['login_at']))) ?></span><button class="attendance-button" type="submit"><?= icon('logout') ?>Logout</button><?php else: ?><button class="attendance-button" type="submit"><?= icon('document') ?>Login</button><?php endif; ?></form><?php endif; ?>
 <?php if ($adminNav): ?><nav aria-label="Main navigation" class="sectioned-nav"><?php foreach ($adminNav as $section => $items): ?><?php if ($section !== ''): ?><p class="nav-section-title"><?= h($section) ?></p><?php endif; ?><?php foreach ($items as $item): $badge=(int)($item['badge'] ?? 0); if (isset($item['children'])): $groupActive=in_array($active, array_column($item['children'],'href'), true); ?><details class="nav-group"<?= $groupActive ? ' open' : '' ?>><summary class="<?= $groupActive ? 'group-active' : '' ?>"><?= icon($item['icon']) ?><span><?= h($item['label']) ?></span><?php if ($badge): ?><em class="nav-badge"><?= $badge ?></em><?php endif; ?><i class="nav-chevron"><?= icon('chevron') ?></i></summary><div class="nav-sub"><?php foreach ($item['children'] as $child): ?><a href="<?= h($child['href']) ?>" class="<?= $active === $child['href'] ? 'active' : '' ?>" <?= $active === $child['href'] ? 'aria-current="page"' : '' ?>><span><?= h($child['label']) ?></span></a><?php endforeach; ?></div></details><?php else: $isActive=in_array($active, $item['match'] ?? [$item['href']], true); ?><a href="<?= h($item['href']) ?>" class="<?= $isActive ? 'active' : '' ?>" <?= $isActive ? 'aria-current="page"' : '' ?>><?= icon($item['icon']) ?><span><?= h($item['label']) ?></span><?php if ($badge): ?><em class="nav-badge"><?= $badge ?></em><?php elseif (!empty($item['dot'])): ?><i class="nav-dot" title="<?= h($item['dotTitle'] ?? 'Holiday this week') ?>"></i><?php endif; ?></a><?php endif; endforeach; endforeach; ?></nav><?php else: ?>

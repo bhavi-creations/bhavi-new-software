@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 56;
+const PORTAL_SCHEMA_VERSION = 57;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -859,6 +859,10 @@ function portal_install(PDO $pdo, string $database): void
         }
         // Chat with clients: the Managing Director / managers chat with clients; groups can mix employees and clients.
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (56)');
+        // Chat messages raise a notification that opens the conversation (one per conversation until it is read).
+        $addColumn('notifications', 'chat_conversation_id', 'BIGINT UNSIGNED NULL');
+        if (!$pdo->query("SHOW INDEX FROM notifications WHERE Key_name='idx_notification_chat'")->fetch()) $pdo->exec('ALTER TABLE notifications ADD INDEX idx_notification_chat (recipient_id,chat_conversation_id,read_at)');
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (57)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

@@ -244,3 +244,76 @@ document.querySelectorAll('form[data-upload-progress]').forEach(form => form.add
   xhr.addEventListener('timeout', () => failed('Upload took too long. Try fewer or smaller files.'));
   xhr.send(data);
 }));
+
+// Live alerts on every page: new chat messages and other notifications pop up, and the Chat / Notifications
+// badges in the sidebar update without reloading. Polls notifications-poll.php every 15 seconds.
+(() => {
+  const pollUrl = document.body && document.body.dataset.livePoll;
+  if (!pollUrl || !window.fetch) return;
+  const KEY = 'bhaviLiveNotifAt';
+  let after = NaN;
+  try { after = parseInt(localStorage.getItem(KEY) || '', 10); } catch (_) {}
+  const onChatPage = /\/chat\.php$/.test(location.pathname);
+  const setBadge = (href, count) => {
+    document.querySelectorAll('.portal-sidebar a[href="' + href + '"]').forEach(link => {
+      if (link.closest('.sectioned-nav')) {
+        let badge = link.querySelector('.nav-badge');
+        if (!count) { if (badge) badge.remove(); return; }
+        if (!badge) { badge = document.createElement('em'); badge.className = 'nav-badge'; link.querySelector('.nav-dot')?.remove(); link.appendChild(badge); }
+        badge.textContent = count > 99 ? '99+' : String(count);
+      } else {
+        const label = link.querySelector('span'); if (!label) return;
+        label.textContent = label.textContent.replace(/\s\(\d+\)$/, '') + (count ? ' (' + count + ')' : '');
+      }
+    });
+  };
+  let box = null;
+  const toast = item => {
+    if (!box) { box = document.createElement('div'); box.className = 'live-toasts'; box.setAttribute('role', 'status'); box.setAttribute('aria-live', 'polite'); document.body.appendChild(box); }
+    const card = document.createElement('a'); card.className = 'live-toast'; card.href = item.url;
+    const title = document.createElement('strong'); title.textContent = item.title;
+    const text = document.createElement('span'); text.textContent = item.message;
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'live-toast-close'; close.setAttribute('aria-label', 'Close'); close.textContent = '×';
+    close.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); card.remove(); });
+    card.append(title, text, close); box.prepend(card);
+    while (box.children.length > 3) box.lastElementChild.remove();
+    setTimeout(() => card.remove(), 9000);
+  };
+  const desktop = item => {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+      const n = new Notification(item.title, { body: item.message, tag: 'bhavi-' + item.id, icon: 'assets/img/favicon.svg' });
+      n.onclick = () => { window.focus(); location.href = item.url; n.close(); };
+      return true;
+    } catch (_) { return false; }
+  };
+  // Ask once for desktop alerts, on the first click (browsers only allow it after a user action).
+  document.addEventListener('click', () => {
+    try { if ('Notification' in window && Notification.permission === 'default' && !sessionStorage.getItem('bhaviAskedAlerts')) { sessionStorage.setItem('bhaviAskedAlerts', '1'); Notification.requestPermission(); } } catch (_) {}
+  }, { once: true });
+  let busy = false;
+  async function poll() {
+    if (busy) return; busy = true;
+    try {
+      const r = await fetch(pollUrl + '?after=' + (Number.isFinite(after) ? after : 0), { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) return;
+      const data = await r.json(); if (!data.ok) return;
+      setBadge('chat.php', Number(data.chat_unread) || 0);
+      setBadge('manager-notification.php', Number(data.unread) || 0);
+      if (Number.isFinite(after)) {
+        const visible = document.visibilityState === 'visible';
+        (data.items || []).slice().reverse().forEach(item => {
+          const isChat = item.title.indexOf('💬') === 0;
+          if (onChatPage && visible && isChat) return; // the chat page already shows it live
+          if (!visible) { desktop(item); return; }
+          toast(item);
+        });
+      }
+      after = Math.max(Number.isFinite(after) ? after : 0, Number(data.latest) || 0);
+      try { localStorage.setItem(KEY, String(after)); } catch (_) {}
+    } catch (_) {} finally { busy = false; }
+  }
+  poll();
+  setInterval(() => { if (document.visibilityState === 'visible' || 'Notification' in window) poll(); }, 15000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
+})();

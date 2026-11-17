@@ -152,8 +152,23 @@ function save_work_entry(array $sheet, string $department, array $common, array 
 }
 function sync_assignment(int $id): void
 {
+    $before=(string)(one('SELECT status FROM work_assignments WHERE id=?',[$id])['status']??'');
     $latest=one('SELECT e.task_status,e.remark,e.time_spent_minutes FROM daily_work_entries e JOIN daily_work_submissions s ON s.id=e.submission_id WHERE e.assignment_id=? ORDER BY s.work_date DESC,e.updated_at DESC,e.id DESC LIMIT 1',[$id]);
     query('UPDATE work_assignments SET status=?,employee_remark=?,time_spent_minutes=? WHERE id=?',[$latest['task_status']??'pending',$latest['remark']??null,$latest['time_spent_minutes']??0,$id]);
+    if ($before!=='completed' && ($latest['task_status']??'')==='completed') requirement_task_finished($id);
+}
+/**
+ * A task made from a client request was finished by the employee: tell the Managing Director (and whoever
+ * assigned it) so they can open Client requests and click Done, which marks the request Completed for the client.
+ */
+function requirement_task_finished(int $assignmentId): void
+{
+    try {
+        $task=one('SELECT a.id,a.title,a.requirement_id,a.assigned_by,a.employee_id,u.full_name AS employee_name,c.client_name FROM work_assignments a JOIN users u ON u.id=a.employee_id LEFT JOIN client_requirements r ON r.id=a.requirement_id LEFT JOIN clients c ON c.id=r.client_id WHERE a.id=? AND a.requirement_id IS NOT NULL',[$assignmentId]);
+        if (!$task) return;
+        query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) SELECT id,?,'requirement',?,?,? FROM users WHERE deleted_at IS NULL AND account_status='active' AND id<>? AND (role='admin' OR id<=>?)",
+            [$task['employee_id'],'Client work done · '.($task['client_name']??'Client'),$task['title'].' finished by '.$task['employee_name'].'. Open Client requests and click Done to tell the client.',$task['requirement_id'],$task['employee_id'],$task['assigned_by']]);
+    } catch (Throwable $e) { error_log('Client work done notification failed: '.$e->getMessage()); }
 }
 function parse_work_duration(string $value): int
 {

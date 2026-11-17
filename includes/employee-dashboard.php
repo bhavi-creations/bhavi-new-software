@@ -671,7 +671,8 @@ if (
                 ]
             );
 
-
+            // A task from a client request: tell the Managing Director it is done (they click Done for the client).
+            requirement_task_finished((int) $assignmentId);
 
             /* =================================================
                CREATE EMPLOYEE WORK SHEET

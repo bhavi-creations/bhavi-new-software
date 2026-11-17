@@ -38,6 +38,7 @@ try {
     $pdo->prepare("INSERT INTO employee_profiles (user_id,department_id,designation) VALUES (?,?,'Designer')")->execute([$ravi, $dept]);
     $pdo->prepare("INSERT INTO clients (client_name,website_url,logo_path,is_active,created_by,user_id,package,payment_total,client_type,whatsapp,contact_person) VALUES ('Kiran Foods','','',1,?,?,'200000',200000,'premium','9876543210','Kiran')")->execute([$md, $kiran]);
     $kc = (int) val("SELECT id FROM clients WHERE client_name='Kiran Foods'");
+    $pdo->prepare("INSERT INTO users (full_name,username,password_hash,role,must_change_password) VALUES ('Mona Manager','mona',?,'manager',0)")->execute([$hash]);
     $sock = stream_socket_server('tcp://127.0.0.1:0'); $addr = stream_socket_get_name($sock, false); fclose($sock);
     $env = getenv(); foreach ($config as $k => $v) $env['BHAVI_' . strtoupper($k)] = (string) $v; $env['BHAVI_APP_ENV'] = 'local'; $env['BHAVI_DB_NAME'] = $database;
     $log = tempnam(sys_get_temp_dir(), 'bl'); $tmp[] = $log;
@@ -168,6 +169,22 @@ try {
     ok(str_contains($cc['body'], 'Chat with Bhavi') && str_contains($cc['body'], 'Hello Kiran'), 'client sees MD message');
     $client->post('chat.php?id=' . $clientRoom, ['action' => 'send_message', 'conversation_id' => (string) $clientRoom, 'body' => 'Thanks sir']);
     ok((int) val('SELECT COUNT(*) FROM chat_messages WHERE conversation_id=?', [$clientRoom]) === 2, 'client replies');
+
+    echo "Chat notifications\n";
+    $nId = (int) val('SELECT id FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL', [$md, $clientRoom]);
+    ok($nId > 0 && val('SELECT title FROM notifications WHERE id=?', [$nId]) === '💬 New message from Kiran Foods' && val('SELECT message FROM notifications WHERE id=?', [$nId]) === 'Thanks sir', 'MD gets a "new message" notification');
+    $client->post('chat.php?id=' . $clientRoom, ['action' => 'send_message', 'conversation_id' => (string) $clientRoom, 'body' => 'One more thing']);
+    ok((int) val('SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND chat_conversation_id=? AND read_at IS NULL', [$md, $clientRoom]) === 1 && val('SELECT message FROM notifications WHERE id=?', [$nId]) === 'One more thing', 'one notification per chat, updated with the latest message');
+    $poll = json_decode($admin->req('notifications-poll.php?after=0')['body'], true);
+    ok($poll['ok'] && $poll['chat_unread'] === 2 && $poll['unread'] >= 1 && str_contains(json_encode($poll['items'], JSON_UNESCAPED_UNICODE), 'New message from Kiran Foods'), 'live poll gives chat unread count and the popup item');
+    $dashMd = $admin->req('admin-dashboard.php');
+    ok(str_contains($dashMd['body'], 'data-live-poll="notifications-poll.php"') && preg_match('#href="chat.php"[^>]*>.*?<em class="nav-badge">2</em>#s', $dashMd['body']) === 1, 'sidebar Chat shows unread badge');
+    $open = $admin->req('notification-open.php?id=' . $nId);
+    ok(str_contains($open['headers']['location'] ?? '', 'chat.php?id=' . $clientRoom), 'notification opens the chat');
+    $admin->req('chat.php?id=' . $clientRoom);
+    ok(val('SELECT read_at FROM notifications WHERE id=?', [$nId]) !== null && json_decode($admin->req('notifications-poll.php')['body'], true)['chat_unread'] === 0, 'opening the chat clears it');
+    $cn = $client->req('manager-notification.php');
+    ok($cn['status'] === 200 && str_contains($cn['body'], 'New message from Boss MD'), 'client has a Notifications page with chat alerts');
     $r = $client->post('chat.php', ['action' => 'create_conversation', 'chat_kind' => 'group', 'user_ids' => [(string) $md], 'title' => 'x']);
     ok(str_contains($r['body'], 'Only the Managing Director can create groups'), 'client cannot create groups');
     $r = $client->post('chat.php', ['action' => 'create_conversation', 'chat_kind' => 'employee', 'user_ids' => [(string) $ravi]]);
@@ -190,6 +207,31 @@ try {
     $f2 = tempnam(sys_get_temp_dir(), 'r2'); file_put_contents($f2, 'reel two'); $tmp[] = $f2;
     $r = $client->post('client-reuirement.php', ['action' => 'submit_requirement', 'tasks[0][type]' => 'reel', 'tasks[0][due_date]' => date('Y-m-d', strtotime('+2 days')), 'tasks[0][remark]' => 'Two reels', 'task_files_0[0]' => new CURLFile($f1, 'text/plain', 'reel-1.txt'), 'task_files_0[1]' => new CURLFile($f2, 'text/plain', 'reel-2.txt')]);
     ok($r['status'] === 303 && (int) val('SELECT COUNT(*) FROM requirement_files') === 2, 'two files from two boxes saved');
+
+    echo "Client request: assigned → MD told; finished → MD told; Done → client sees Completed\n";
+    $reqId = (int) val("SELECT id FROM client_requirements WHERE brief LIKE '%Two reels%' ORDER BY id DESC LIMIT 1");
+    $mgr = new B($base); $mgr->login('mona', 'Secret123!');
+    $mgr->req('client-reuirement.php');
+    $r = $mgr->post('client-reuirement.php', ['action' => 'assign_requirement', 'requirement_id' => (string) $reqId, 'employee_id' => (string) $ravi, 'work_date' => date('Y-m-d'), 'priority' => 'normal', 'note' => '']);
+    $taskId = (int) val('SELECT id FROM work_assignments WHERE requirement_id=?', [$reqId]);
+    ok($r['status'] === 303 && $taskId > 0, 'manager assigns the client request to an employee');
+    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Client request assigned · Kiran Foods' AND message LIKE '%Ravi Kumar%by Mona Manager%'", [$md]) === 1, 'MD told who assigned it to whom');
+    $rq = $admin->req('client-reuirement.php');
+    ok(str_contains($rq['body'], 'complete_requirement') && str_contains($rq['body'], 'When the work is finished'), 'MD sees the Done button');
+    $emp->req('employee-assigned-work.php');
+    $emp->post('employee-assigned-work.php', ['action' => 'start_assignment', 'assignment_id' => (string) $taskId]);
+    $emp->post('employee-assigned-work.php', ['action' => 'end_assignment', 'assignment_id' => (string) $taskId, 'remark' => 'Both reels ready']);
+    ok(val('SELECT status FROM work_assignments WHERE id=?', [$taskId]) === 'completed', 'employee finishes the task');
+    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Client work done · Kiran Foods'", [$md]) === 1 && (int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Client work done · Kiran Foods'", [(int) val("SELECT id FROM users WHERE username='mona'")]) === 1, 'MD and the manager who assigned it are told the work is done');
+    $rq = $admin->req('client-reuirement.php');
+    ok(str_contains($rq['body'], 'Work finished by the team'), 'request shows work finished, ready for Done');
+    $r = $admin->post('client-reuirement.php', ['action' => 'complete_requirement', 'requirement_id' => (string) $reqId, 'note' => 'Reels uploaded to Work reports']);
+    ok($r['status'] === 303 && val('SELECT status FROM client_requirements WHERE id=?', [$reqId]) === 'completed', 'Done marks the request completed');
+    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Your request is completed ✓'", [$kiran]) === 1, 'client notified: completed');
+    $crq = $client->req('client-reuirement.php');
+    ok(str_contains($crq['body'], 'Completed ✓') && str_contains($crq['body'], 'Reels uploaded to Work reports'), 'client sees Completed with the message');
+    $r = $admin->post('client-reuirement.php', ['action' => 'complete_requirement', 'requirement_id' => (string) $reqId]);
+    ok(str_contains($r['body'], 'already completed'), 'cannot complete twice');
 
     echo "Pages load\n";
     foreach (['admin-dashboard.php', 'client-monthly-meeting.php', 'add-client.php', 'invoices.php?add=1&type=quotation'] as $page) { $p = $admin->req($page); ok($p['status'] === 200, "MD $page"); }

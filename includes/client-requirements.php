@@ -157,12 +157,39 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='assign_requ
         db()->commit();
         try {
             query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message) VALUES (?,?,'general',?,?)",[$employeeId,$user['id'],'1 task assigned',$title.' · '.date('d M',strtotime($workDate)).($n?' · '.$n.' client file'.($n===1?'':'s'):'')]);
+            // The Managing Director hears that the client request is assigned (also when a manager / an employee with access did it).
+            query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) SELECT id,?,'requirement',?,?,? FROM users WHERE role='admin' AND account_status='active' AND deleted_at IS NULL AND id<>?",[$user['id'],'Client request assigned · '.$requirement['client_name'],$title.' → '.$employee['full_name'].' · by '.$user['full_name'].' · work date '.date('d M',strtotime($workDate)),$requirementId,$user['id']]);
         } catch (Throwable $notificationError) { error_log('Request assigned; notification failed: '.$notificationError->getMessage()); }
         flash('Sent to '.$employee['full_name'].'. It is in their assigned work'.($n?' with '.$n.' file'.($n===1?'':'s'):'').'.'.($missingFiles?' Not attached (missing on the server, ask the client to send again): '.implode(', ',$missingFiles).'.':''),$missingFiles?'error':'success');
         redirect('client-reuirement.php#request-'.$requirementId);
     } catch (Throwable $e) {
         if (db()->inTransaction()) db()->rollBack();
         foreach ($copiedFiles as $path) if (is_file($path)) @unlink($path);
+        $error=mutation_error($e);
+    }
+}
+
+// Admin / manager (or an employee given Client requests access): Done → the request is Completed and the client is told.
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='complete_requirement') {
+    require_roles(['admin','manager']); check_csrf();
+    try {
+        $requirementId=positive_id($_POST['requirement_id']??null);
+        $requirement=one("SELECT r.*,c.client_name,c.user_id AS client_user_id FROM client_requirements r JOIN clients c ON c.id=r.client_id WHERE r.id=? AND c.deleted_at IS NULL",[$requirementId]);
+        if (!$requirement || is_payment_proof($requirement)) throw new InvalidArgumentException('Client request not found.');
+        if (!in_array($requirement['status'],['assigned','in_progress'],true)) throw new InvalidArgumentException('This request is already '.str_replace('_',' ',$requirement['status']).'.');
+        $note=trim((string)($_POST['note']??''));
+        if (mb_strlen($note)>2000) throw new InvalidArgumentException('Keep the note to the client under 2000 characters.');
+        $title=preg_replace('/^URGENT · /u','',(string)$requirement['title']);
+        db()->beginTransaction();
+        query("UPDATE client_requirements SET status='completed',approved_text=? WHERE id=?",[$note!==''?$note:'Your work is completed. Thank you!',$requirementId]);
+        if ($requirement['client_user_id']) query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) VALUES (?,?,'requirement',?,?,?)",[$requirement['client_user_id'],$user['id'],'Your request is completed ✓',$title.($note!==''?"\n".$note:''),$requirementId]);
+        // Other admins see who closed it.
+        query("INSERT INTO notifications (recipient_id,sender_id,notification_type,title,message,requirement_id) SELECT id,?,'requirement',?,?,? FROM users WHERE role='admin' AND account_status='active' AND deleted_at IS NULL AND id<>?",[$user['id'],'Client request completed · '.$requirement['client_name'],$title.' · marked done by '.$user['full_name'],$requirementId,$user['id']]);
+        db()->commit();
+        flash('Marked as done. '.$requirement['client_name'].' now sees this request as Completed.');
+        redirect('client-reuirement.php#request-'.$requirementId);
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) db()->rollBack();
         $error=mutation_error($e);
     }
 }
@@ -191,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action']??'')==='share_requi
     }
 }
 
-if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement','share_requirement'],true)) {
+if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['confirm_payment','reject_payment','assign_requirement','share_requirement','complete_requirement'],true)) {
     require_roles(['client']); check_csrf(); $storedFiles=[];
     try {
         if (($_POST['action']??'')!=='submit_requirement') throw new InvalidArgumentException('Invalid request.');
@@ -325,7 +352,7 @@ $crChosen=count(array_filter($crTasks,static fn($t)=>$t['type']!==''));
 $crPlan=array_filter(['reels'=>(int)$clientRecord['monthly_reels'],'posters'=>(int)$clientRecord['monthly_posters'],'carousels'=>(int)$clientRecord['monthly_carousels']]);
 $crPlanText=$crPlan?implode(', ',array_map(static fn($k,$v)=>$v.' '.($v===1?rtrim($k,'s'):$k),array_keys($crPlan),$crPlan)):'';
 if ($crPlan && count($crPlan)>1) { $parts=explode(', ',$crPlanText); $last=array_pop($parts); $crPlanText=implode(', ',$parts).' and '.$last; }
-$crStatus=['assigned'=>['Received','is-received'],'in_progress'=>['In progress','is-progress'],'completed'=>['Delivered','is-done'],'cancelled'=>['Cancelled','is-cancelled']];
+$crStatus=['assigned'=>['Received','is-received'],'in_progress'=>['In progress','is-progress'],'completed'=>['Completed ✓','is-done'],'cancelled'=>['Cancelled','is-cancelled']];
 
 /** One task block. $i is the form index ("__I__" inside the template that JS copies). */
 $crTaskBlock=static function (string $i, int $number, array $task) use ($crTypes,$crQuick,$crPlanText): string {
@@ -565,7 +592,9 @@ if (is_staff()) {
     $crAssignBox=static function (array $requirement, array $files) use ($crEmployees): void {
         $sent=rows('SELECT a.id,a.status,a.work_date,a.started_at,u.full_name FROM work_assignments a JOIN users u ON u.id=a.employee_id WHERE a.requirement_id=? AND a.deleted_at IS NULL ORDER BY a.id',[$requirement['id']]);
         $open=in_array($requirement['status'],['assigned','in_progress'],true);
-        if (!$sent && !$open) return;
+        $completed=$requirement['status']==='completed';
+        if (!$sent && !$open && !$completed) return;
+        $allDone=$sent && count(array_filter($sent,static fn($a)=>$a['status']==='completed'))===count($sent);
         $groups=[]; foreach ($crEmployees as $e) $groups[$e['department_name']][]=$e;
         // The request's own team first.
         uksort($groups,static fn($a,$b)=>[$a!==($requirement['department_name']??''),$a]<=>[$b!==($requirement['department_name']??''),$b]);
@@ -575,6 +604,14 @@ if (is_staff()) {
         ?><div class="cr-assign">
             <?php if ($sent): ?><ul class="cr-assign-sent"><?php foreach ($sent as $a): $state=$a['status']==='completed'?['done','✓ Done']:(!empty($a['started_at'])?['work','▶ Working']:['wait','⏳ Not started']); ?><li><span class="cr-assign-avatar"><?= h(mb_strtoupper(mb_substr($a['full_name'],0,1))) ?></span><span>Sent to <b><?= h($a['full_name']) ?></b> · <?= h(date('d M Y',strtotime($a['work_date']))) ?></span><span class="cr-assign-state is-<?= $state[0] ?>"><?= $state[1] ?></span></li><?php endforeach; ?></ul><?php endif; ?>
             <?php $shared=!empty($requirement['shared_with_all']); if ($shared): ?><div class="cr-shared"><span>👥 <b>Visible to all employees</b> · they can see this request and download its files</span><form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="share_requirement"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>"><input type="hidden" name="share" value="0"><button type="submit" class="cr-shared-stop">Stop showing to all</button></form></div><?php endif; ?>
+            <?php if ($completed): ?><p class="cr-complete-done">✓ Completed · the client sees this request as Completed</p><?php endif; ?>
+            <?php if ($open && ($sent || !empty($requirement['shared_with_all']))): ?>
+            <form method="post" class="cr-complete<?= $allDone?' is-ready':'' ?>" data-confirm="Mark this client request as done? The client will see it as Completed."><?= csrf_field() ?><input type="hidden" name="action" value="complete_requirement"><input type="hidden" name="requirement_id" value="<?= (int)$requirement['id'] ?>">
+                <span class="cr-complete-text"><?= $allDone?'<b>Work finished by the team.</b> Click Done to tell the client it is completed.':'When the work is finished, click Done — the client sees it as Completed.' ?></span>
+                <input name="note" maxlength="2000" placeholder="Message to client (optional)" aria-label="Message to client">
+                <button type="submit" class="cr-complete-btn"><?= icon('check') ?> Done</button>
+            </form>
+            <?php endif; ?>
             <?php if ($open): ?>
             <details class="cr-assign-box">
                 <summary class="cr-assign-btn"><?= icon('send') ?> <?= $sent||$shared?'Assign again':'Assign' ?></summary>
