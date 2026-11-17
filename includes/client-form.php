@@ -79,6 +79,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             $extra[$key]=$number;
         }
         $extra['monthly_work_remark']=optional_text('monthly_work_remark',5000);
+        // Monthly meeting: day of the month (1-31) + time + how we meet.
+        $meetingDay=trim((string)($_POST['meeting_day']??''));
+        if ($meetingDay!=='') {
+            $meetingDay=filter_var($meetingDay,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>31]]);
+            if ($meetingDay===false) throw new InvalidArgumentException('Choose a monthly meeting day from 1 to 31.');
+            $meetingTime=trim((string)($_POST['meeting_time']??''));
+            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/D',$meetingTime)) throw new InvalidArgumentException('Choose the monthly meeting time.');
+            $extra['meeting_day']=$meetingDay; $extra['meeting_time']=substr($meetingTime,0,5).':00';
+        } else { $extra['meeting_day']=null; $extra['meeting_time']=null; }
+        $meetingMode=(string)($_POST['meeting_mode']??'live');
+        $extra['meeting_mode']=in_array($meetingMode,['live','google_meet','phone','zoom'],true)?$meetingMode:'live';
+        $extra['meeting_place']=optional_text('meeting_place',2048);
         if (isset($_POST['client_profile'])) {
             $industry=optional_text('industry',60);
             if ($industry!=='' && !in_array($industry,CLIENT_INDUSTRIES,true)) throw new InvalidArgumentException('Select a valid industry.');
@@ -208,6 +220,17 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
         <label class="cl-notes">Notes for the team<textarea name="team_notes" maxlength="5000" rows="3" placeholder="Brand guidelines, preferred colours, posting schedule, special instructions…"><?= h($value('team_notes')) ?></textarea></label>
     </section>
 
+    <section class="emp-card" id="monthly-meeting"><h3>Monthly meeting</h3><p class="emp-card-sub">The day each month you meet this client. It shows in the client’s details and dashboard with a countdown.</p>
+        <?php $meetingDayValue=(string)$value('meeting_day',''); $meetingTimeValue=substr((string)$value('meeting_time',''),0,5); $meetingModeValue=(string)$value('meeting_mode','live'); ?>
+        <div class="emp-grid">
+            <label>Meeting day of the month<select name="meeting_day" data-cl-meeting-day><option value="">No monthly meeting</option><?php for ($d=1;$d<=31;$d++): ?><option value="<?= $d ?>" <?= $meetingDayValue===(string)$d?'selected':'' ?>><?= $d ?><?= ['th','st','nd','rd'][($d%100>=11&&$d%100<=13)?0:($d%10)]??'th' ?> of every month</option><?php endfor; ?></select></label>
+            <label>Meeting time<input type="time" name="meeting_time" value="<?= h($meetingTimeValue) ?>" data-cl-meeting-time></label>
+            <label>How you will meet<select name="meeting_mode"><?php foreach (['live'=>'Live meeting','google_meet'=>'Google Meet','phone'=>'Phone call','zoom'=>'Zoom'] as $k=>$l): ?><option value="<?= $k ?>" <?= $meetingModeValue===$k?'selected':'' ?>><?= h($l) ?></option><?php endforeach; ?></select></label>
+            <label>Place / meeting link<input name="meeting_place" maxlength="2048" value="<?= h($value('meeting_place')) ?>" placeholder="e.g. Our office, or https://meet.google.com/…"></label>
+        </div>
+        <?php if ($record && !empty($record['meeting_day'])): ?><p class="emp-card-sub cl-meeting-link"><a href="client-monthly-meeting.php?client=<?= (int)$record['id'] ?>">Move one meeting, or change it for a few months →</a></p><?php endif; ?>
+    </section>
+
     <details class="cl-more"<?= $record?' open':'' ?>><summary><span>More details (optional)</span><small>Client type, contract dates, domain &amp; GMB, social logins, client portal login, monthly work and payments</small></summary>
     <section class="emp-card"><h3>Contract</h3>
         <div class="emp-grid">
@@ -302,6 +325,10 @@ foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; $savedS
     var boxes = form.querySelectorAll('[data-cl-services] input');
     function needOne() { var any = Array.prototype.some.call(boxes, function (b) { return b.checked; }); boxes[0].setCustomValidity(any ? '' : 'Select at least one service.'); }
     boxes.forEach(function (b) { b.addEventListener('change', needOne); }); needOne();
+    // Monthly meeting: a time is needed once a day is chosen.
+    var mDay = form.querySelector('[data-cl-meeting-day]'), mTime = form.querySelector('[data-cl-meeting-time]');
+    function meetingNeedsTime() { mTime.required = mDay.value !== ''; if (mDay.value !== '' && !mTime.value) mTime.value = '11:00'; }
+    if (mDay && mTime) { mDay.addEventListener('change', meetingNeedsTime); mTime.required = mDay.value !== ''; }
     var logo = form.querySelector('[data-cl-logo]'), img = form.querySelector('[data-cl-logo-img]'), icon = form.querySelector('[data-cl-logo-icon]');
     form.querySelector('[data-cl-logo-btn]').addEventListener('click', function () { logo.click(); });
     logo.addEventListener('change', function () { var f = logo.files[0]; if (!f) return; img.src = URL.createObjectURL(f); img.hidden = false; if (icon) icon.hidden = true; });

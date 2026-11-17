@@ -48,7 +48,12 @@ if ($notification['submission_id']) {
 } elseif ($notification['notification_type']==='general' && (str_starts_with($title,'send to client now') || str_starts_with($title,'scheduled post due'))) {
     // Content schedule reminder: open the posts that are due now.
     $destination='content-schedule.php?tab=due';
-} elseif ($notification['notification_type']==='general' && str_starts_with($title,'meeting & shoot')) {
+} elseif ($notification['notification_type']==='general' && str_starts_with($title,'monthly meeting')) {
+    // Monthly client meeting: change requested (staff) or approved / moved (client).
+    $destination='client-monthly-meeting.php';
+} elseif ($notification['notification_type']==='general' && str_starts_with($title,'quotation')) {
+    $destination=is_staff()?'invoices.php?type=quotation':'client-payments.php#quotations';
+} elseif ($notification['notification_type']==='general' && (str_starts_with($title,'meeting & shoot') || str_starts_with($title,'shoot '))) {
     // Client meetings & shoots: client confirmed / asked for a change (staff), or a new / updated plan (client).
     $destination=is_staff()
         ? 'client-meetings.php?tab='.(str_contains($title,'change requested')?'change':(str_contains($title,'confirmed')?'confirmed':'all'))

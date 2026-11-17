@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ---- Load every plan, then sort: upcoming (soonest first) → past scheduled → completed / cancelled (newest first).
-$sql = 'SELECT e.*,c.client_name,c.logo_path,c.whatsapp,c.phone,c.contact_person,c.user_id AS client_user_id,u.full_name AS creator FROM client_engagements e JOIN clients c ON c.id=e.client_id LEFT JOIN users u ON u.id=e.created_by WHERE e.deleted_at IS NULL';
+$sql = 'SELECT e.*,c.client_name,c.logo_path,c.whatsapp,c.phone,c.contact_person,c.user_id AS client_user_id,u.full_name AS creator FROM client_engagements e JOIN clients c ON c.id=e.client_id LEFT JOIN users u ON u.id=e.created_by WHERE e.deleted_at IS NULL AND e.shoot_type<>\'none\''; // only shoots here: meetings are monthly, on the client
 $params = [];
 $filterClient = 0;
 if ($isClient) { $sql .= ' AND e.client_id=?'; $params[] = $ownClient['id']; }
@@ -96,21 +96,21 @@ $responseHtml = static function (array $e, bool $forClient): string {
     return '<span class="cm-resp is-pending">⏳ ' . ($forClient ? 'Please confirm' : 'Waiting for client') . '</span>' . ($e['client_user_id'] ? '' : '<small>No portal login — send on WhatsApp</small>');
 };
 $waFor = static function (array $e): ?string {
-    $text = 'Hello ' . ($e['contact_person'] ?: $e['client_name']) . ', greetings from Bhavi!' . "\n\n" . cm_title($e) . "\n" . cm_summary($e) . ($e['notes'] !== '' ? "\nNote: " . $e['notes'] : '') . "\n\nPlease confirm in your client portal (Meetings & shoots). Thank you!";
+    $text = 'Hello ' . ($e['contact_person'] ?: $e['client_name']) . ', greetings from Bhavi!' . "\n\n" . cm_title($e) . "\n" . cm_summary($e) . ($e['notes'] !== '' ? "\nNote: " . $e['notes'] : '') . "\n\nPlease confirm in your client portal (Shoots). Thank you!";
     return cm_wa_link($e['whatsapp'] ?: $e['phone'], $text);
 };
 
-page_start('Meetings & shoots', 'client-meetings.php');
+page_start('Shoots', 'client-meetings.php');
 error_message($error);
 ?>
 <div class="ot-page cm-page">
     <header class="ot-head cm-head">
         <div>
-            <p class="ot-crumb"><?= $isClient ? 'Your workspace' : 'Dashboard' ?> / Meetings &amp; shoots</p>
-            <h1 class="ot-title">Meetings &amp; shoots</h1>
-            <p class="ot-sub"><?= $isClient ? 'Your planned meetings and shoot days with our team. Please confirm, or tell us if something should change.' : 'Every client meeting and shoot in one place. Clients confirm in their portal — their answer shows here.' ?></p>
+            <p class="ot-crumb"><?= $isClient ? 'Your workspace' : 'Dashboard' ?> / Shoots</p>
+            <h1 class="ot-title">Shoots</h1>
+            <p class="ot-sub"><?= $isClient ? 'Your planned shoot days with our team. Please confirm, or tell us if something should change. Your monthly meeting is under Monthly meeting.' : 'Every client shoot in one place. Clients confirm in their portal — their answer shows here. Monthly meetings are under Monthly meetings.' ?></p>
         </div>
-        <?php if ($canManage): ?><a class="ot-gold cm-new-btn" href="client-meeting-form.php<?= $filterClient ? '?client=' . $filterClient : '' ?>"><?= icon('plus') ?> New meeting / shoot</a><?php endif; ?>
+        <?php if ($canManage): ?><a class="ot-gold cm-new-btn" href="client-meeting-form.php<?= $filterClient ? '?client=' . $filterClient : '' ?>"><?= icon('plus') ?> New shoot</a><?php endif; ?>
     </header>
 
 <?php if ($canManage): ?>
@@ -129,11 +129,11 @@ error_message($error);
             <form method="get" class="cm-filter"><input type="hidden" name="tab" value="<?= h($tab) ?>"><select name="client" onchange="this.form.submit()" aria-label="Filter by client"><option value="">All clients</option><?php foreach ($clientList as $c): ?><option value="<?= (int) $c['id'] ?>"<?= $filterClient === (int) $c['id'] ? ' selected' : '' ?>><?= h($c['client_name']) ?></option><?php endforeach; ?></select><noscript><button type="submit">Filter</button></noscript></form>
         </div>
         <?php if (!$list): ?>
-            <p class="ot-help cm-empty"><?= $all ? 'Nothing in this list.' : 'No meetings or shoots yet.' ?> <a href="client-meeting-form.php">+ Plan the first one</a></p>
+            <p class="ot-help cm-empty"><?= $all ? 'Nothing in this list.' : 'No shoots yet.' ?> <a href="client-meeting-form.php">+ Plan the first one</a></p>
         <?php else: ?>
         <div class="cm-table-wrap">
         <table class="cm-table">
-            <thead><tr><th>Client</th><th>Meeting</th><th>Shoot</th><th>Client response</th><th class="cm-th-actions">Actions</th></tr></thead>
+            <thead><tr><th>Client</th><th>Shoot</th><th>Client response</th><th class="cm-th-actions">Actions</th></tr></thead>
             <tbody>
             <?php foreach ($list as $e): $isMeet = $e['meeting_type'] === 'google_meet' && $e['meeting_place'] !== ''; $past = $e['status'] === 'scheduled' && cm_is_past($e); $wa = $waFor($e); ?>
             <tr id="plan-<?= (int) $e['id'] ?>" class="is-<?= h($e['status']) ?><?= $past ? ' is-past' : '' ?><?= $savedId === (int) $e['id'] ? ' is-saved' : '' ?>">
@@ -142,13 +142,6 @@ error_message($error);
                         <span class="cm-avatar"><?php if ($e['logo_path']): ?><img src="client-logo.php?id=<?= (int) $e['client_id'] ?>" alt="" onerror="this.remove()"><?php endif; ?><b><?= h(cm_initials($e['client_name'])) ?></b></span>
                         <div><strong><?= h($e['client_name']) ?></strong><small><?= h(cm_title($e)) ?><?= $e['notes'] !== '' ? ' · <span class="cm-has-note" title="Has notes — click 👁 to read">📝</span>' : '' ?></small><?php if ($e['creator']): ?><small>by <?= h($e['creator']) ?></small><?php endif; ?></div>
                     </div>
-                </td>
-                <td data-label="Meeting">
-                    <?php if ($e['meeting_type'] === 'none'): ?><span class="cm-none">No meeting</span><?php else: ?>
-                    <strong class="cm-type"><?= icon($e['meeting_type'] === 'google_meet' ? 'video' : 'people') ?><?= h(cm_meeting_label($e)) ?></strong>
-                    <small><?= h(cm_when($e['meeting_at'])) ?></small>
-                    <?php if ($isMeet): ?><?php if (!$past && $e['status'] === 'scheduled'): ?><a class="cm-join" href="<?= h($e['meeting_place']) ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a><?php endif; ?><?php elseif ($e['meeting_place'] !== ''): ?><small><?= h($e['meeting_place']) ?></small><?php endif; ?>
-                    <?php endif; ?>
                 </td>
                 <td data-label="Shoot">
                     <?php if ($e['shoot_type'] === 'none'): ?><span class="cm-none">No shoot</span><?php else: ?>
@@ -166,8 +159,7 @@ error_message($error);
                         <details class="cm-more"><summary aria-label="More actions"><?= icon('more') ?></summary>
                             <div class="cm-more-menu">
                                 <?php if ($wa): ?><a href="<?= h($wa) ?>" target="_blank" rel="noopener noreferrer"><?= icon('send') ?> Send on WhatsApp</a><?php endif; ?>
-                                <?php if ($e['meeting_at']): ?><a href="<?= h(cm_gcal($e['client_name'] . ' – Meeting', $e['meeting_at'], CM_MEETING_MINUTES, cm_summary($e), $e['meeting_place'])) ?>" target="_blank" rel="noopener noreferrer"><?= icon('calendar') ?> Meeting to calendar</a><?php endif; ?>
-                                <?php if ($e['shoot_at']): ?><a href="<?= h(cm_gcal($e['client_name'] . ' – Shoot', $e['shoot_at'], CM_SHOOT_MINUTES, cm_summary($e), $e['shoot_place'])) ?>" target="_blank" rel="noopener noreferrer"><?= icon('calendar') ?> Shoot to calendar</a><?php endif; ?>
+                                                                <?php if ($e['shoot_at']): ?><a href="<?= h(cm_gcal($e['client_name'] . ' – Shoot', $e['shoot_at'], CM_SHOOT_MINUTES, cm_summary($e), $e['shoot_place'])) ?>" target="_blank" rel="noopener noreferrer"><?= icon('calendar') ?> Shoot to calendar</a><?php endif; ?>
                                 <?php if ($e['status'] === 'scheduled'): ?>
                                 <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="set_status"><input type="hidden" name="id" value="<?= (int) $e['id'] ?>"><input type="hidden" name="status" value="completed"><input type="hidden" name="back" value="<?= h($tab) ?>"><button type="submit"><?= icon('check') ?> Mark as done</button></form>
                                 <form method="post" data-confirm="Cancel this plan? The client will be told."><?= csrf_field() ?><input type="hidden" name="action" value="set_status"><input type="hidden" name="id" value="<?= (int) $e['id'] ?>"><input type="hidden" name="status" value="cancelled"><input type="hidden" name="back" value="<?= h($tab) ?>"><button type="submit">✕ Cancel plan</button></form>
@@ -194,7 +186,7 @@ error_message($error);
     <?php if ($waiting): ?><p class="cm-banner is-pending">⏳ <b><?= $waiting ?></b> plan<?= $waiting > 1 ? 's are' : ' is' ?> waiting for your confirmation.</p><?php endif; ?>
     <section class="ot-card">
         <div class="ot-card-head"><h2>Upcoming</h2><span><?= count($open) ?></span></div>
-        <?php if (!$open): ?><p class="ot-help">Nothing planned right now. Our team will add your next meeting or shoot here.</p><?php endif; ?>
+        <?php if (!$open): ?><p class="ot-help">No shoot planned right now. Our team will add your next shoot day here.</p><?php endif; ?>
         <div class="cm-list">
         <?php foreach ($open as $e): $isMeet = $e['meeting_type'] === 'google_meet' && $e['meeting_place'] !== ''; ?>
             <article class="cm-item" id="plan-<?= (int) $e['id'] ?>">
@@ -203,13 +195,6 @@ error_message($error);
                     <div class="cm-resp-cell"><?= $responseHtml($e, true) ?></div>
                 </div>
                 <div class="cm-parts">
-                    <?php if ($e['meeting_type'] !== 'none'): ?>
-                    <div class="cm-part"><span class="cm-part-icon"><?= icon($e['meeting_type'] === 'google_meet' ? 'video' : 'people') ?></span><div>
-                        <em>Meeting</em><strong><?= h(cm_meeting_label($e)) ?></strong><small><?= h(cm_when($e['meeting_at'])) ?></small>
-                        <?php if ($e['meeting_place'] !== '' && !$isMeet): ?><small><?= h($e['meeting_place']) ?></small><?php endif; ?>
-                        <div class="cm-links"><?php if ($isMeet): ?><a class="cm-join" href="<?= h($e['meeting_place']) ?>" target="_blank" rel="noopener noreferrer">Join Google Meet</a><?php endif; ?><?php if ($e['meeting_at']): ?><a href="<?= h(cm_gcal(cm_title($e) . ' – Meeting', $e['meeting_at'], CM_MEETING_MINUTES, cm_summary($e), $e['meeting_place'])) ?>" target="_blank" rel="noopener noreferrer">Add to calendar</a><?php endif; ?></div>
-                    </div></div>
-                    <?php endif; ?>
                     <?php if ($e['shoot_type'] !== 'none'): ?>
                     <div class="cm-part"><span class="cm-part-icon is-shoot"><?= icon('camera') ?></span><div>
                         <em>Shoot</em><strong><?= h(cm_shoot_label($e)) ?></strong><small><?= h(cm_when($e['shoot_at'])) ?></small>
@@ -236,7 +221,7 @@ error_message($error);
         <?php if ($done): ?>
         <details class="zm-past"><summary>History (<?= count($done) ?>)</summary>
             <div class="cm-list"><?php foreach ($done as $e): ?>
-                <article class="cm-item is-past"><div class="cm-item-head"><div class="cm-item-title"><strong><?= h(cm_title($e)) ?></strong><small><?= h(implode(' · ', array_filter([$e['meeting_type'] !== 'none' ? cm_meeting_label($e) . ' ' . cm_when($e['meeting_at']) : '', $e['shoot_type'] !== 'none' ? 'Shoot ' . cm_when($e['shoot_at']) : '']))) ?></small></div><span class="cm-resp is-<?= h($e['status']) ?>"><?= h(CM_STATUSES[$e['status']]) ?></span></div></article>
+                <article class="cm-item is-past"><div class="cm-item-head"><div class="cm-item-title"><strong><?= h(cm_title($e)) ?></strong><small><?= h(implode(' · ', array_filter([$e['shoot_type'] !== 'none' ? 'Shoot ' . cm_when($e['shoot_at']) : '']))) ?></small></div><span class="cm-resp is-<?= h($e['status']) ?>"><?= h(CM_STATUSES[$e['status']]) ?></span></div></article>
             <?php endforeach; ?></div>
         </details>
         <?php endif; ?>

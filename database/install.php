@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 55;
+const PORTAL_SCHEMA_VERSION = 56;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -797,6 +797,68 @@ function portal_install(PDO $pdo, string $database): void
         // Client request shown to every employee (Managing Director: Assign → Show to all employees).
         $addColumn('client_requirements','shared_with_all','TINYINT(1) NOT NULL DEFAULT 0');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (55)');
+        // Monthly client meeting: set on the client form (day of month + time). The client can ask to move it and the
+        // Managing Director can move it directly — for 1 month, a few months, or permanently.
+        $addColumn('clients', 'meeting_day', 'TINYINT UNSIGNED NULL');
+        $addColumn('clients', 'meeting_time', 'TIME NULL');
+        $addColumn('clients', 'meeting_mode', "VARCHAR(20) NOT NULL DEFAULT 'live'");
+        $addColumn('clients', 'meeting_place', "VARCHAR(2048) NOT NULL DEFAULT ''");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS client_meeting_changes (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            client_id BIGINT UNSIGNED NOT NULL,
+            meeting_day TINYINT UNSIGNED NOT NULL,
+            meeting_time TIME NOT NULL,
+            start_month DATE NOT NULL,
+            months SMALLINT UNSIGNED NULL,
+            reason VARCHAR(1000) NOT NULL DEFAULT '',
+            status VARCHAR(12) NOT NULL DEFAULT 'pending',
+            requested_by BIGINT UNSIGNED NULL,
+            decided_by BIGINT UNSIGNED NULL,
+            decided_at DATETIME NULL,
+            decision_note VARCHAR(500) NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_meeting_changes_client (client_id,status,start_month),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+            FOREIGN KEY (requested_by) REFERENCES users(id) ON DELETE SET NULL,
+            FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+        ) ENGINE=InnoDB");
+        // Quotations live in the invoices table (doc_type) and can be converted into an invoice.
+        $addColumn('invoices', 'doc_type', "VARCHAR(12) NOT NULL DEFAULT 'invoice'");
+        $addColumn('invoices', 'converted_invoice_id', 'BIGINT UNSIGNED NULL');
+        $addColumn('invoices', 'from_quotation_id', 'BIGINT UNSIGNED NULL');
+        $addColumn('invoices', 'bank_account_id', 'BIGINT UNSIGNED NULL');
+        $addColumn('invoices', 'client_response_at', 'DATETIME NULL');
+        // GST per service line (0% when the service has no GST).
+        $hadItemGst = $pdo->query("SHOW COLUMNS FROM invoice_items LIKE 'gst_rate'")->fetch();
+        $addColumn('invoice_items', 'gst_rate', 'DECIMAL(5,2) NOT NULL DEFAULT 0.00');
+        $addColumn('invoice_items', 'gst_amount', 'DECIMAL(12,2) NOT NULL DEFAULT 0.00');
+        if (!$hadItemGst) {
+            // Older invoices had one GST % for the whole invoice: copy it onto each line.
+            $pdo->exec("UPDATE invoice_items it JOIN invoices i ON i.id=it.invoice_id SET it.gst_rate=i.gst_rate,it.gst_amount=ROUND(it.amount*i.gst_rate/100,2) WHERE i.gst_type<>'none' AND i.gst_rate>0");
+        }
+        // Bank accounts printed on invoices (choose one per invoice).
+        $pdo->exec("CREATE TABLE IF NOT EXISTS bank_accounts (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            label VARCHAR(100) NOT NULL DEFAULT '',
+            bank_name VARCHAR(150) NOT NULL DEFAULT '',
+            account_name VARCHAR(150) NOT NULL DEFAULT '',
+            account_no VARCHAR(40) NOT NULL DEFAULT '',
+            ifsc VARCHAR(20) NOT NULL DEFAULT '',
+            branch VARCHAR(150) NOT NULL DEFAULT '',
+            upi_id VARCHAR(100) NOT NULL DEFAULT '',
+            is_default TINYINT(1) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL
+        ) ENGINE=InnoDB");
+        if (!(int) $pdo->query('SELECT COUNT(*) FROM bank_accounts')->fetchColumn()) {
+            $info = is_file(dirname(__DIR__) . '/includes/payment-details.php') ? (array) require dirname(__DIR__) . '/includes/payment-details.php' : [];
+            if (trim((string) ($info['account_no'] ?? '')) !== '') {
+                $stmt = $pdo->prepare('INSERT INTO bank_accounts (label,bank_name,account_name,account_no,ifsc,upi_id,is_default) VALUES (?,?,?,?,?,?,1)');
+                $stmt->execute([trim((string) ($info['bank_name'] ?? 'Main account')), trim((string) ($info['bank_name'] ?? '')), trim((string) ($info['account_name'] ?? '')), trim((string) $info['account_no']), trim((string) ($info['ifsc'] ?? '')), trim((string) ($info['upi_id'] ?? ''))]);
+            }
+        }
+        // Chat with clients: the Managing Director / managers chat with clients; groups can mix employees and clients.
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (56)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

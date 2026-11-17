@@ -4,6 +4,10 @@ require_once __DIR__.'/finance.php';
 
 const INVOICE_STATUSES = ['unpaid' => 'Unpaid', 'paid' => 'Paid', 'cancelled' => 'Cancelled'];
 const INVOICE_GST_TYPES = ['none' => 'No GST', 'cgst_sgst' => 'CGST + SGST (same state)', 'igst' => 'IGST (other state)'];
+// Quotations are stored in the invoices table with doc_type='quotation'.
+const QUOTATION_STATUSES = ['pending' => 'Waiting for client', 'accepted' => 'Accepted by client', 'rejected' => 'Declined', 'converted' => 'Converted to invoice'];
+// GST % choices for each service line (0% = no GST on that service).
+const INVOICE_GST_RATES = ['0', '5', '12', '18', '28'];
 
 function invoice_company(): array
 {
@@ -22,10 +26,10 @@ function invoice_fy(string $date): string
     return $start.'-'.substr((string) ($start + 1), -2);
 }
 
-/** Next free number in the invoice's year, e.g. BHAVI_KKD_2026_28. */
-function invoice_next_no(string $date): string
+/** Next free number in the year, e.g. BHAVI_KKD_2026_28 (invoice) or BHAVI_KKD_QT_2026_5 (quotation). */
+function invoice_next_no(string $date, string $docType = 'invoice'): string
 {
-    $prefix = invoice_company()['invoice_prefix'].'_'.date('Y', strtotime($date) ?: time()).'_';
+    $prefix = invoice_company()['invoice_prefix'].($docType === 'quotation' ? '_QT' : '').'_'.date('Y', strtotime($date) ?: time()).'_';
     $max = 0;
     foreach (rows('SELECT invoice_no FROM invoices WHERE invoice_no LIKE ?', [str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $prefix).'%']) as $row) {
         $tail = substr($row['invoice_no'], strlen($prefix));
@@ -57,6 +61,36 @@ function invoice_amount_words($value): string
         return implode(' ', $parts);
     };
     return $words($rupees).($rupees === 1 ? ' Rupee' : ' Rupees').($paise ? ' and '.$two($paise).' Paise' : '').' Only';
+}
+
+/** Bank accounts that can be printed on an invoice (default first). */
+function invoice_bank_accounts(): array
+{
+    try { return rows('SELECT * FROM bank_accounts WHERE deleted_at IS NULL ORDER BY is_default DESC,label,id'); }
+    catch (Throwable $e) { return []; }
+}
+
+/** The bank account for an invoice: the chosen one, else the default, else payment-details.php. */
+function invoice_bank_for(?int $bankId): array
+{
+    $accounts = invoice_bank_accounts();
+    foreach ($accounts as $a) if ($bankId && (int) $a['id'] === $bankId) return $a;
+    if ($accounts) return $accounts[0];
+    $co = invoice_company();
+    return ['id' => 0, 'label' => '', 'bank_name' => (string) ($co['bank_name'] ?? ''), 'account_name' => $co['account_name'], 'account_no' => (string) ($co['account_no'] ?? ''), 'ifsc' => (string) ($co['ifsc'] ?? ''), 'branch' => '', 'upi_id' => (string) ($co['upi_id'] ?? '')];
+}
+
+/** Short name for a dropdown, e.g. "HDFC Bank · ****9999". */
+function invoice_bank_label(array $a): string
+{
+    $no = (string) $a['account_no'];
+    return trim(($a['label'] !== '' ? $a['label'] : $a['bank_name']).($no !== '' ? ' · ****'.substr($no, -4) : ''));
+}
+
+function quotation_status_badge(string $status): string
+{
+    $class = ['accepted' => 'active', 'converted' => 'active', 'pending' => 'on_hold', 'rejected' => 'inactive'][$status] ?? 'on_hold';
+    return '<span class="badge client-status is-'.h($class).'">'.h(QUOTATION_STATUSES[$status] ?? 'Waiting for client').'</span>';
 }
 
 function invoice_status_badge(string $status): string

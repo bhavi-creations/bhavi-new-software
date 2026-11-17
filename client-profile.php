@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/finance.php';
+require_once __DIR__ . '/includes/monthly-meeting.php';
 
 $viewer=require_roles(['admin','manager','employee','client']);
 $id=filter_var($_GET['id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
@@ -30,6 +31,7 @@ if ($viewer['role']==='client') {
 page_start('Client profile','add-client.php');
 ?>
 <?php if ($viewer['role']!=='client'): ?><div class="toolbar"><a class="button secondary" href="add-client.php">Back to clients</a></div><?php endif; ?>
+<?= $staff?mm_countdown_card($client,false):'' ?>
 <div class="client-profile-layout">
     <section class="panel client-profile-card">
         <h2><?= h($client['client_name']) ?></h2>
@@ -38,6 +40,7 @@ page_start('Client profile','add-client.php');
             <?php foreach (['client_type'=>'Type of client','phone'=>'Phone number','starting_date'=>'Starting date','ending_date'=>'Ending date','created_at'=>'Added on'] as $key=>$label): ?>
                 <dt><?= h($label) ?></dt><dd><?= h($client[$key]?:'—') ?></dd>
             <?php endforeach; ?>
+            <dt>Monthly meeting</dt><dd><?php $pmNext=mm_next($client); ?><?= $client['meeting_day']?h(mm_rule_label($client)).'<br><small>Next: '.h(mm_when($pmNext)).' · <b>'.h(mm_countdown($pmNext['date'])).'</b></small>':'Not set' ?><?php if ($staff && $client['meeting_day']): ?> <a href="client-monthly-meeting.php?client=<?= $id ?>">Change</a><?php endif; ?></dd>
             <dt>Project age</dt><dd><?= h(project_age($client['starting_date'])) ?></dd><dt>Status</dt><dd><?php [$csKey,$csLabel]=client_status_info($client); ?><span class="badge client-status is-<?= h($csKey) ?>"><?= h($csLabel) ?></span></dd>
             <?php if ($staff || $viewer['role']==='client'): ?><dt>Package</dt><dd><?= h($client['package']?:'—') ?></dd><?php endif; ?>
         </dl>

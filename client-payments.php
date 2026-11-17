@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__.'/includes/client-portal.php';
+require_once __DIR__.'/includes/invoice.php';
 $client=own_client();
 $payments=rows('SELECT id,payment_date,amount FROM client_payments WHERE client_id=? ORDER BY payment_date DESC,id DESC',[$client['id']]);
 // Payment proofs the client sent that the team has not closed yet.
@@ -7,8 +8,11 @@ $proofs=rows("SELECT id,created_at,brief,status FROM client_requirements WHERE c
 // Proofs the team marked as not received in the last 30 days (with their note).
 $rejectedProofs=rows("SELECT id,created_at,approved_text FROM client_requirements WHERE client_id=? AND status='cancelled' AND (title LIKE 'Payment proof · %' OR title LIKE 'URGENT · Payment proof · %') AND created_at>=NOW()-INTERVAL 30 DAY ORDER BY created_at DESC",[$client['id']]);
 // Invoices raised to this client (cancelled ones are hidden).
-$invoices=rows("SELECT id,invoice_no,invoice_date,total,status FROM invoices WHERE client_id=? AND deleted_at IS NULL AND status<>'cancelled' ORDER BY invoice_date DESC,id DESC",[$client['id']]);
-$payInfo=array_map(static fn($v)=>trim((string)$v),(array)require __DIR__.'/includes/payment-details.php');
+$invoices=rows("SELECT id,invoice_no,invoice_date,total,status FROM invoices WHERE client_id=? AND deleted_at IS NULL AND doc_type='invoice' AND status<>'cancelled' ORDER BY invoice_date DESC,id DESC",[$client['id']]);
+// Quotations sent to this client: they can accept or decline them here.
+$quotations=rows("SELECT id,invoice_no,invoice_date,due_date,total,status FROM invoices WHERE client_id=? AND deleted_at IS NULL AND doc_type='quotation' ORDER BY invoice_date DESC,id DESC LIMIT 20",[$client['id']]);
+// How to pay: the default bank account (Invoices → Bank accounts).
+$payInfo=array_map(static fn($v)=>trim((string)$v),invoice_bank_for(null));
 
 $total=client_package_amount($client); $paid=(float)$client['paid_amount']; $balance=max(0,$total-$paid);
 $percent=$total>0?(int)floor(min(100,max(0,$paid/$total*100))):($paid>0?100:0);
@@ -77,6 +81,18 @@ page_start('Payments','client-payments.php');
         </section>
 
         <aside class="pp-side">
+            <?php if ($quotations): ?>
+            <section class="pp-card" id="quotations">
+                <h3>Quotations</h3>
+                <?php foreach ($quotations as $q): $open=in_array($q['status'],['pending'],true); ?>
+                    <div class="pp-item pp-quote">
+                        <span class="pp-item-text"><strong><?= h($q['invoice_no']) ?></strong><small><?= h(date('d M Y',strtotime($q['invoice_date']))) ?> · <?= h(rupees_label($q['total'])) ?> · <?= h(QUOTATION_STATUSES[$q['status']]??'') ?></small></span>
+                        <a class="pp-receipt" href="invoice-print.php?id=<?= (int)$q['id'] ?>" target="_blank" rel="noopener"><?= icon('eye') ?> View</a>
+                        <?php if ($open): ?><form method="post" action="quotation-respond.php" class="pp-quote-actions"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$q['id'] ?>"><button type="submit" name="response" value="accepted" class="pp-gold">Accept</button><button type="submit" name="response" value="rejected" class="pp-quote-no">Decline</button></form><?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+            </section>
+            <?php endif; ?>
             <?php if ($invoices): ?>
             <section class="pp-card">
                 <h3>My invoices</h3>

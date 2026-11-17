@@ -50,6 +50,7 @@ $cdFacts=[
     'Phone'=>$client['phone']?:'—',
     'Started'=>$client['starting_date']?date('j M Y',strtotime($client['starting_date'])):'—',
     'Partner for'=>cdv_partner_for($client['starting_date']),
+    'Monthly meeting'=>$client['meeting_day']?mm_rule_label($client):'Not fixed yet',
     'Contract ends'=>$client['ending_date']?date('j M Y',strtotime($client['ending_date'])):'Ongoing',
 ];
 // Package: name, billing, amount, paid and balance (full history and receipts are on the Payments page).
@@ -70,6 +71,8 @@ $cdHasSecrets=(bool)array_filter($socialLinks,static fn($l)=>!empty($l['password
         </div>
         <a class="pd-change" href="client-reuirement.php?type=other">Request a change to details</a>
     </header>
+
+    <?= mm_countdown_card($client,true) ?>
 
     <div class="pd-grid">
         <aside class="pd-profile">

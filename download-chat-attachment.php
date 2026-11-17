@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__.'/includes/bootstrap.php';
-$user=require_roles(['admin','manager','employee']);
+$user=require_roles(['admin','manager','employee','client']);
 $attachmentId=positive_id($_GET['id']??null);
 $attachment=one('SELECT a.*,m.conversation_id FROM chat_attachments a JOIN chat_messages m ON m.id=a.message_id JOIN chat_participants p ON p.conversation_id=m.conversation_id AND p.user_id=? WHERE a.id=?',[$user['id'],$attachmentId]);
 if (!$attachment) fail(404,'Chat attachment not found.');

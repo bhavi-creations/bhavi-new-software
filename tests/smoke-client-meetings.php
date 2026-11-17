@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-// Smoke test for client meetings and shoots (MD plans, client confirms or asks for a change).
+// Smoke test for client shoots (MD plans a shoot, client confirms or asks for a change). Monthly meetings: smoke-client-updates.php.
 // Runs against a disposable database that is dropped at the end.
 date_default_timezone_set('Asia/Kolkata');
 require dirname(__DIR__) . '/database/install.php';
@@ -44,34 +44,36 @@ try {
     $base = 'http://' . $addr;
     $tomorrow = date('Y-m-d\T11:00', strtotime('+1 day')); $later = date('Y-m-d\T10:00', strtotime('+3 days'));
 
-    echo "Managing Director plans\n";
+    echo "Managing Director plans a shoot\n";
     $admin = new B($base); $admin->login('md', 'Secret123!');
     $p = $admin->req('client-meeting-form.php');
-    ok(str_contains($p['body'], 'New meeting &amp; shoot') && str_contains($p['body'], 'Kiran Foods') && str_contains($p['body'], 'Google Meet') && str_contains($p['body'], 'Client will shoot'), 'form shows client dropdown, meeting & shoot options');
-    $dash = $admin->req('admin-dashboard.php'); ok(str_contains($dash['body'], 'client-meetings.php'), 'sidebar link for MD');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => '', 'meeting_type' => 'live', 'shoot_type' => 'our_team', 'meeting_at' => $tomorrow]);
+    ok(str_contains($p['body'], 'New shoot') && str_contains($p['body'], 'Kiran Foods') && str_contains($p['body'], 'Client will shoot') && !str_contains($p['body'], 'name="meeting_type"'), 'form shows client dropdown and shoot options only');
+    $dash = $admin->req('admin-dashboard.php'); ok(str_contains($dash['body'], 'client-meetings.php') && str_contains($dash['body'], 'client-monthly-meeting.php'), 'sidebar links for shoots and monthly meetings');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => '', 'shoot_type' => 'our_team', 'shoot_at' => $later]);
     ok(str_contains($r['body'], 'Select a client') || str_contains($r['body'], 'valid'), 'client required');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'meeting_type' => 'other', 'meeting_other' => '', 'shoot_type' => 'our_team', 'meeting_at' => $tomorrow]);
-    ok(str_contains($r['body'], 'you chose “Other”'), 'Other meeting needs typed text');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'meeting_type' => 'none', 'shoot_type' => 'none']);
-    ok(str_contains($r['body'], 'at least a meeting or a shoot'), 'cannot save with neither');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'title' => 'Dec planning', 'meeting_type' => 'google_meet', 'meeting_at' => $tomorrow, 'meeting_place' => 'meet.google.com/abc-defg-hij', 'shoot_type' => 'other', 'shoot_other' => 'Freelance photographer', 'shoot_at' => $later, 'shoot_place' => 'Store <b>Ameerpet</b>', 'notes' => 'Keep products ready', 'notify' => '1']);
-    ok($r['status'] === 303, 'plan saved');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'shoot_type' => 'other', 'shoot_other' => '', 'shoot_at' => $later]);
+    ok(str_contains($r['body'], 'you chose “Other”'), 'Other shoot needs typed text');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'shoot_type' => 'none']);
+    ok(str_contains($r['body'], 'Choose who will shoot'), 'cannot save without a shoot');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'shoot_type' => 'our_team', 'shoot_at' => '']);
+    ok(str_contains($r['body'], 'Choose the shoot date and time'), 'shoot date required');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'title' => 'Dec planning', 'shoot_type' => 'other', 'shoot_other' => 'Freelance photographer', 'shoot_at' => $later, 'shoot_place' => 'Store <b>Ameerpet</b>', 'notes' => 'Keep products ready', 'notify' => '1']);
+    ok($r['status'] === 303, 'shoot saved');
     $e = $pdo->query("SELECT * FROM client_engagements WHERE title='Dec planning'")->fetch();
-    ok($e['meeting_place'] === 'https://meet.google.com/abc-defg-hij' && $e['shoot_other'] === 'Freelance photographer' && $e['client_response'] === 'pending', 'saved with Meet link fixed and Other text');
-    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Meeting & shoot planned: Dec planning'", [$kiran]) === 1, 'client notified');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'meeting_type' => 'live', 'meeting_at' => date('Y-m-d\T15:00', strtotime('+1 day')), 'meeting_place' => 'Our office', 'shoot_type' => 'none']);
-    ok($r['status'] === 303 && (int) val('SELECT COUNT(*) FROM client_engagements WHERE client_id=?', [$oc]) === 1, 'second client plan saved at a free time');
+    ok($e['meeting_type'] === 'none' && $e['shoot_other'] === 'Freelance photographer' && $e['client_response'] === 'pending', 'saved as a shoot with Other text');
+    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Shoot planned: Dec planning'", [$kiran]) === 1, 'client notified');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'shoot_type' => 'our_team', 'shoot_at' => date('Y-m-d\T15:00', strtotime('+1 day')), 'shoot_place' => 'Our office']);
+    ok($r['status'] === 303 && (int) val('SELECT COUNT(*) FROM client_engagements WHERE client_id=?', [$oc]) === 1, 'second client shoot saved at a free time');
     $list = $admin->req('client-meetings.php');
-    ok(str_contains($list['body'], 'Store &lt;b&gt;Ameerpet&lt;/b&gt;') && str_contains($list['body'], 'wa.me/919876543210') && str_contains($list['body'], 'Join Google Meet') && str_contains($list['body'], 'calendar.google.com'), 'list escapes HTML, has WhatsApp, Meet and calendar links');
+    ok(str_contains($list['body'], 'Store &lt;b&gt;Ameerpet&lt;/b&gt;') && str_contains($list['body'], 'wa.me/919876543210') && str_contains($list['body'], 'calendar.google.com') && !str_contains($list['body'], '<th>Meeting</th>'), 'list escapes HTML, has WhatsApp and calendar links, no meeting column');
     $edit = $admin->req('client-meeting-form.php?id=' . $e['id']);
-    ok(str_contains($edit['body'], 'Edit meeting &amp; shoot') && str_contains($edit['body'], 'value="Freelance photographer"'), 'edit form prefilled');
+    ok(str_contains($edit['body'], 'Edit shoot') && str_contains($edit['body'], 'value="Freelance photographer"'), 'edit form prefilled');
     $admin->logout();
 
     echo "Client view\n";
     $cl = new B($base); $cl->login('kiran', 'Secret123!');
     $cp = $cl->req('client-meetings.php');
-    ok(str_contains($cp['body'], 'Dec planning') && !str_contains($cp['body'], 'Our office') && !str_contains($cp['body'], 'New meeting / shoot'), 'client sees only own plan, no form');
+    ok(str_contains($cp['body'], 'Dec planning') && !str_contains($cp['body'], 'Our office') && !str_contains($cp['body'], 'New shoot'), 'client sees only own plan, no form');
     $cd = $cl->req('client-dashboard.php'); ok(str_contains($cd['body'], 'client-meetings.php'), 'client dashboard links to it');
     $other = (int) val('SELECT id FROM client_engagements WHERE client_id=?', [$oc]);
     $r = $cl->post('client-meetings.php', ['action' => 'respond', 'id' => (string) $other, 'response' => 'confirmed']);
@@ -82,17 +84,17 @@ try {
     ok(str_contains($r['body'], 'what you would like to change'), 'change request needs a note');
     $r = $cl->post('client-meetings.php', ['action' => 'respond', 'id' => (string) $e['id'], 'response' => 'change_requested', 'client_note' => 'Saturday please']);
     ok($r['status'] === 303 && val('SELECT client_response FROM client_engagements WHERE id=?', [$e['id']]) === 'change_requested', 'change requested');
-    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Meeting & shoot change requested by Kiran Foods'", [$md]) === 1, 'MD notified of change');
+    ok((int) val("SELECT COUNT(*) FROM notifications WHERE recipient_id=? AND title='Shoot change requested by Kiran Foods'", [$md]) === 1, 'MD notified of change');
     $cl->logout();
 
     echo "MD reschedules, client confirms\n";
     $admin->login('md', 'Secret123!');
     $ml = $admin->req('client-meetings.php');
     ok(str_contains($ml['body'], '⚠ Change requested') && str_contains($ml['body'], 'Saturday please') && str_contains($ml['body'], 'asked for a change') && str_contains($ml['body'], 'client-meeting-form.php?id=' . $e['id']), 'MD list shows the change request, the reason and an Edit button');
-    $nid = (int) val("SELECT id FROM notifications WHERE recipient_id=? AND title='Meeting & shoot change requested by Kiran Foods'", [$md]);
+    $nid = (int) val("SELECT id FROM notifications WHERE recipient_id=? AND title='Shoot change requested by Kiran Foods'", [$md]);
     $no = $admin->req('notification-open.php?id=' . $nid); ok(($no['headers']['location'] ?? '') === 'client-meetings.php?tab=change', 'notification opens the change-requested tab');
     $sat = date('Y-m-d\T10:00', strtotime('next saturday'));
-    $admin->post('client-meeting-form.php', ['id' => (string) $e['id'], 'client_id' => (string) $kc, 'title' => 'Dec planning', 'meeting_type' => 'google_meet', 'meeting_at' => $tomorrow, 'meeting_place' => 'https://meet.google.com/abc-defg-hij', 'shoot_type' => 'our_team', 'shoot_at' => $sat, 'shoot_place' => 'Store', 'notes' => '', 'notify' => '1']);
+    $admin->post('client-meeting-form.php', ['id' => (string) $e['id'], 'client_id' => (string) $kc, 'title' => 'Dec planning', 'shoot_type' => 'our_team', 'shoot_at' => $sat, 'shoot_place' => 'Store', 'notes' => 'Keep products ready', 'notify' => '1', 'allow_overlap' => '1']);
     ok(val('SELECT client_response FROM client_engagements WHERE id=?', [$e['id']]) === 'pending' && val('SELECT shoot_type FROM client_engagements WHERE id=?', [$e['id']]) === 'our_team', 'edit saved and asks client again');
     $admin->logout();
     $cl->login('kiran', 'Secret123!'); $cl->req('client-meetings.php');
@@ -114,47 +116,39 @@ try {
     $emp->logout();
 
     echo "Same time for two clients\n";
-    // Client A (Kiran Foods): meeting day 1 at 11:00 (1 h), shoot day 2 at 10:00 (3 h). Client B (Other Co) tries those times.
+    // Client A (Kiran Foods): shoot day 2 at 10:00 (3 h). Client B (Other Co) tries that time.
     $d1 = date('Y-m-d', strtotime('+5 days')); $d2 = date('Y-m-d', strtotime('+6 days'));
     $admin->login('md', 'Secret123!'); $admin->req('client-meeting-form.php');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'title' => 'Plan A', 'meeting_type' => 'live', 'meeting_at' => $d1 . 'T11:00', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T10:00']);
-    ok($r['status'] === 303, 'client A meeting + shoot saved');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $kc, 'title' => 'Plan A', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T10:00']);
+    ok($r['status'] === 303, 'client A shoot saved');
     $form = $admin->req('client-meeting-form.php');
-    ok(str_contains($form['body'], '"day":"' . $d1 . '"') && str_contains($form['body'], 'Another client'), 'form knows the booked slots for the live warning');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'meeting_type' => 'google_meet', 'meeting_at' => $d1 . 'T11:30', 'shoot_type' => 'none']);
-    ok(str_contains($r['body'], 'Another client meeting in this time: Kiran Foods'), 'B meeting at A meeting time is blocked');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'meeting_type' => 'none', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T12:00']);
+    ok(str_contains($form['body'], '"day":"' . $d2 . '"') && str_contains($form['body'], 'Another client'), 'form knows the booked slots for the live warning');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T12:00']);
     ok(str_contains($r['body'], 'Another client shoot in this time: Kiran Foods'), 'B shoot at A shoot time is blocked');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'meeting_type' => 'live', 'meeting_at' => $d2 . 'T11:00', 'shoot_type' => 'none']);
-    ok(str_contains($r['body'], 'Another client shoot in this time'), 'B meeting during A shoot is blocked too');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'meeting_type' => 'none', 'shoot_type' => 'client', 'shoot_at' => $d2 . 'T11:00']);
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'shoot_type' => 'client', 'shoot_at' => $d2 . 'T11:00']);
     ok($r['status'] === 303, '"Client will shoot" does not block the team');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B later', 'meeting_type' => 'live', 'meeting_at' => $d1 . 'T15:00', 'shoot_type' => 'none']);
-    ok($r['status'] === 303, 'same day, different time is allowed');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B forced', 'meeting_type' => 'live', 'meeting_at' => $d1 . 'T11:00', 'shoot_type' => 'none', 'allow_overlap' => '1']);
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B later', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T13:00']);
+    ok($r['status'] === 303, 'free right after the 3-hour shoot');
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B forced', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T11:00', 'allow_overlap' => '1']);
     ok($r['status'] === 303, '"Book anyway" saves despite the clash');
     $aId = (int) val("SELECT id FROM client_engagements WHERE title='Plan A'");
     $admin->post('client-meetings.php', ['action' => 'delete', 'id' => (string) val("SELECT id FROM client_engagements WHERE title='B forced'")]);
-    $r = $admin->post('client-meeting-form.php', ['id' => (string) $aId, 'client_id' => (string) $kc, 'title' => 'Plan A edited', 'meeting_type' => 'live', 'meeting_at' => $d1 . 'T11:00', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T10:00']);
+    $r = $admin->post('client-meeting-form.php', ['id' => (string) $aId, 'client_id' => (string) $kc, 'title' => 'Plan A edited', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T10:00']);
     ok($r['status'] === 303 && val('SELECT title FROM client_engagements WHERE id=?', [$aId]) === 'Plan A edited', 'editing a plan does not clash with itself');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'meeting_type' => 'live', 'meeting_at' => $d2 . 'T12:59', 'shoot_type' => 'none']);
-    ok(str_contains($r['body'], 'Another client shoot in this time'), 'shoot keeps the team busy for 3 hours');
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B after shoot', 'meeting_type' => 'live', 'meeting_at' => $d2 . 'T13:00', 'shoot_type' => 'none']);
-    ok($r['status'] === 303, 'free right after the 3-hour shoot');
-    $form = $admin->req('client-meeting-form.php'); ok(!str_contains($form['body'], 'meeting_minutes') && !str_contains($form['body'], '>Duration<'), 'no duration field on the form');
+    $form = $admin->req('client-meeting-form.php'); ok(!str_contains($form['body'], 'shoot_minutes') && !str_contains($form['body'], '>Duration<'), 'no duration field on the form');
     $admin->post('client-meetings.php', ['action' => 'set_status', 'id' => (string) $aId, 'status' => 'cancelled']);
-    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B after cancel', 'meeting_type' => 'live', 'meeting_at' => $d1 . 'T11:00', 'shoot_type' => 'none']);
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'B after cancel', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T10:00', 'shoot_place' => 'Our office, Hyderabad']);
     ok($r['status'] === 303, 'cancelled plan frees its time');
     $bId = (int) val("SELECT id FROM client_engagements WHERE title='B after cancel'");
-    $admin->post('client-meeting-form.php', ['id' => (string) $bId, 'client_id' => (string) $oc, 'title' => 'B after cancel', 'meeting_type' => 'live', 'meeting_at' => $d1 . 'T11:00', 'meeting_place' => 'Our office, Hyderabad', 'shoot_type' => 'our_team', 'shoot_at' => $d1 . 'T17:00', 'shoot_place' => 'Store', 'notes' => 'Agenda / what to keep ready: a very long note about products, menu cards, brand colours and the reel script that should wrap neatly instead of pushing the table sideways.']);
+    $admin->post('client-meeting-form.php', ['id' => (string) $bId, 'client_id' => (string) $oc, 'title' => 'B after cancel', 'shoot_type' => 'our_team', 'shoot_at' => $d2 . 'T10:00', 'shoot_place' => 'Our office, Hyderabad', 'notes' => 'Agenda / what to keep ready: a very long note about products, menu cards, brand colours and the reel script that should wrap neatly instead of pushing the table sideways.']);
     $lp = $admin->req('client-meetings.php');
     ok(str_contains($lp['body'], 'client-meeting-view.php?id=' . $bId) && !str_contains($lp['body'], 'should wrap neatly'), 'list has the eye button; long note is not in the table');
     $vp = $admin->req('client-meeting-view.php?id=' . $bId);
-    ok(str_contains($vp['body'], 'Other Co') && str_contains($vp['body'], 'Our office, Hyderabad') && str_contains($vp['body'], 'should wrap neatly') && str_contains($vp['body'], 'Waiting for client') && str_contains($vp['body'], 'client-meeting-form.php?id=' . $bId), 'details page shows everything with Edit');
+    ok(str_contains($vp['body'], 'Other Co') && str_contains($vp['body'], 'Our office, Hyderabad') && str_contains($vp['body'], 'should wrap neatly') && str_contains($vp['body'], 'Waiting for client') && str_contains($vp['body'], 'client-meeting-form.php?id=' . $bId) && !str_contains($vp['body'], '<h2>Meeting</h2>'), 'details page shows the shoot with Edit, no meeting box');
     ok(str_contains($vp['body'], 'Other clients booked on the same day'), 'details page lists same-day bookings');
     $gone = $admin->req('client-meeting-view.php?id=999999'); ok($gone['status'] === 303, 'missing plan goes back to the list');
     if ($dump = getenv('CM_DUMP')) { file_put_contents($dump . '-list.html', $lp['body']); file_put_contents($dump . '-view.html', $vp['body']); }
-    ok(str_contains($lp['body'], '· 11:00 AM') && !str_contains($lp['body'], '11:00 AM – 12:00 PM'), 'list shows start time only');
+    ok(str_contains($lp['body'], '· 10:00 AM') && !str_contains($lp['body'], '10:00 AM – 1:00 PM'), 'list shows start time only');
 
     echo "\nAll $checks checks passed.\n";
 } catch (Throwable $e) {

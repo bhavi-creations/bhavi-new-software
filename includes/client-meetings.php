@@ -8,7 +8,7 @@ const CM_SHOOT_TYPES = ['our_team' => 'We will shoot', 'client' => 'Client will 
 const CM_STATUSES = ['scheduled' => 'Scheduled', 'completed' => 'Completed', 'cancelled' => 'Cancelled'];
 const CM_RESPONSES = ['pending' => 'Waiting for client', 'confirmed' => 'Confirmed by client', 'change_requested' => 'Change requested'];
 // Notification titles start with this so notification-open.php can open the Meetings & shoots page.
-const CM_NOTICE_PREFIX = 'Meeting & shoot';
+const CM_NOTICE_PREFIX = 'Shoot';
 
 /** Human label for the meeting / shoot choice (uses the typed text for "Other"). */
 function cm_meeting_label(array $e): string { return $e['meeting_type'] === 'other' ? ($e['meeting_other'] ?: 'Other') : (CM_MEETING_TYPES[$e['meeting_type']] ?? ''); }
@@ -51,7 +51,7 @@ function cm_slot_text(array $x): string
 {
     return 'Another client ' . $x['kind'] . ' in this time: ' . $x['client'] . ' · ' . $x['label'] . ' · ' . date('j M, g:i A', $x['start']);
 }
-function cm_title(array $e): string { return $e['title'] !== '' ? $e['title'] : 'Meeting & shoot'; }
+function cm_title(array $e): string { return $e['title'] !== '' ? $e['title'] : 'Shoot'; }
 function cm_datetime(string $key, bool $required, string $what): ?string
 {
     $raw = trim((string) ($_POST[$key] ?? ''));

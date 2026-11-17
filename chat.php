@@ -1,8 +1,14 @@
 <?php
 require_once __DIR__.'/includes/layout.php';
 require_once __DIR__.'/includes/zoom.php';
-$user=require_roles(['admin','manager','employee']);
+$user=require_roles(['admin','manager','employee','client']);
 const CHAT_ONLINE_SECONDS=90;
+// Who can chat with whom:
+//  - Managing Director / managers: employees, clients, and groups that mix employees and clients.
+//  - Employees: the team (and groups they are added to).
+//  - Clients: the Managing Director / managers only (and groups the Managing Director adds them to).
+$isClientUser=$user['role']==='client';
+$chatRoles=in_array($user['role'],['admin','manager'],true)?['admin','manager','employee','client']:($isClientUser?['admin','manager']:['admin','manager','employee']);
 
 // Keep presence fresh while the chat page (and its 3-second polling) is open.
 query('UPDATE users SET last_seen_at=NOW() WHERE id=? AND (last_seen_at IS NULL OR last_seen_at<NOW()-INTERVAL 15 SECOND)',[$user['id']]);
@@ -71,9 +77,10 @@ function chat_conversation_rows(int $userId): array
         (SELECT m.created_at FROM chat_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) AS last_at,
         (SELECT GROUP_CONCAT(u.full_name ORDER BY u.full_name SEPARATOR ', ') FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=c.id AND p.user_id<>?) AS other_members,
         (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id=c.id AND m.id>mine.last_read_message_id AND m.sender_id<>?) AS unread,
-        (SELECT MAX(u.last_seen_at IS NOT NULL AND u.last_seen_at>=NOW()-INTERVAL ".CHAT_ONLINE_SECONDS." SECOND) FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=c.id AND p.user_id<>?) AS other_online
+        (SELECT MAX(u.last_seen_at IS NOT NULL AND u.last_seen_at>=NOW()-INTERVAL ".CHAT_ONLINE_SECONDS." SECOND) FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=c.id AND p.user_id<>?) AS other_online,
+        (SELECT COUNT(*) FROM chat_participants p JOIN users u ON u.id=p.user_id WHERE p.conversation_id=c.id AND p.user_id<>? AND u.role='client') AS client_members
         FROM chat_conversations c JOIN chat_participants mine ON mine.conversation_id=c.id AND mine.user_id=?
-        ORDER BY COALESCE((SELECT MAX(m.created_at) FROM chat_messages m WHERE m.conversation_id=c.id),c.created_at) DESC,c.id DESC",[$userId,$userId,$userId,$userId]);
+        ORDER BY COALESCE((SELECT MAX(m.created_at) FROM chat_messages m WHERE m.conversation_id=c.id),c.created_at) DESC,c.id DESC",[$userId,$userId,$userId,$userId,$userId]);
     foreach ($list as &$row) {
         $isGroup=$row['conversation_type']==='group';
         $row['label']=($isGroup?($row['title']?:$row['other_members']):$row['other_members'])?:'Chat';
@@ -84,7 +91,10 @@ function chat_conversation_rows(int $userId): array
         $row['when']=chat_short_date($row['last_at']);
         $row['unread']=(int)$row['unread'];
         $row['online']=!$isGroup && (int)$row['other_online']===1;
-        unset($row['last_body'],$row['last_deleted'],$row['other_online']);
+        // kind: "group", "client" (private chat with a client) or "staff" (private chat with the team)
+        $row['has_client']=(int)$row['client_members']>0;
+        $row['kind']=$isGroup?'group':($row['has_client']?'client':'staff');
+        unset($row['last_body'],$row['last_deleted'],$row['other_online'],$row['client_members']);
     }
     unset($row);
     return $list;
@@ -141,8 +151,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     try {
         $action=$_POST['action']??'';
         if ($action==='create_conversation') {
-            $type=$_POST['conversation_type']??'';
+            // "Employee chat" and "Client chat" are private chats; "Group" can mix employees and clients.
+            $kind=(string)($_POST['chat_kind']??'');
+            $type=$kind!==''?($kind==='group'?'group':'private'):(string)($_POST['conversation_type']??'');
             if (!in_array($type,['group','private'],true)) throw new InvalidArgumentException('Choose a group or private chat.');
+            if ($type==='group' && $isClientUser) throw new InvalidArgumentException('Only the Managing Director can create groups.');
             $rawIds=$_POST['user_ids']??[];
             if (!is_array($rawIds)) throw new InvalidArgumentException('Choose valid chat participants.');
             $participantIds=[];
@@ -152,7 +165,8 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             if ($type==='private' && count($participantIds)!==1) throw new InvalidArgumentException('Choose exactly one person for a private chat.');
             if ($type==='group' && count($participantIds)<1) throw new InvalidArgumentException('Choose at least one person for a group chat.');
             $placeholders=implode(',',array_fill(0,count($participantIds),'?'));
-            $validUsers=rows("SELECT id FROM users WHERE id IN ($placeholders) AND role IN ('admin','manager','employee') AND account_status='active' AND deleted_at IS NULL",$participantIds);
+            $rolePlaceholders=implode(',',array_fill(0,count($chatRoles),'?'));
+            $validUsers=rows("SELECT id FROM users WHERE id IN ($placeholders) AND role IN ($rolePlaceholders) AND account_status='active' AND deleted_at IS NULL",array_merge($participantIds,$chatRoles));
             if (count($validUsers)!==count($participantIds)) throw new InvalidArgumentException('One or more selected users are unavailable.');
             if ($type==='private') {
                 // Reuse an existing private chat with the same person instead of creating duplicates.
@@ -196,7 +210,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             if (!is_array($rawIds) || !$rawIds) throw new InvalidArgumentException('Choose at least one person to add.');
             $newIds=array_values(array_unique(array_map(static fn($v)=>positive_id($v),$rawIds)));
             $placeholders=implode(',',array_fill(0,count($newIds),'?'));
-            $valid=rows("SELECT id,full_name FROM users WHERE id IN ($placeholders) AND role IN ('admin','manager','employee') AND account_status='active' AND deleted_at IS NULL AND id NOT IN (SELECT user_id FROM chat_participants WHERE conversation_id=?) ORDER BY full_name",array_merge($newIds,[$conversationId]));
+            if ($isClientUser) throw new InvalidArgumentException('Only the Managing Director can add people to a group.');
+            $rolePlaceholders=implode(',',array_fill(0,count($chatRoles),'?'));
+            $valid=rows("SELECT id,full_name FROM users WHERE id IN ($placeholders) AND role IN ($rolePlaceholders) AND account_status='active' AND deleted_at IS NULL AND id NOT IN (SELECT user_id FROM chat_participants WHERE conversation_id=?) ORDER BY full_name",array_merge($newIds,$chatRoles,[$conversationId]));
             if (!$valid) throw new InvalidArgumentException('Those people are already in this group.');
             db()->beginTransaction();
             // New members start "read" up to now, so old messages do not show as unread.
@@ -307,9 +323,11 @@ if (!$selected && $conversations) {
 }
 $messages=$selected?array_reverse(rows('SELECT m.id,m.sender_id,u.full_name AS sender_name,m.body,m.created_at,m.deleted_at IS NOT NULL AS is_deleted FROM chat_messages m JOIN users u ON u.id=m.sender_id WHERE m.conversation_id=? ORDER BY m.id DESC LIMIT 100',[$selectedId])):[];
 $filesByMessage=chat_attachments_from_rows($messages);
-$people=rows("SELECT u.id,u.full_name,u.role,d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id<>? AND u.role IN ('admin','manager','employee') AND u.account_status='active' AND u.deleted_at IS NULL ORDER BY u.full_name",[$user['id']]);
+$rolePlaceholders=implode(',',array_fill(0,count($chatRoles),'?'));
+$people=rows("SELECT u.id,u.full_name,u.role,COALESCE(d.name,'') AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id<>? AND u.role IN ($rolePlaceholders) AND u.account_status='active' AND u.deleted_at IS NULL AND (u.role<>'client' OR EXISTS (SELECT 1 FROM clients cl WHERE cl.user_id=u.id AND cl.deleted_at IS NULL AND cl.is_active=1)) ORDER BY u.role='client',u.full_name",array_merge([$user['id']],$chatRoles));
+$hasClients=in_array('client',array_column($people,'role'),true);
 $initials=static function(?string $name): string { $o=''; foreach (array_slice(preg_split('/\s+/',trim((string)$name))?:[],0,2) as $p) $o.=mb_strtoupper(mb_substr($p,0,1)); return $o?:'?'; };
-$profileOf=static fn(int $id)=>one("SELECT u.id,u.full_name,u.username,u.role,u.deleted_at,ep.designation,d.name AS department_name FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=?",[$id]);
+$profileOf=static fn(int $id)=>one("SELECT u.id,u.full_name,u.username,u.role,u.deleted_at,ep.designation,d.name AS department_name,(SELECT cl.id FROM clients cl WHERE cl.user_id=u.id AND cl.deleted_at IS NULL ORDER BY cl.id LIMIT 1) AS client_id,(SELECT COALESCE(NULLIF(cl.whatsapp,''),cl.phone) FROM clients cl WHERE cl.user_id=u.id AND cl.deleted_at IS NULL ORDER BY cl.id LIMIT 1) AS client_phone FROM users u LEFT JOIN employee_profiles ep ON ep.user_id=u.id LEFT JOIN departments d ON d.id=ep.department_id WHERE u.id=?",[$id]);
 $dayLabel=static function(string $at): string { $d=date('Y-m-d',strtotime($at)); return $d===today()?'Today':($d===date('Y-m-d',strtotime('-1 day'))?'Yesterday':date('l, j M Y',strtotime($at))); };
 $isStaff=in_array($user['role'],['admin','manager'],true);
 $roomTitle=''; $roomProfile=null; $members=[]; $sharedFiles=[]; $roomState=['read_upto'=>0,'online'=>false,'presence'=>''];
@@ -324,7 +342,7 @@ if ($selected) {
 // Manual WhatsApp share: private chats open straight to the other person's number (adds 91 to 10-digit numbers).
 $waPhone='';
 if ($roomProfile) {
-    $phoneDigits=preg_replace('/\D+/','',(string)(one('SELECT phone FROM employee_profiles WHERE user_id=?',[(int)$roomProfile['id']])['phone']??''));
+    $phoneDigits=preg_replace('/\D+/','',$roomProfile['role']==='client'?(string)$roomProfile['client_phone']:(string)(one('SELECT phone FROM employee_profiles WHERE user_id=?',[(int)$roomProfile['id']])['phone']??''));
     if (strlen($phoneDigits)===10) $phoneDigits='91'.$phoneDigits;
     if (strlen($phoneDigits)>=11) $waPhone=$phoneDigits;
 }
@@ -334,18 +352,18 @@ if ($selected && $selected['conversation_type']==='group' && !$roomState['online
 page_start('Chat','chat.php'); error_message($error);
 ?>
 <div class="emp-page tc-page">
-<header class="emp-header"><div><p class="emp-crumb">Dashboard / Chat</p><h2 class="emp-title">Team chat</h2></div></header>
+<header class="emp-header"><div><p class="emp-crumb">Dashboard / Chat</p><h2 class="emp-title"><?= $isClientUser?'Chat with Bhavi':'Team chat' ?></h2><?php if ($isStaff): ?><p class="emp-sub">Chat with employees, with clients, or make a group with both.</p><?php endif; ?></div></header>
 <div class="tc-layout<?= $selected?'':' no-room' ?>">
     <aside class="tc-list">
         <div class="tc-list-head"><h3>Chats</h3><button type="button" class="emp-btn emp-btn-dark emp-btn-sm" data-dialog="new-chat-dialog">＋ New chat</button></div>
         <label class="dept-search tc-search"><?= icon('search') ?><span class="sr-only">Search chats</span><input type="search" placeholder="Search people or groups…" data-tc-search></label>
-        <div class="tc-tabs" role="tablist"><button type="button" class="active" data-tc-tab="all">All</button><button type="button" data-tc-tab="private">Private</button><button type="button" data-tc-tab="group">Groups</button></div>
+        <?php if (!$isClientUser): ?><div class="tc-tabs<?= $isStaff?' is-four':'' ?>" role="tablist"><button type="button" class="active" data-tc-tab="all">All</button><button type="button" data-tc-tab="staff"><?= $isStaff?'Team':'Private' ?></button><?php if ($isStaff): ?><button type="button" data-tc-tab="client">Clients</button><?php endif; ?><button type="button" data-tc-tab="group">Groups</button></div><?php endif; ?>
         <div class="tc-items chat-list">
-            <?php if (!$conversations): ?><p class="muted tc-none">Start a private or group chat to begin.</p><?php endif; ?>
+            <?php if (!$conversations): ?><p class="muted tc-none"><?= $isClientUser?'Start a chat with the Bhavi team.':'Start a private or group chat to begin.' ?></p><?php endif; ?>
             <?php foreach ($conversations as $conversation): $isGroup=$conversation['conversation_type']==='group'; $active=(int)$conversation['id']===$selectedId; ?>
-            <a class="tc-item chat-list-item<?= $active?' active':'' ?><?= !$active&&$conversation['unread']?' has-unread':'' ?>" data-chat-id="<?= (int)$conversation['id'] ?>" data-type="<?= h($conversation['conversation_type']) ?>" data-name="<?= h(mb_strtolower($conversation['label'].' '.$conversation['other_members'])) ?>" href="chat.php?id=<?= (int)$conversation['id'] ?>">
+            <a class="tc-item chat-list-item<?= $active?' active':'' ?><?= !$active&&$conversation['unread']?' has-unread':'' ?>" data-chat-id="<?= (int)$conversation['id'] ?>" data-type="<?= h($conversation['conversation_type']) ?>" data-kind="<?= h($conversation['kind']) ?>" data-name="<?= h(mb_strtolower($conversation['label'].' '.$conversation['other_members'])) ?>" href="chat.php?id=<?= (int)$conversation['id'] ?>">
                 <span class="tc-avatar<?= $isGroup?' is-group':'' ?>"><?= $isGroup?icon('people'):h($initials($conversation['label'])) ?><i class="tc-dot" data-tc-dot<?= $conversation['online']?'':' hidden' ?>></i></span>
-                <span class="tc-item-text"><strong><?= h($conversation['label']) ?></strong><small data-tc-preview><?= h($conversation['preview']) ?></small></span>
+                <span class="tc-item-text"><strong><?= h($conversation['label']) ?><?php if ($isStaff && $conversation['has_client']): ?> <em class="tc-kind is-client"><?= $conversation['kind']==='group'?'With client':'Client' ?></em><?php endif; ?></strong><small data-tc-preview><?= h($conversation['preview']) ?></small></span>
                 <span class="tc-item-meta"><time data-tc-when><?= h($conversation['when']) ?></time><b class="tc-unread" data-tc-unread<?= !$active&&$conversation['unread']?'':' hidden' ?>><?= $conversation['unread']>99?'99+':(int)$conversation['unread'] ?></b></span>
             </a>
             <?php endforeach; ?>
@@ -397,7 +415,12 @@ page_start('Chat','chat.php'); error_message($error);
         <?php if ($roomProfile): ?>
             <span class="tc-avatar tc-avatar-xl"><?= h($initials($roomProfile['full_name'])) ?></span>
             <h3 class="tc-info-name"><?= h($roomProfile['full_name']) ?></h3>
-            <p class="tc-info-sub"><?= h(implode(' · ',array_filter([$roomProfile['designation']?:role_label($roomProfile['role']),$roomProfile['department_name'],($roomProfile['deleted_at'] || str_starts_with((string)$roomProfile['username'],'!deleted'))?'Former employee':'@'.$roomProfile['username']]))) ?></p>
+            <p class="tc-info-sub"><?= h(implode(' · ',array_filter([$roomProfile['role']==='client'?'Client':($roomProfile['designation']?:role_label($roomProfile['role'])),$roomProfile['department_name'],($roomProfile['deleted_at'] || str_starts_with((string)$roomProfile['username'],'!deleted'))?'Former employee':'@'.$roomProfile['username']]))) ?></p>
+            <?php if ($isStaff && $roomProfile['role']==='client' && $roomProfile['client_id']): ?>
+                <p class="tc-info-label">Quick actions</p>
+                <a class="tc-action" href="client-profile.php?id=<?= (int)$roomProfile['client_id'] ?>">View client profile</a>
+                <a class="tc-action" href="client-monthly-meeting.php?client=<?= (int)$roomProfile['client_id'] ?>">Monthly meeting</a>
+            <?php endif; ?>
             <?php if ($isStaff && $roomProfile['role']==='employee'): ?>
                 <p class="tc-info-label">Quick actions</p>
                 <a class="tc-action" href="manager-assign-work.php">+ Assign a task</a>
@@ -408,8 +431,8 @@ page_start('Chat','chat.php'); error_message($error);
             <h3 class="tc-info-name"><?= h($roomTitle) ?></h3>
             <p class="tc-info-sub">Group · <?= count($members)+1 ?> members</p>
             <p class="tc-info-label">Members</p>
-            <div class="tc-members"><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($user['full_name'])) ?></span><?= h($user['full_name']) ?> <small>(you)</small></span><?php $canManageGroup=$isStaff || (int)($selected['created_by']??0)===(int)$user['id']; foreach ($members as $member): ?><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($member['full_name'])) ?></span><span class="tc-member-name"><?= h($member['full_name']) ?></span><?php if ($canManageGroup): ?><form method="post" class="tc-remove-member" onsubmit="return confirm('Remove <?= h(addslashes($member['full_name'])) ?> from this group? They will no longer see its messages.')"><?= csrf_field() ?><input type="hidden" name="action" value="remove_member"><input type="hidden" name="conversation_id" value="<?= (int)$selectedId ?>"><input type="hidden" name="user_id" value="<?= (int)$member['id'] ?>"><button type="submit" title="Remove from group" aria-label="Remove <?= h($member['full_name']) ?> from group">×</button></form><?php endif; ?></span><?php endforeach; ?></div>
-            <?php $memberIds=array_map(static fn($m)=>(int)$m['id'],$members); $addable=array_values(array_filter($people,static fn($p)=>!in_array((int)$p['id'],$memberIds,true))); if ($addable): ?><button type="button" class="tc-add-members" data-dialog="add-members-dialog"><?= icon('plus') ?> Add people to group</button><?php endif; ?>
+            <div class="tc-members"><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($user['full_name'])) ?></span><?= h($user['full_name']) ?> <small>(you)</small></span><?php $canManageGroup=$isStaff || (int)($selected['created_by']??0)===(int)$user['id']; foreach ($members as $member): ?><span class="tc-member"><span class="tc-avatar tc-avatar-xs"><?= h($initials($member['full_name'])) ?></span><span class="tc-member-name"><?= h($member['full_name']) ?><?php if ($member['role']==='client'): ?> <em class="tc-kind is-client">Client</em><?php endif; ?></span><?php if ($canManageGroup): ?><form method="post" class="tc-remove-member" onsubmit="return confirm('Remove <?= h(addslashes($member['full_name'])) ?> from this group? They will no longer see its messages.')"><?= csrf_field() ?><input type="hidden" name="action" value="remove_member"><input type="hidden" name="conversation_id" value="<?= (int)$selectedId ?>"><input type="hidden" name="user_id" value="<?= (int)$member['id'] ?>"><button type="submit" title="Remove from group" aria-label="Remove <?= h($member['full_name']) ?> from group">×</button></form><?php endif; ?></span><?php endforeach; ?></div>
+            <?php $memberIds=array_map(static fn($m)=>(int)$m['id'],$members); $addable=$isClientUser?[]:array_values(array_filter($people,static fn($p)=>!in_array((int)$p['id'],$memberIds,true))); if ($addable): ?><button type="button" class="tc-add-members" data-dialog="add-members-dialog"><?= icon('plus') ?> Add people to group</button><?php endif; ?>
         <?php endif; ?>
         <p class="tc-info-label">Shared files</p>
         <div class="tc-nofiles" data-tc-nofiles<?= $sharedFiles?' hidden':'' ?>>No files shared yet</div>
@@ -426,7 +449,7 @@ page_start('Chat','chat.php'); error_message($error);
         <label class="dept-search"><?= icon('search') ?><span class="sr-only">Search people</span><input type="search" placeholder="Search people…" data-add-search></label>
         <div class="tc-people-bar"><p class="help">Choose one or more people. They will see new messages from now on.</p><button type="button" class="tc-select-all" data-add-all>Select all</button></div>
         <div class="tc-people">
-            <?php foreach ($addable as $person): ?><label class="tc-person" data-name="<?= h(mb_strtolower($person['full_name'].' '.$person['department_name'])) ?>"><input type="checkbox" name="user_ids[]" value="<?= (int)$person['id'] ?>"><span class="tc-avatar tc-avatar-sm"><?= h($initials($person['full_name'])) ?></span><span class="tc-person-text"><strong><?= h($person['full_name']) ?></strong><small><?= h($person['department_name'] ?: ucfirst($person['role'])) ?></small></span></label><?php endforeach; ?>
+            <?php foreach ($addable as $person): ?><label class="tc-person" data-name="<?= h(mb_strtolower($person['full_name'].' '.$person['department_name'])) ?>"><input type="checkbox" name="user_ids[]" value="<?= (int)$person['id'] ?>"><span class="tc-avatar tc-avatar-sm"><?= h($initials($person['full_name'])) ?></span><span class="tc-person-text"><strong><?= h($person['full_name']) ?></strong><small><?= h($person['role']==='client'?'Client':($person['department_name'] ?: role_label($person['role']))) ?></small></span></label><?php endforeach; ?>
         </div>
         <button class="emp-btn emp-btn-gold" type="submit" data-add-submit disabled>Add to group</button>
     </form>
@@ -445,12 +468,13 @@ page_start('Chat','chat.php'); error_message($error);
 <dialog id="new-chat-dialog" class="detail-dialog tc-dialog">
     <div class="dialog-heading"><h2>New chat</h2><button type="button" data-close-dialog aria-label="Close">×</button></div>
     <form method="post" class="tc-new-form chat-start-form"><?= csrf_field() ?><input type="hidden" name="action" value="create_conversation">
-        <div class="cl-segment tc-type"><label><input type="radio" name="conversation_type" value="private" checked><span>Private chat</span></label><label><input type="radio" name="conversation_type" value="group"><span>Group chat</span></label></div>
+        <?php if ($isClientUser): ?><input type="hidden" name="chat_kind" value="employee"><p class="help">Choose who you want to chat with at Bhavi.</p>
+        <?php else: ?><div class="cl-segment tc-type<?= $isStaff&&$hasClients?' is-three':'' ?>"><label><input type="radio" name="chat_kind" value="employee" checked><span><?= $isStaff?'Employee chat':'Private chat' ?></span></label><?php if ($isStaff && $hasClients): ?><label><input type="radio" name="chat_kind" value="client"><span>Client chat</span></label><?php endif; ?><label><input type="radio" name="chat_kind" value="group"><span><?= $isStaff&&$hasClients?'Group (employees + clients)':'Group chat' ?></span></label></div><?php endif; ?>
         <label id="chat-title-field" hidden>Group name (optional)<input id="chat-title" name="title" maxlength="120" placeholder="e.g. Design team"></label>
         <label class="dept-search"><?= icon('search') ?><span class="sr-only">Search people</span><input type="search" placeholder="Search people…" data-tc-people-search></label>
         <div class="tc-people-bar"><p class="help" id="chat-people-help">Private chat: choose one person.</p><button type="button" class="tc-select-all" data-tc-select-all<?= in_array('employee',array_column($people,'role'),true)?'':' hidden' ?>>Select all employees</button></div>
         <div class="tc-people" data-tc-people>
-            <?php foreach ($people as $person): ?><label class="tc-person" data-role="<?= h($person['role']) ?>" data-name="<?= h(mb_strtolower($person['full_name'].' '.$person['department_name'])) ?>"><input type="radio" name="user_ids[]" value="<?= (int)$person['id'] ?>" data-tc-person><span class="tc-avatar tc-avatar-sm"><?= h($initials($person['full_name'])) ?></span><span><strong><?= h($person['full_name']) ?></strong><small><?= h(ucfirst($person['role'])) ?><?= $person['department_name']?' · '.h($person['department_name']):'' ?></small></span></label><?php endforeach; ?>
+            <?php foreach ($people as $person): ?><label class="tc-person" data-role="<?= h($person['role']) ?>" data-name="<?= h(mb_strtolower($person['full_name'].' '.$person['department_name'].($person['role']==='client'?' client':''))) ?>"<?= $person['role']==='client'?' hidden':'' ?>><input type="radio" name="user_ids[]" value="<?= (int)$person['id'] ?>" data-tc-person><span class="tc-avatar tc-avatar-sm<?= $person['role']==='client'?' is-client':'' ?>"><?= h($initials($person['full_name'])) ?></span><span><strong><?= h($person['full_name']) ?></strong><small><?= h($person['role']==='client'?'Client':role_label($person['role'])) ?><?= $person['department_name']?' · '.h($person['department_name']):'' ?></small></span></label><?php endforeach; ?>
         </div>
         <button class="emp-btn emp-btn-gold" type="submit">Start chat</button>
     </form>
@@ -517,35 +541,40 @@ page_start('Chat','chat.php'); error_message($error);
         const titleField=document.getElementById('chat-title-field'),help=document.getElementById('chat-people-help');
         const selectAll=dialog.querySelector('[data-tc-select-all]');
         const employeeInputs=()=>Array.from(dialog.querySelectorAll('.tc-person[data-role="employee"] [data-tc-person]'));
-        const isGroup=()=>dialog.querySelector('[name=conversation_type]:checked').value==='group';
+        const kind=()=>{const k=dialog.querySelector('[name=chat_kind]:checked')||dialog.querySelector('[name=chat_kind]');return k?k.value:'employee';};
+        const isGroup=()=>kind()==='group';
+        // Employee chat: the team · Client chat: clients · Group: everyone.
+        const applySearch=()=>{const q=(dialog.querySelector('[data-tc-people-search]').value||'').trim().toLowerCase();dialog.querySelectorAll('.tc-person').forEach(p=>{p.hidden=p.dataset.kindHidden==='1'||(q!==''&&!p.dataset.name.includes(q));});};
+        const showPeople=()=>{const k=kind();dialog.querySelectorAll('.tc-person').forEach(p=>{const isClient=p.dataset.role==='client';p.dataset.kindHidden=(k==='employee'&&isClient)||(k==='client'&&!isClient)?'1':'';});applySearch();};
         const updateCount=()=>{
             const picked=dialog.querySelectorAll('[data-tc-person]:checked').length,emps=employeeInputs();
             const allPicked=isGroup()&&emps.length>0&&emps.every(i=>i.checked);
             if(selectAll)selectAll.textContent=allPicked?'Clear all employees':'Select all employees';
-            help.textContent=isGroup()?(picked?`${picked} selected for this group.`:'Select as many people as you need for this group.'):'Private chat: choose one person.';
+            help.textContent=isGroup()?(picked?`${picked} selected for this group.`:'Select employees and clients for this group.'):(kind()==='client'?'Client chat: choose one client.':'Private chat: choose one person.');
         };
-        dialog.querySelectorAll('[name=conversation_type]').forEach(r=>r.addEventListener('change',()=>{const group=isGroup();titleField.hidden=!group;dialog.querySelectorAll('[data-tc-person]').forEach(i=>{i.type=group?'checkbox':'radio';i.checked=false;});updateCount();}));
+        dialog.querySelectorAll('[name=chat_kind]').forEach(r=>r.addEventListener('change',()=>{const group=isGroup();titleField.hidden=!group;dialog.querySelectorAll('[data-tc-person]').forEach(i=>{i.type=group?'checkbox':'radio';i.checked=false;});if(selectAll)selectAll.hidden=kind()==='client'||!employeeInputs().length;showPeople();updateCount();}));
+        showPeople();
         dialog.querySelector('[data-tc-people]').addEventListener('change',updateCount);
         // "Select all employees" switches to a group chat and ticks every active employee (click again to clear).
         selectAll?.addEventListener('click',()=>{
-            if(!isGroup()){const groupRadio=dialog.querySelector('[name=conversation_type][value=group]');groupRadio.checked=true;groupRadio.dispatchEvent(new Event('change'));}
+            if(!isGroup()){const groupRadio=dialog.querySelector('[name=chat_kind][value=group]');groupRadio.checked=true;groupRadio.dispatchEvent(new Event('change'));}
             const emps=employeeInputs(),check=!emps.every(i=>i.checked);
             emps.forEach(i=>{i.checked=check;});
             updateCount();
         });
-        dialog.querySelector('[data-tc-people-search]').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();dialog.querySelectorAll('.tc-person').forEach(p=>{p.hidden=q!==''&&!p.dataset.name.includes(q);});});
+        dialog.querySelector('[data-tc-people-search]').addEventListener('input',applySearch);
         dialog.querySelector('form').addEventListener('submit',e=>{if(!dialog.querySelector('[data-tc-person]:checked')){e.preventDefault();help.textContent='Choose at least one person to start the chat.';}});
     }
 
     // Chat list: search + tabs + live refresh (preview, time, unread badge, online dot, order)
     let tab='all';
     const list=document.querySelector('.tc-items'),search=document.querySelector('[data-tc-search]');
-    const filterList=()=>{const q=(search?.value||'').trim().toLowerCase();document.querySelectorAll('.tc-item').forEach(i=>{i.hidden=(tab!=='all'&&i.dataset.type!==tab)||(q!==''&&!(i.dataset.name||'').includes(q));});};
+    const filterList=()=>{const q=(search?.value||'').trim().toLowerCase();document.querySelectorAll('.tc-item').forEach(i=>{i.hidden=(tab!=='all'&&(i.dataset.kind||i.dataset.type)!==tab)||(q!==''&&!(i.dataset.name||'').includes(q));});};
     search?.addEventListener('input',filterList);
     document.querySelectorAll('[data-tc-tab]').forEach(b=>b.addEventListener('click',()=>{tab=b.dataset.tcTab;document.querySelectorAll('[data-tc-tab]').forEach(x=>x.classList.toggle('active',x===b));filterList();}));
     const buildItem=c=>{
         const group=c.conversation_type==='group',link=el('a','tc-item chat-list-item');
-        link.dataset.chatId=c.id;link.dataset.type=c.conversation_type;link.dataset.name=`${c.label} ${c.other_members||''}`.toLowerCase();link.href=`chat.php?id=${c.id}`;
+        link.dataset.chatId=c.id;link.dataset.type=c.conversation_type;link.dataset.kind=c.kind||'';link.dataset.name=`${c.label} ${c.other_members||''}`.toLowerCase();link.href=`chat.php?id=${c.id}`;
         const av=el('span','tc-avatar'+(group?' is-group':''));if(group)av.innerHTML=icons.people;else av.textContent=initials(c.label);
         const dot=el('i','tc-dot');dot.dataset.tcDot='';dot.hidden=true;av.append(dot);
         const text=el('span','tc-item-text'),preview=el('small');preview.dataset.tcPreview='';text.append(el('strong','',c.label),preview);

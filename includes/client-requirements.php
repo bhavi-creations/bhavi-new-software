@@ -372,12 +372,17 @@ $crTaskBlock=static function (string $i, int $number, array $task) use ($crTypes
                     <textarea name="tasks[<?= h($i) ?>][remark]" maxlength="5000" rows="5" required data-cr-details placeholder="<?= h($crTypes[$type ?: 'reel']['example']) ?>"><?= h($task['remark']) ?></textarea>
                 </label>
                 <?php foreach ($crTypes as $key=>$item): ?><div class="cr-hints" data-cr-hints="<?= h($key) ?>"<?= $type!==$key?' hidden':'' ?>><span>Good to mention:</span><?php foreach ($item['hints'] as $hint): ?><button type="button" data-hint="<?= h($hint) ?>"><?= h($hint) ?></button><?php endforeach; ?></div><?php endforeach; ?>
-                <label class="cr-drop" data-cr-drop>
-                    <input type="file" name="task_files_<?= h($i) ?>[]" multiple data-cr-files>
-                    <span class="cr-drop-icon"><?= icon('download') ?></span>
-                    <strong>Add photos, videos or files</strong>
-                    <small data-cr-file-names>Drag here or click · up to 20 files, 5 GB each · optional</small>
-                </label>
+                <div class="cr-uploads" data-cr-uploads data-name="task_files_<?= h($i) ?>[]">
+                    <p class="cr-uploads-title"><strong>Photos, videos or files</strong><small>One file in each box · click “Add more” for the next one · up to 20 files, 5 GB each · optional</small></p>
+                    <div class="cr-upload-list" data-cr-upload-list>
+                        <div class="cr-upload-row" data-cr-upload-row>
+                            <span class="cr-upload-no" data-cr-upload-label>File 1</span>
+                            <label class="cr-upload-pick"><input type="file" name="task_files_<?= h($i) ?>[]" data-cr-files><span class="cr-upload-btn"><?= icon('paperclip') ?> Choose file</span><small class="cr-upload-name" data-cr-file-name>No file chosen</small></label>
+                            <button type="button" class="cr-upload-remove" data-cr-upload-remove title="Remove this file" aria-label="Remove this file">×</button>
+                        </div>
+                    </div>
+                    <button type="button" class="cr-upload-more" data-cr-upload-more><?= icon('plus') ?> Add more</button>
+                </div>
             </fieldset>
         </div>
     </div>
@@ -490,13 +495,32 @@ $crTaskBlock=static function (string $i, int $number, array $task) use ($crTypes
             details.value = (details.value.trim() ? details.value.replace(/\s*$/, '') + '\n' : '') + b.dataset.hint + ': ';
             details.focus(); details.setSelectionRange(details.value.length, details.value.length);
         }));
-        // File drop zone
-        const drop = task.querySelector('[data-cr-drop]'), input = task.querySelector('[data-cr-files]'), names = task.querySelector('[data-cr-file-names]'), idle = names.textContent;
-        const show = () => { const files = Array.from(input.files); names.textContent = files.length ? files.length + (files.length === 1 ? ' file: ' : ' files: ') + files.map(f => f.name).join(', ') : idle; drop.classList.toggle('has-files', files.length > 0); };
-        input.addEventListener('change', show);
-        ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('is-over'); }));
-        ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('is-over'); }));
-        drop.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) { input.files = e.dataTransfer.files; show(); } });
+        // Files: one file per box (Reel 1, Reel 2 …) with "Add more" for the next box.
+        const uploads = task.querySelector('[data-cr-uploads]'), upList = uploads.querySelector('[data-cr-upload-list]'), more = uploads.querySelector('[data-cr-upload-more]');
+        const rows = () => Array.from(upList.querySelectorAll('[data-cr-upload-row]'));
+        const word = () => { const t = (task.querySelector('[data-cr-type]:checked') || {}).value; return t === 'reel' ? 'Reel' : (t === 'poster' || t === 'carousel' ? 'Photo' : 'File'); };
+        const relabel = () => {
+            const all = rows();
+            all.forEach((row, i) => { row.querySelector('[data-cr-upload-label]').textContent = word() + ' ' + (i + 1); row.querySelector('[data-cr-upload-remove]').hidden = all.length === 1 && !row.querySelector('[data-cr-files]').files.length; });
+            more.hidden = all.length >= 20;
+        };
+        const showName = row => { const f = row.querySelector('[data-cr-files]').files[0]; const name = row.querySelector('[data-cr-file-name]'); name.textContent = f ? f.name : 'No file chosen'; row.classList.toggle('has-file', !!f); };
+        upList.addEventListener('change', e => { const row = e.target.closest('[data-cr-upload-row]'); if (row) { showName(row); relabel(); } });
+        upList.addEventListener('click', e => {
+            const btn = e.target.closest('[data-cr-upload-remove]'); if (!btn) return;
+            const row = btn.closest('[data-cr-upload-row]');
+            if (rows().length === 1) { row.querySelector('[data-cr-files]').value = ''; showName(row); } else row.remove();
+            relabel();
+        });
+        more.addEventListener('click', () => {
+            if (rows().length >= 20) return;
+            const row = rows()[0].cloneNode(true);
+            row.querySelector('[data-cr-files]').value = ''; showName(row);
+            upList.appendChild(row); relabel();
+            row.querySelector('[data-cr-files]').click();
+        });
+        task.querySelectorAll('[data-cr-type]').forEach(r => r.addEventListener('change', relabel));
+        relabel();
     };
 
     const addTask = type => {

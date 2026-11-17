@@ -16,11 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $client = one('SELECT id,client_name,user_id FROM clients WHERE id=? AND deleted_at IS NULL', [filter_var($_POST['client_id'] ?? null, FILTER_VALIDATE_INT) ?: 0]);
         if (!$client) throw new InvalidArgumentException('Select a client.');
 
-        $meetingType = (string) ($_POST['meeting_type'] ?? '');
+        // Only shoots are planned here — the monthly meeting is set on the client (Monthly meetings).
+        $meetingType = 'none';
         $shootType = (string) ($_POST['shoot_type'] ?? '');
-        if (!isset(CM_MEETING_TYPES[$meetingType])) throw new InvalidArgumentException('Choose the meeting type.');
-        if (!isset(CM_SHOOT_TYPES[$shootType])) throw new InvalidArgumentException('Choose who will shoot.');
-        if ($meetingType === 'none' && $shootType === 'none') throw new InvalidArgumentException('Plan at least a meeting or a shoot.');
+        if (!isset(CM_SHOOT_TYPES[$shootType]) || $shootType === 'none') throw new InvalidArgumentException('Choose who will shoot.');
 
         $meetingOther = $meetingType === 'other' ? optional_text('meeting_other', 150) : '';
         if ($meetingType === 'other' && $meetingOther === '') throw new InvalidArgumentException('Type the meeting type (you chose “Other”).');
@@ -33,10 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!preg_match('#^https?://#i', $meetingPlace)) $meetingPlace = 'https://' . $meetingPlace;
             if (!filter_var($meetingPlace, FILTER_VALIDATE_URL)) throw new InvalidArgumentException('Paste a valid Google Meet link, for example https://meet.google.com/abc-defg-hij');
         }
-        $shootAt = $shootType !== 'none' ? cm_datetime('shoot_at', false, 'shoot') : null;
+        $shootAt = cm_datetime('shoot_at', true, 'shoot');
         $shootPlace = $shootType !== 'none' ? optional_text('shoot_place', 500) : '';
         $meetingMinutes = CM_MEETING_MINUTES; // fixed: a meeting blocks 1 hour, a shoot 3 hours (no duration field)
         $shootMinutes = CM_SHOOT_MINUTES;
+        // An older plan that also had a meeting keeps it as it was.
+        if ($editing && $editing['meeting_type'] !== 'none') { $meetingType = $editing['meeting_type']; $meetingOther = $editing['meeting_other']; $meetingAt = $editing['meeting_at']; $meetingPlace = $editing['meeting_place']; }
         $title = optional_text('title', 150);
         $notes = optional_text('notes', 2000);
 
@@ -86,9 +87,10 @@ $val = static function (string $k, string $d = '') use ($isPost, $editing): stri
 };
 $meetingType = $val('meeting_type', 'live');
 $shootType = $val('shoot_type', 'our_team');
+if ($shootType === 'none') $shootType = 'our_team';
 // Booked slots of other plans, for the live "another client in this time" warning.
 $busyJson = array_map(static fn($x) => ['kind' => $x['kind'], 'start' => $x['start'], 'end' => $x['end'], 'day' => date('Y-m-d', $x['start']), 'text' => $x['client'] . ' · ' . $x['label'] . ' · ' . date('g:i A', $x['start'])], cm_busy_slots($editing ? (int) $editing['id'] : 0));
-$pageTitle = $editing ? 'Edit meeting & shoot' : 'New meeting & shoot';
+$pageTitle = $editing ? 'Edit shoot' : 'New shoot';
 
 page_start($pageTitle, 'client-meetings.php');
 error_message($error);
@@ -96,16 +98,16 @@ error_message($error);
 <div class="ot-page cm-page">
     <header class="ot-head cm-head">
         <div>
-            <p class="ot-crumb"><a href="client-meetings.php">Meetings &amp; shoots</a> / <?= $editing ? 'Edit' : 'New' ?></p>
+            <p class="ot-crumb"><a href="client-meetings.php">Shoots</a> / <?= $editing ? 'Edit' : 'New' ?></p>
             <h1 class="ot-title"><?= h($pageTitle) ?></h1>
-            <p class="ot-sub">Choose the client, how you will meet and who will shoot. The client sees it in their portal and confirms.</p>
-            <p class="ot-help cm-rule">If another client already has a meeting or shoot at that time, you will see a warning. A meeting keeps the team busy for 1 hour and a shoot for 3 hours from its start time.</p>
+            <p class="ot-sub">Choose the client, who will shoot, the date and the location. The client sees it in their portal and confirms.</p>
+            <p class="ot-help cm-rule">If another client already has a shoot at that time, you will see a warning. A shoot keeps the team busy for 3 hours from its start time. Monthly meetings are set on the client form.</p>
         </div>
-        <a class="cm-back" href="client-meetings.php">← All meetings &amp; shoots</a>
+        <a class="cm-back" href="client-meetings.php">← All shoots</a>
     </header>
 
     <?php if ($editing && $editing['client_response'] !== 'pending'): ?>
-    <p class="cm-banner is-<?= h($editing['client_response']) ?>"><?= $editing['client_response'] === 'confirmed' ? '✓ The client already confirmed this plan. If you change the client, date, type or place, they will be asked to confirm again.' : '⚠ The client asked for a change: “' . h($editing['client_note']) . '”. Update the plan below and save; the client will be asked to confirm again.' ?></p>
+    <p class="cm-banner is-<?= h($editing['client_response']) ?>"><?= $editing['client_response'] === 'confirmed' ? '✓ The client already confirmed this plan. If you change the client, date, who shoots or the location, they will be asked to confirm again.' : '⚠ The client asked for a change: “' . h($editing['client_note']) . '”. Update the plan below and save; the client will be asked to confirm again.' ?></p>
     <?php endif; ?>
 
     <section class="ot-card cm-form-card">
@@ -122,34 +124,17 @@ error_message($error);
                 </div>
             </div>
 
-            <div class="cm-row" data-cm-group="meeting">
-                <div class="cm-row-label"><span class="cm-step">2</span><b>Meeting</b><small>How will we meet?</small></div>
-                <div class="cm-row-body">
-                    <div class="cm-pills" role="radiogroup" aria-label="Meeting type">
-                        <?php foreach (CM_MEETING_TYPES as $k => $label): ?>
-                        <label class="cm-pill"><input type="radio" name="meeting_type" value="<?= h($k) ?>"<?= $meetingType === $k ? ' checked' : '' ?>><span><?= h($label) ?></span></label>
-                        <?php endforeach; ?>
-                    </div>
-                    <label class="cm-other" data-show-for="other"><span>Type the meeting type *</span><input name="meeting_other" maxlength="150" value="<?= h($val('meeting_other')) ?>" placeholder="e.g. Zoom call, Phone call, At client's shop"></label>
-                    <div class="cm-two" data-hide-for="none">
-                        <label><span>Meeting date &amp; time *</span><input type="datetime-local" name="meeting_at" data-clash-input="meeting" value="<?= h($val('meeting_at', date('Y-m-d\T11:00', strtotime('+1 day')))) ?>"></label>
-                        <label><span data-place-label data-live="Meeting place / address" data-google_meet="Google Meet link" data-other="Link or place"><?= $meetingType === 'google_meet' ? 'Google Meet link' : 'Meeting place / address' ?></span><input name="meeting_place" maxlength="2048" value="<?= h($val('meeting_place')) ?>" placeholder="<?= $meetingType === 'google_meet' ? 'https://meet.google.com/abc-defg-hij' : 'e.g. Our office, Hyderabad' ?>" data-live-ph="e.g. Our office, Hyderabad" data-google_meet-ph="https://meet.google.com/abc-defg-hij" data-other-ph="Link or address"></label>
-                    </div>
-                    <div class="cm-clash" data-clash-box="meeting" hidden></div>
-                </div>
-            </div>
-
             <div class="cm-row" data-cm-group="shoot">
-                <div class="cm-row-label"><span class="cm-step">3</span><b>Shoot</b><small>Who will shoot the content?</small></div>
+                <div class="cm-row-label"><span class="cm-step">2</span><b>Shoot</b><small>Who will shoot the content?</small></div>
                 <div class="cm-row-body">
                     <div class="cm-pills" role="radiogroup" aria-label="Who will shoot">
-                        <?php foreach (CM_SHOOT_TYPES as $k => $label): ?>
+                        <?php foreach (CM_SHOOT_TYPES as $k => $label): if ($k === 'none') continue; ?>
                         <label class="cm-pill"><input type="radio" name="shoot_type" value="<?= h($k) ?>"<?= $shootType === $k ? ' checked' : '' ?>><span><?= h($label) ?></span></label>
                         <?php endforeach; ?>
                     </div>
                     <label class="cm-other" data-show-for="other"><span>Type who will shoot *</span><input name="shoot_other" maxlength="150" value="<?= h($val('shoot_other')) ?>" placeholder="e.g. Freelance photographer, Partner studio"></label>
                     <div class="cm-two" data-hide-for="none">
-                        <label><span>Shoot date &amp; time <small>(if fixed)</small></span><input type="datetime-local" name="shoot_at" data-clash-input="shoot" value="<?= h($val('shoot_at')) ?>"></label>
+                        <label><span>Shoot date &amp; time *</span><input type="datetime-local" name="shoot_at" data-clash-input="shoot" required value="<?= h($val('shoot_at', date('Y-m-d\T10:00', strtotime('+1 day')))) ?>"></label>
                         <label><span>Shoot location</span><input name="shoot_place" maxlength="500" value="<?= h($val('shoot_place')) ?>" placeholder="e.g. Client's store, Ameerpet"></label>
                     </div>
                     <div class="cm-clash" data-clash-box="shoot" hidden></div>
@@ -157,7 +142,7 @@ error_message($error);
             </div>
 
             <div class="cm-row">
-                <div class="cm-row-label"><span class="cm-step">4</span><b>Notes</b><small>Shown to the client</small></div>
+                <div class="cm-row-label"><span class="cm-step">3</span><b>Notes</b><small>Shown to the client</small></div>
                 <div class="cm-row-body">
                     <label><span>Agenda / what to keep ready <small>(optional)</small></span><textarea name="notes" maxlength="2000" rows="3" placeholder="e.g. Keep 5 products and the new menu ready. Wear brand colours."><?= h($val('notes')) ?></textarea></label>
                     <label class="zm-check"><input type="checkbox" name="notify" value="1" <?= !$isPost || !empty($_POST['notify']) ? 'checked' : '' ?>> Notify the client in their portal</label>
@@ -179,12 +164,6 @@ error_message($error);
                 el.querySelectorAll('input').forEach(function (i) { i.required = on; });
             });
             group.querySelectorAll('[data-hide-for]').forEach(function (el) { el.hidden = el.dataset.hideFor === v; });
-            if (group.dataset.cmGroup === 'meeting') {
-                var at = group.querySelector('input[name=meeting_at]'); if (at) at.required = v !== 'none';
-                var span = group.querySelector('[data-place-label]'), input = group.querySelector('input[name=meeting_place]');
-                if (span && span.dataset[v]) span.textContent = span.dataset[v];
-                if (input && input.getAttribute('data-' + v + '-ph')) input.placeholder = input.getAttribute('data-' + v + '-ph');
-            }
         }
         group.querySelectorAll('input[type=radio]').forEach(function (r) { r.addEventListener('change', function () { sync(); var o = group.querySelector('[data-show-for]:not([hidden]) input'); if (o && r.value === 'other') o.focus(); }); });
         sync();
@@ -201,7 +180,7 @@ error_message($error);
     function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     function check() {
         var anyClash = false;
-        ['meeting', 'shoot'].forEach(function (kind) {
+        ['shoot'].forEach(function (kind) {
             var group = document.querySelector('[data-cm-group="' + kind + '"]'), box = group.querySelector('[data-clash-box]');
             var type = (group.querySelector('input[type=radio]:checked') || {}).value;
             var input = group.querySelector('[data-clash-input]'), minutes = kind === 'meeting' ? <?= CM_MEETING_MINUTES ?> : <?= CM_SHOOT_MINUTES ?>;

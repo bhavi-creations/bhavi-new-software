@@ -29,20 +29,29 @@ $imgPath = static function (string $key) use ($co): string {
     $file = basename(trim((string) ($co[$key] ?? '')));
     return $file !== '' && is_file(__DIR__.'/assets/img/'.$file) ? 'assets/img/'.rawurlencode($file) : '';
 };
-$qrImage = $imgPath('qr_image');
+$isQuote = ($invoice['doc_type'] ?? 'invoice') === 'quotation';
+$docWord = $isQuote ? 'Quotation' : 'Invoice';
+// The bank account chosen on this invoice (or the default one). Quotations never show bank details.
+$account = invoice_bank_for($invoice['bank_account_id'] ? (int) $invoice['bank_account_id'] : null);
+$isDefaultAccount = !empty($account['is_default']) || (int) ($account['id'] ?? 0) === 0;
+// The ready-made QR image belongs to the default account; another account uses its own UPI ID.
+$qrImage = $isDefaultAccount ? $imgPath('qr_image') : '';
 $signature = $imgPath('signature_image');
 $logo = $imgPath('logo_image') ?: 'assets/img/blue%20logo%20old.webp';
-$upiId = trim((string) ($co['upi_id'] ?? ''));
-$upiLink = $upiId !== '' ? 'upi://pay?'.http_build_query(['pa' => $upiId, 'pn' => $co['account_name'], 'am' => number_format($balance > 0 ? $balance : (float) $invoice['total'], 2, '.', ''), 'cu' => 'INR', 'tn' => 'Invoice '.$invoice['invoice_no']], '', '&', PHP_QUERY_RFC3986) : '';
-$bank = array_filter(['Bank Name' => $co['bank_name'] ?? '', 'Account Name' => $co['account_name'], 'Account No.' => $co['account_no'] ?? '', 'IFSC' => $co['ifsc'] ?? '', 'UPI ID' => $upiId], static fn($v) => trim((string) $v) !== '');
-$back = $user['role'] === 'client' ? 'client-payments.php' : 'invoices.php';
+$upiId = trim((string) ($account['upi_id'] ?? ''));
+$upiLink = $upiId !== '' ? 'upi://pay?'.http_build_query(['pa' => $upiId, 'pn' => $account['account_name'] ?: $co['account_name'], 'am' => number_format($balance > 0 ? $balance : (float) $invoice['total'], 2, '.', ''), 'cu' => 'INR', 'tn' => 'Invoice '.$invoice['invoice_no']], '', '&', PHP_QUERY_RFC3986) : '';
+$bank = array_filter(['Bank Name' => $account['bank_name'] ?? '', 'Account Name' => $account['account_name'] ?: $co['account_name'], 'Account No.' => $account['account_no'] ?? '', 'IFSC' => $account['ifsc'] ?? '', 'Branch' => $account['branch'] ?? '', 'UPI ID' => $upiId], static fn($v) => trim((string) $v) !== '');
+// GST per service line; split into CGST + SGST (same state) or IGST.
+$gstSplit = $invoice['gst_type'] === 'igst' ? 'igst' : ((float) $invoice['tax_amount'] > 0 ? 'cgst_sgst' : 'none');
+$lineRates = array_values(array_unique(array_map(static fn($it) => (float) $it['gst_rate'], $items)));
+$back = $user['role'] === 'client' ? 'client-payments.php' : 'invoices.php'.($isQuote ? '?type=quotation' : '');
 header('Cache-Control: private, no-store');
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title><?= h('Invoice '.$invoice['invoice_no'].' · '.$invoice['client_name']) ?></title><link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
+<title><?= h($docWord.' '.$invoice['invoice_no'].' · '.$invoice['client_name']) ?></title><link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
 <style>
@@ -84,24 +93,28 @@ hr{margin:34px -16px 34px;border:0;border-top:1px solid #c9ced6}
 .sign .blank{height:46px}
 .stamp{position:absolute;top:150px;left:50%;transform:translateX(-50%) rotate(-12deg);padding:4px 18px;border:3px solid;border-radius:8px;font-weight:800;font-size:22px;letter-spacing:.14em;opacity:.55}
 .stamp.paid{color:#07803f}.stamp.cancelled{color:#b42318}
+.doc-title{margin:-10px 0 22px;text-align:center;font-size:20px;font-weight:800;letter-spacing:.3em;color:#0d2f66}
+.quote-note{margin-top:0;color:var(--muted)}
 .bar{display:flex;justify-content:center;gap:10px;margin-bottom:16px}
 .bar button,.bar a{padding:10px 18px;border:0;border-radius:10px;background:#d6ad48;color:#172b49;font:800 13px "Plus Jakarta Sans",sans-serif;text-decoration:none;cursor:pointer}
 .bar a{background:#fff;border:1px solid var(--line)}
 /* Margin 0 stops the browser printing its own header/footer (page title, date, URL) on the PDF. */
 @page{size:A4;margin:0}
 @media print{body{padding:0;background:#fff}.sheet{box-shadow:none;padding:12mm 12mm 10mm;max-width:none}.bar{display:none}.inv th,.inv .shade{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-@media(max-width:640px){.sheet{padding:18px}.parties{flex-direction:column}.parties .to{text-align:left}.pay{grid-template-columns:1fr}.sign{margin-left:0}.inv-wrap{overflow-x:auto}.inv{min-width:620px}}
+@media(max-width:640px){.sheet{padding:18px}.parties{flex-direction:column}.parties .to{text-align:left}.pay{grid-template-columns:1fr}.sign{margin-left:0}.inv-wrap{overflow-x:auto}.inv{min-width:760px}}
 </style>
 </head>
 <body>
 <div class="bar"><button type="button" onclick="window.print()">Print / Save as PDF</button><a href="<?= h($back) ?>">Back</a></div>
 <main class="sheet">
-    <?php if ($invoice['status'] !== 'unpaid'): ?><div class="stamp <?= h($invoice['status']) ?>"><?= h(strtoupper(INVOICE_STATUSES[$invoice['status']] ?? '')) ?></div><?php endif; ?>
+    <?php if (!$isQuote && $invoice['status'] !== 'unpaid'): ?><div class="stamp <?= h($invoice['status']) ?>"><?= h(strtoupper(INVOICE_STATUSES[$invoice['status']] ?? '')) ?></div><?php endif; ?>
+    <?php if ($isQuote && in_array($invoice['status'], ['accepted', 'converted'], true)): ?><div class="stamp paid">ACCEPTED</div><?php endif; ?>
     <img class="logo" src="<?= h($logo) ?>" alt="<?= h($companyName) ?>" onerror="this.remove()">
+    <?php if ($isQuote): ?><h1 class="doc-title">QUOTATION</h1><?php endif; ?>
 
     <div class="dateline">
-        <div><b>Date:</b> <?= h(date('d-m-Y', strtotime($invoice['invoice_date']))) ?><?php if ($invoice['due_date']): ?> &nbsp;·&nbsp; <b>Due:</b> <?= h(date('d-m-Y', strtotime($invoice['due_date']))) ?><?php endif; ?></div>
-        <div><b>Invoice Number:</b> <?= h($invoice['invoice_no']) ?></div>
+        <div><b>Date:</b> <?= h(date('d-m-Y', strtotime($invoice['invoice_date']))) ?><?php if ($invoice['due_date']): ?> &nbsp;·&nbsp; <b><?= $isQuote ? 'Valid until' : 'Due' ?>:</b> <?= h(date('d-m-Y', strtotime($invoice['due_date']))) ?><?php endif; ?></div>
+        <div><b><?= $docWord ?> Number:</b> <?= h($invoice['invoice_no']) ?></div>
     </div>
 
     <div class="parties">
@@ -126,7 +139,7 @@ hr{margin:34px -16px 34px;border:0;border-top:1px solid #c9ced6}
 
     <div class="inv-wrap">
     <table class="inv">
-        <thead><tr><th>S.no</th><th>Services</th><th>Description</th><th>Qty</th><th>Price/Unit</th><th>Sub Total</th><th>Disc %</th><th>Total</th></tr></thead>
+        <thead><tr><th>S.no</th><th>Services</th><th>Description</th><th>Qty</th><th>Price/Unit</th><th>Disc %</th><th>Amount</th><th>GST %</th><th>GST</th><th>Total</th></tr></thead>
         <tbody>
             <?php foreach ($items as $i => $it): ?>
                 <tr>
@@ -135,23 +148,42 @@ hr{margin:34px -16px 34px;border:0;border-top:1px solid #c9ced6}
                     <td><?= nl2br(h($it['description'])) ?></td>
                     <td><?= h($plain($it['quantity'])) ?></td>
                     <td><?= h($num($it['rate'])) ?></td>
-                    <td><?= h($num((float) $it['quantity'] * (float) $it['rate'])) ?></td>
                     <td><?= h($plain($it['discount_percent'])) ?></td>
                     <td><?= h($num($it['amount'])) ?></td>
+                    <td><?= h($plain($it['gst_rate'])) ?>%</td>
+                    <td><?= h($num($it['gst_amount'])) ?></td>
+                    <td><?= h($num((float) $it['amount'] + (float) $it['gst_amount'])) ?></td>
                 </tr>
             <?php endforeach; ?>
+            <?php
+            $tax = (float) $invoice['tax_amount'];
+            $rateNote = count($lineRates) === 1 ? $lineRates[0] : null;
+            $taxRows = [];
+            if ($gstSplit === 'cgst_sgst') {
+                $cgst = round($tax / 2, 2);
+                $taxRows[] = ['CGST'.($rateNote !== null ? ' ('.$plain($rateNote / 2).'%)' : ''), $cgst];
+                $taxRows[] = ['SGST'.($rateNote !== null ? ' ('.$plain($rateNote / 2).'%)' : ''), $tax - $cgst];
+            } elseif ($gstSplit === 'igst') {
+                $taxRows[] = ['IGST'.($rateNote !== null ? ' ('.$plain($rateNote).'%)' : ''), $tax];
+            } else {
+                $taxRows[] = ['GST (0%)', 0];
+            }
+            $summaryRows = 1 + count($taxRows) + ($gstSplit !== 'none' ? 1 : 0) + 1 + ($isQuote ? 0 : 2);
+            ?>
             <tr>
-                <td colspan="6" rowspan="6" class="words">
+                <td colspan="8" rowspan="<?= $summaryRows ?>" class="words">
                     <p><b style="margin-top:0">Total in words:</b><?= h(invoice_amount_words($invoice['total'])) ?></p>
-                    <p><b>Balance in words:</b><?= h(invoice_amount_words($balance)) ?></p>
+                    <?php if (!$isQuote): ?><p><b>Balance in words:</b><?= h(invoice_amount_words($balance)) ?></p><?php endif; ?>
                 </td>
                 <td class="lbl">Subtotal</td><td><?= h($num($invoice['subtotal'])) ?></td>
             </tr>
-            <tr><td class="lbl">GST %</td><td><?= h($plain($invoice['gst_rate'])) ?></td></tr>
-            <tr><td class="lbl">GST Total</td><td><?= h($num($invoice['tax_amount'])) ?></td></tr>
-            <tr><td class="lbl strong">Grand Total</td><td class="strong"><?= h($num($invoice['total'])) ?></td></tr>
+            <?php foreach ($taxRows as [$label, $amount]): ?><tr><td class="lbl"><?= h($label) ?></td><td><?= h($num($amount)) ?></td></tr><?php endforeach; ?>
+            <?php if ($gstSplit !== 'none'): ?><tr><td class="lbl">GST Total</td><td><?= h($num($tax)) ?></td></tr><?php endif; ?>
+            <tr<?= $isQuote ? ' class="shade"' : '' ?>><td class="lbl strong">Grand Total</td><td class="strong"><?= h($num($invoice['total'])) ?></td></tr>
+            <?php if (!$isQuote): ?>
             <tr><td class="lbl"><?= $invoice['status'] === 'paid' ? 'Paid' : 'Advance' ?></td><td><?= h($num($received)) ?></td></tr>
             <tr class="shade"><td class="lbl strong">Balance</td><td class="strong"><?= h($num($balance)) ?></td></tr>
+            <?php endif; ?>
         </tbody>
     </table>
     </div>
@@ -160,6 +192,7 @@ hr{margin:34px -16px 34px;border:0;border-top:1px solid #c9ced6}
 
     <hr>
 
+    <?php if (!$isQuote): /* A quotation is only prices: no bank account or payment QR. */ ?>
     <div class="pay">
         <div>
             <?php if ($qrImage || $upiLink): ?>
@@ -172,10 +205,13 @@ hr{margin:34px -16px 34px;border:0;border-top:1px solid #c9ced6}
             <?php foreach ($bank as $k => $val): ?><p><b><?= h($k) ?>:</b> <?= h($val) ?></p><?php endforeach; ?>
         </div>
     </div>
+    <?php else: ?>
+    <p class="note quote-note">This is a quotation, not a bill. Once you approve it, we will send the invoice with payment details.</p>
+    <?php endif; ?>
 
     <div class="sign"><?php if ($signature): ?><img src="<?= h($signature) ?>" alt="Signature"><?php else: ?><div class="blank"></div><?php endif; ?>Authorized Signature:</div>
 </main>
-<?php if (!$qrImage && $upiLink): ?>
+<?php if (!$isQuote && !$qrImage && $upiLink): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>(function(){var el=document.getElementById('upi-qr');if(el&&window.QRCode)new QRCode(el,{text:el.dataset.upi,width:180,height:180,correctLevel:QRCode.CorrectLevel.M});})();</script>
 <?php endif; ?>

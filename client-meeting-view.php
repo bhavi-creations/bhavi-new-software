@@ -9,7 +9,7 @@ if (!$e) { flash('That plan was not found or was deleted.', 'error'); redirect('
 $isMeet = $e['meeting_type'] === 'google_meet' && $e['meeting_place'] !== '';
 $past = $e['status'] === 'scheduled' && cm_is_past($e);
 $phone = $e['whatsapp'] ?: $e['phone'];
-$wa = cm_wa_link($phone, 'Hello ' . ($e['contact_person'] ?: $e['client_name']) . ', greetings from Bhavi!' . "\n\n" . cm_title($e) . "\n" . cm_summary($e) . ($e['notes'] !== '' ? "\nNote: " . $e['notes'] : '') . "\n\nPlease confirm in your client portal (Meetings & shoots). Thank you!");
+$wa = cm_wa_link($phone, 'Hello ' . ($e['contact_person'] ?: $e['client_name']) . ', greetings from Bhavi!' . "\n\n" . cm_title($e) . "\n" . cm_summary($e) . ($e['notes'] !== '' ? "\nNote: " . $e['notes'] : '') . "\n\nPlease confirm in your client portal (Shoots). Thank you!");
 // What else the team has on the same days (other clients).
 $others = array_filter(cm_busy_slots((int) $e['id']), static function ($x) use ($e) {
     $day = date('Y-m-d', $x['start']);
@@ -27,16 +27,16 @@ $field = static function (string $label, string $value, bool $html = false): voi
     echo '<div class="cmv-field"><dt>' . h($label) . '</dt><dd>' . ($html ? $value : h($value)) . '</dd></div>';
 };
 
-page_start('Meeting & shoot details', 'client-meetings.php');
+page_start('Shoot details', 'client-meetings.php');
 ?>
 <div class="ot-page cm-page">
     <header class="ot-head cm-head">
         <div>
-            <p class="ot-crumb"><a href="client-meetings.php">Meetings &amp; shoots</a> / Details</p>
+            <p class="ot-crumb"><a href="client-meetings.php">Shoots</a> / Details</p>
             <h1 class="ot-title"><?= h(cm_title($e)) ?></h1>
             <p class="ot-sub"><?= h($e['client_name']) ?> · planned by <?= h($e['creator'] ?: '—') ?> on <?= h(date('j M Y, g:i A', strtotime($e['created_at']))) ?></p>
         </div>
-        <a class="cm-back" href="client-meetings.php">← All meetings &amp; shoots</a>
+        <a class="cm-back" href="client-meetings.php">← All shoots</a>
     </header>
 
     <section class="ot-card cmv-status is-<?= h($responseClass) ?>">
@@ -60,9 +60,10 @@ page_start('Meeting & shoot details', 'client-meetings.php');
     </section>
 
     <div class="cmv-grid">
+        <?php if ($e['meeting_type'] !== 'none'): /* older plans only: new plans are shoots (monthly meetings are on the client) */ ?>
         <section class="ot-card">
             <div class="cmv-sec-head"><span class="cm-part-icon"><?= icon($e['meeting_type'] === 'google_meet' ? 'video' : 'people') ?></span><h2>Meeting</h2></div>
-            <?php if ($e['meeting_type'] === 'none'): ?><p class="cm-none">No meeting planned.</p><?php else: ?>
+            <?php if (true): ?>
             <dl class="cmv-list">
                 <?php $field('Type', cm_meeting_label($e)); ?>
                 <?php $field('Date & time', cm_when($e['meeting_at'])); ?>
@@ -74,6 +75,7 @@ page_start('Meeting & shoot details', 'client-meetings.php');
             </div>
             <?php endif; ?>
         </section>
+        <?php endif; ?>
 
         <section class="ot-card">
             <div class="cmv-sec-head"><span class="cm-part-icon is-shoot"><?= icon('camera') ?></span><h2>Shoot</h2></div>
@@ -115,7 +117,7 @@ page_start('Meeting & shoot details', 'client-meetings.php');
 
     <section class="ot-card">
         <div class="ot-card-head"><h2>Other clients booked on the same day</h2><span><?= count($others) ?></span></div>
-        <?php if (!$others): ?><p class="cm-clash-ok cmv-free">✓ No other client meeting or shoot on these days.</p><?php else: ?>
+        <?php if (!$others): ?><p class="cm-clash-ok cmv-free">✓ No other client shoot on these days.</p><?php else: ?>
         <ul class="cmv-others">
             <?php foreach ($others as $x): ?>
             <li><span class="cm-resp is-<?= $x['kind'] === 'shoot' ? 'pending' : 'scheduled' ?>"><?= h(ucfirst($x['kind'])) ?></span><b><?= h($x['client']) ?></b><span><?= h($x['label']) ?> · <?= h(date('D, j M · g:i A', $x['start'])) ?></span><a href="client-meeting-view.php?id=<?= (int) $x['id'] ?>">View</a></li>
