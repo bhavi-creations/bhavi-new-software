@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/layout.php';
 require_once __DIR__.'/finance.php';
+require_once __DIR__.'/monthly-meeting.php';
 $user=require_roles(['admin','manager']);
 $id=(int)($_GET['id'] ?? 0);
 $record=$id?one('SELECT * FROM clients WHERE id=? AND deleted_at IS NULL',[$id]):null;
@@ -88,6 +89,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/D',$meetingTime)) throw new InvalidArgumentException('Choose the monthly meeting time.');
             $extra['meeting_day']=$meetingDay; $extra['meeting_time']=substr($meetingTime,0,5).':00';
         } else { $extra['meeting_day']=null; $extra['meeting_time']=null; }
+        // Editing a client that already has a meeting: a new day / time can apply only for some months,
+        // after which the usual day / time comes back. Then the client's own day / time stay as they are.
+        $meetingOverride=null;
+        if ($record && !empty($record['meeting_day']) && $extra['meeting_day']!==null && ($_POST['meeting_scope']??'permanent')==='months'
+            && ((int)$extra['meeting_day']!==(int)$record['meeting_day'] || $extra['meeting_time']!==(string)$record['meeting_time'])) {
+            $startMonth=(string)($_POST['meeting_start_month']??'');
+            if (!preg_match('/^\d{4}-\d{2}$/D',$startMonth) || $startMonth<date('Y-m') || $startMonth>date('Y-m',strtotime('first day of this month +23 months'))) throw new InvalidArgumentException('Choose the month the new meeting date starts.');
+            $months=filter_var($_POST['meeting_months']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>24]]);
+            if ($months===false || $months===null) throw new InvalidArgumentException('Enter for how many months the new meeting date applies (1 to 24).');
+            $meetingOverride=['meeting_day'=>$extra['meeting_day'],'meeting_time'=>$extra['meeting_time'],'start_month'=>$startMonth.'-01','months'=>$months];
+            $extra['meeting_day']=(int)$record['meeting_day']; $extra['meeting_time']=(string)$record['meeting_time'];
+        }
         $meetingMode=(string)($_POST['meeting_mode']??'live');
         $extra['meeting_mode']=in_array($meetingMode,['live','google_meet','phone','zoom'],true)?$meetingMode:'live';
         $extra['meeting_place']=optional_text('meeting_place',2048);
@@ -162,6 +175,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
         $extra['paid_amount']=$paid;
         $assignments=implode(',',array_map(static fn($key)=>$key.'=?',array_keys($extra)));
         query('UPDATE clients SET '.$assignments.' WHERE id=?',array_merge(array_values($extra),[$id]));
+        if ($meetingOverride) query("INSERT INTO client_meeting_changes (client_id,meeting_day,meeting_time,start_month,months,reason,status,requested_by,decided_by,decided_at) VALUES (?,?,?,?,?,'Changed on the client form','approved',?,?,NOW())",[$id,$meetingOverride['meeting_day'],$meetingOverride['meeting_time'],$meetingOverride['start_month'],$meetingOverride['months'],$user['id'],$user['id']]);
         query('DELETE FROM client_social_links WHERE client_id=?',[$id]);
         foreach ($validSocialLinks as $link) {
             query('INSERT INTO client_social_links (client_id,platform_name,url,username,password_cipher) VALUES (?,?,?,?,?)',[$id,$link['platform'],$link['url'],$link['username'],$link['cipher']]);
@@ -228,7 +242,27 @@ page_start($record?'Edit client':'Add client','add-client.php'); error_message($
             <label>How you will meet<select name="meeting_mode"><?php foreach (['live'=>'Live meeting','google_meet'=>'Google Meet','phone'=>'Phone call','zoom'=>'Zoom'] as $k=>$l): ?><option value="<?= $k ?>" <?= $meetingModeValue===$k?'selected':'' ?>><?= h($l) ?></option><?php endforeach; ?></select></label>
             <label>Place / meeting link<input name="meeting_place" maxlength="2048" value="<?= h($value('meeting_place')) ?>" placeholder="e.g. Our office, or https://meet.google.com/…"></label>
         </div>
-        <?php if ($record && !empty($record['meeting_day'])): ?><p class="emp-card-sub cl-meeting-link"><a href="client-monthly-meeting.php?client=<?= (int)$record['id'] ?>">Move one meeting, or change it for a few months →</a></p><?php endif; ?>
+        <p class="emp-card-sub" data-cl-meeting-preview aria-live="polite"></p>
+        <?php if ($record && !empty($record['meeting_day'])):
+            $mScope=(string)($_POST['meeting_scope']??'permanent');
+            $mStart=(string)($_POST['meeting_start_month']??date('Y-m'));
+            $mMonths=(string)($_POST['meeting_months']??'1'); ?>
+        <fieldset class="emp-choice emp-choice-inline" data-cl-meeting-scope data-orig-day="<?= (int)$record['meeting_day'] ?>" data-orig-time="<?= h(substr((string)$record['meeting_time'],0,5)) ?>" hidden>
+            <legend>You changed the meeting date / time. How long should it apply?</legend>
+            <label><input type="radio" name="meeting_scope" value="permanent" <?= $mScope!=='months'?'checked':'' ?>><span>Permanently (every month from now)</span></label>
+            <label><input type="radio" name="meeting_scope" value="months" <?= $mScope==='months'?'checked':'' ?>><span>Only for some months, then back to the usual date</span></label>
+            <div class="emp-grid" data-cl-meeting-months<?= $mScope==='months'?'':' hidden' ?>>
+                <label>Starting month<select name="meeting_start_month"><?php for ($i=0;$i<24;$i++): $mo=date('Y-m',strtotime('first day of this month +'.$i.' months')); ?><option value="<?= $mo ?>" <?= $mStart===$mo?'selected':'' ?>><?= h(date('F Y',strtotime($mo.'-01'))) ?></option><?php endfor; ?></select></label>
+                <label>For how many months<input type="number" name="meeting_months" min="1" max="24" step="1" value="<?= h($mMonths) ?>"></label>
+            </div>
+            <p class="emp-card-sub" data-cl-meeting-scope-hint></p>
+        </fieldset>
+        <?php $upcomingMeetings=mm_upcoming($record,6); if ($upcomingMeetings): ?>
+        <div class="table-scroll"><table><thead><tr><th>Month</th><th>Meeting date</th><th>Time</th><th></th></tr></thead><tbody>
+            <?php foreach ($upcomingMeetings as $m): ?><tr><td><?= h(date('F Y',strtotime($m['date']))) ?></td><td><?= h(date('D, d-m-Y',strtotime($m['date']))) ?></td><td><?= h(mm_time_label($m['time'])) ?></td><td><?= $m['changed']?'<span class="badge client-status is-on_hold">Changed · '.h(mm_scope_label($m['change'])).'</span>':'<small>Usual date</small>' ?></td></tr><?php endforeach; ?>
+        </tbody></table></div>
+        <?php endif; ?>
+        <p class="emp-card-sub cl-meeting-link"><a href="client-monthly-meeting.php?client=<?= (int)$record['id'] ?>">Move one meeting, undo a change, or see client requests →</a></p><?php endif; ?>
     </section>
 
     <details class="cl-more"<?= $record?' open':'' ?>><summary><span>More details (optional)</span><small>Client type, contract dates, domain &amp; GMB, social logins, client portal login, monthly work and payments</small></summary>
@@ -329,6 +363,35 @@ foreach ($socialDraft as $index=>$link): if (!is_array($link)) continue; $savedS
     var mDay = form.querySelector('[data-cl-meeting-day]'), mTime = form.querySelector('[data-cl-meeting-time]');
     function meetingNeedsTime() { mTime.required = mDay.value !== ''; if (mDay.value !== '' && !mTime.value) mTime.value = '11:00'; }
     if (mDay && mTime) { mDay.addEventListener('change', meetingNeedsTime); mTime.required = mDay.value !== ''; }
+    // Preview the next meeting dates, and on edit ask how long a changed date / time applies.
+    var mPreview = form.querySelector('[data-cl-meeting-preview]'), mScope = form.querySelector('[data-cl-meeting-scope]');
+    var monthName = function (d) { return d.toLocaleDateString('en-IN', {month: 'short', year: 'numeric'}); };
+    var ord = function (n) { var s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+    var timeLabel = function (t) { if (!t) return ''; var p = t.split(':'), h = +p[0]; return (h % 12 || 12) + ':' + p[1] + ' ' + (h < 12 ? 'AM' : 'PM'); };
+    function meetingPreview() {
+        if (!mDay || !mPreview) return;
+        var day = +mDay.value;
+        if (!day) { mPreview.textContent = ''; } else {
+            var now = new Date(), list = [];
+            for (var i = 0; list.length < 3 && i < 4; i++) {
+                var d = new Date(now.getFullYear(), now.getMonth() + i, 1), last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                d.setDate(Math.min(day, last));
+                if (d >= new Date(now.getFullYear(), now.getMonth(), now.getDate())) list.push(d.toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: 'numeric'}));
+            }
+            mPreview.textContent = 'Meeting every month on the ' + ord(day) + (mTime.value ? ' at ' + timeLabel(mTime.value) : '') + '. Next: ' + list.join(', ') + '.';
+        }
+        if (!mScope) return;
+        var changed = day && (day !== +mScope.dataset.origDay || mTime.value !== mScope.dataset.origTime);
+        mScope.hidden = !changed;
+        var some = changed && mScope.querySelector('[name="meeting_scope"][value="months"]').checked;
+        mScope.querySelector('[data-cl-meeting-months]').hidden = !some;
+        var hint = mScope.querySelector('[data-cl-meeting-scope-hint]');
+        if (!some) { hint.textContent = changed ? 'The usual date changes to the ' + ord(day) + ' for all future months.' : ''; return; }
+        var start = mScope.querySelector('[name="meeting_start_month"]').value.split('-'), n = Math.max(1, Math.min(24, parseInt(mScope.querySelector('[name="meeting_months"]').value, 10) || 1));
+        var from = new Date(+start[0], +start[1] - 1, 1), to = new Date(+start[0], +start[1] - 2 + n, 1), back = new Date(+start[0], +start[1] - 1 + n, 1);
+        hint.textContent = (n === 1 ? monthName(from) : monthName(from) + ' – ' + monthName(to)) + ': meeting on the ' + ord(day) + ' at ' + timeLabel(mTime.value) + '. From ' + monthName(back) + ' it goes back to the usual ' + ord(+mScope.dataset.origDay) + ' at ' + timeLabel(mScope.dataset.origTime) + '.';
+    }
+    if (mDay) { form.addEventListener('change', meetingPreview); form.addEventListener('input', meetingPreview); meetingPreview(); }
     var logo = form.querySelector('[data-cl-logo]'), img = form.querySelector('[data-cl-logo-img]'), icon = form.querySelector('[data-cl-logo-icon]');
     form.querySelector('[data-cl-logo-btn]').addEventListener('click', function () { logo.click(); });
     logo.addEventListener('change', function () { var f = logo.files[0]; if (!f) return; img.src = URL.createObjectURL(f); img.hidden = false; if (icon) icon.hidden = true; });

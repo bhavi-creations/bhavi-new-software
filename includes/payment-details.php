@@ -9,7 +9,7 @@ return [
     'account_name' => 'Bhavi Creations Private Limited',
     // Shown at the top of every invoice ("From").
     'company_name'    => 'Bhavi Creations Pvt Ltd',
-    'company_address' => "Plot no28, H No70, 17-28, RTO Office Rd,\nRangaRaoNagar, Kakinada, AndhraPradesh 533003.",
+    'company_address' => "7-13-28/1, NH5 route, Old Gajuwaka,\nOpp Varun Bajaj, beside Ramalayam street 530026.",
     'company_phone'   => '9642343434',
     'company_email'   => 'admin@bhavicreations.com',
     'company_gstin'   => '37AAKCB6960H1ZB',

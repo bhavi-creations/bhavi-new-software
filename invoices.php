@@ -24,6 +24,7 @@ foreach ($clientList as &$c) {
 }
 unset($c);
 $bankAccounts = invoice_bank_accounts();
+$serviceList = invoice_services();
 
 /** Decimal text with up to 2 places → hundredths (quantity / GST %). */
 function invoice_hundredths(string $value, string $label, int $max): int
@@ -232,7 +233,9 @@ if ($mode === 'form') {
                     </div>
                 <?php endforeach; ?>
             </div>
-            <datalist id="inv-services"><?php foreach (['Social Media Management', 'SEO', 'Paid AD', 'Website Development', 'Graphic Design', 'Video Editing', 'Branding', 'Content Writing', 'Google My Business'] as $s): ?><option value="<?= h($s) ?>"><?php endforeach; ?></datalist>
+            <datalist id="inv-services"><?php foreach ($serviceList as $s): ?><option value="<?= h($s['name']) ?>"><?= h($s['description']) ?></option><?php endforeach; ?></datalist>
+            <script type="application/json" id="inv-service-data"><?= json_encode(array_map(static fn($s) => ['name' => $s['name'], 'description' => $s['description'], 'rate' => $s['rate'] === null ? '' : (string) $s['rate'], 'gst' => $trim0($s['gst_rate'])], $serviceList), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?></script>
+            <p class="ot-help"><?= $serviceList ? 'Pick a saved service to fill its price and GST %, or type any other service.' : 'No saved services yet.' ?> <a href="invoice-services.php">Add or change services →</a></p>
             <datalist id="inv-gst-rates"><?php foreach (INVOICE_GST_RATES as $g): ?><option value="<?= $g ?>"><?php endforeach; ?></datalist>
             <button type="button" class="vd-add" data-add-item>+ Add another item</button>
         </section>
@@ -302,6 +305,18 @@ if ($mode === 'form') {
         renumber(); calc();
     });
     list.addEventListener('input', e => { const row = e.target.closest('.inv-row'); if (row) row.dataset.auto = '0'; }); // typed by hand: keep it
+    // A saved service (invoice-services.php) fills its description, price and GST % — only into empty fields.
+    const services = JSON.parse(document.getElementById('inv-service-data').textContent || '[]');
+    list.addEventListener('change', e => {
+        if (!e.target.matches('[name$="[service_name]"]')) return;
+        const s = services.find(x => x.name.toLowerCase() === e.target.value.trim().toLowerCase()); if (!s) return;
+        const row = e.target.closest('.inv-row'), desc = row.querySelector('[name$="[description]"]'), rate = row.querySelector('[data-rate]'), gst = row.querySelector('[data-gst]');
+        e.target.value = s.name;
+        if (!desc.value && s.description) desc.value = s.description;
+        if (!rate.value && s.rate !== '') rate.value = s.rate;
+        if (s.gst !== '') gst.value = s.gst;
+        calc();
+    });
     const client = form.querySelector('[data-client]'), gstNote = form.querySelector('[data-client-gst]');
     function showGst() { const o = client.selectedOptions[0]; gstNote.textContent = o && o.value ? [o.dataset.money, o.dataset.gst ? 'GSTIN: ' + o.dataset.gst : ''].filter(Boolean).join(' · ') : ''; }
     client.addEventListener('change', () => {
@@ -369,6 +384,7 @@ error_message($error);
     <header class="ot-head vd-head">
         <div><p class="ot-crumb">Dashboard / <?= $isQuote ? 'Quotations' : 'Invoices' ?></p><h1 class="ot-title"><?= $isQuote ? 'Quotations' : 'Invoices' ?></h1><p class="ot-sub"><?= $isQuote ? 'Send prices to a client first. When they accept, convert the quotation into an invoice.' : 'Create invoices for clients, print or save them as PDF, and track which are paid.' ?></p></div>
         <div class="inv-head-actions">
+            <a class="mm-btn" href="invoice-services.php"><?= icon('list') ?> Services</a>
             <a class="mm-btn" href="bank-accounts.php"><?= icon('card') ?> Bank accounts</a>
             <a class="ot-gold vd-new" href="invoices.php?add=1<?= $isQuote ? '&amp;type=quotation' : '' ?>">+ New <?= $isQuote ? 'quotation' : 'invoice' ?></a>
         </div>

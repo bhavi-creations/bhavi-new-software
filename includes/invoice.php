@@ -63,6 +63,13 @@ function invoice_amount_words($value): string
     return $words($rupees).($rupees === 1 ? ' Rupee' : ' Rupees').($paise ? ' and '.$two($paise).' Paise' : '').' Only';
 }
 
+/** Services the Managing Director added for invoice lines (A–Z). */
+function invoice_services(): array
+{
+    try { return rows('SELECT * FROM invoice_services WHERE deleted_at IS NULL ORDER BY name,id'); }
+    catch (Throwable $e) { return []; }
+}
+
 /** Bank accounts that can be printed on an invoice (default first). */
 function invoice_bank_accounts(): array
 {

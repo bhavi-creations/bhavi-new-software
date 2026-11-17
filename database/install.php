@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const PORTAL_SCHEMA_VERSION = 57;
+const PORTAL_SCHEMA_VERSION = 58;
 
 function portal_ensure_schema(PDO $pdo, string $database): void
 {
@@ -863,6 +863,18 @@ function portal_install(PDO $pdo, string $database): void
         $addColumn('notifications', 'chat_conversation_id', 'BIGINT UNSIGNED NULL');
         if (!$pdo->query("SHOW INDEX FROM notifications WHERE Key_name='idx_notification_chat'")->fetch()) $pdo->exec('ALTER TABLE notifications ADD INDEX idx_notification_chat (recipient_id,chat_conversation_id,read_at)');
         $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (57)');
+        // Services for invoice / quotation lines, added by the Managing Director (no built-in list).
+        $pdo->exec("CREATE TABLE IF NOT EXISTS invoice_services (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            description VARCHAR(500) NOT NULL DEFAULT '',
+            rate DECIMAL(12,2) NULL,
+            gst_rate DECIMAL(5,2) NOT NULL DEFAULT 18.00,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME NULL,
+            INDEX idx_invoice_services_name (deleted_at,name)
+        ) ENGINE=InnoDB");
+        $pdo->exec('INSERT IGNORE INTO portal_schema_versions (version) VALUES (58)');
     } finally {
         $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
         $stmt->execute([$lock]);

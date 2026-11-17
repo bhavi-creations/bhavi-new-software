@@ -127,7 +127,7 @@ function page_start(string $title, string $active = ''): void
                 ['href' => 'client-monthly-meeting.php', 'label' => 'Monthly meetings', 'icon' => 'people', 'badge' => count_value("SELECT COUNT(*) FROM client_meeting_changes WHERE status='pending'")],
                 ['href' => 'client-meetings.php', 'label' => 'Shoots', 'icon' => 'camera', 'badge' => count_value("SELECT COUNT(*) FROM client_engagements WHERE deleted_at IS NULL AND status='scheduled' AND client_response='change_requested'"), 'match' => ['client-meetings.php', 'client-meeting-form.php', 'client-meeting-view.php']],
                 ['href' => 'vendors.php', 'label' => 'Vendors', 'icon' => 'store'],
-                ['href' => 'invoices.php', 'label' => 'Invoices & quotations', 'icon' => 'document', 'match' => ['invoices.php', 'bank-accounts.php']],
+                ['href' => 'invoices.php', 'label' => 'Invoices & quotations', 'icon' => 'document', 'match' => ['invoices.php', 'bank-accounts.php', 'invoice-services.php']],
                 ['href' => 'content-schedule.php', 'label' => 'Content schedule', 'icon' => 'calendar', 'badge' => count_value("SELECT COUNT(*) FROM content_schedule WHERE status='scheduled' AND deleted_at IS NULL AND scheduled_at<=?", [date('Y-m-d H:i:s', time() + SCHEDULE_REMIND_BEFORE_MIN * 60)])],
             ],
             'Manage' => [
