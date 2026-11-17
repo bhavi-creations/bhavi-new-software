@@ -75,6 +75,20 @@ try {
     ok(str_contains($dash['body'], 'is waiting for the Managing Director') && str_contains($dash['body'], 'Change my request'), 'client sees it is waiting');
     $r = $client->post('client-monthly-meeting.php', ['action' => 'request_change', 'back' => 'client-dashboard.php', 'new_date' => $cardDate, 'new_time' => '15:00', 'scope' => 'once', 'reason' => '']);
     ok($r['status'] === 303 && str_contains($r['headers']['location'] ?? '', 'client-dashboard.php#mm-change-open'), 'error goes back to the card');
+    // Availability calendar: a day the MD has another client is red and cannot be asked for.
+    $pdo->prepare("INSERT INTO clients (client_name,website_url,logo_path,is_active,created_by,package,payment_total,client_type) VALUES ('Secret Other Co','','',1,?,'1',1,'premium')")->execute([$md]);
+    $oc = (int) val("SELECT id FROM clients WHERE client_name='Secret Other Co'");
+    $busyDay = date('Y-m-d', strtotime('+8 days'));
+    $r = $admin->post('client-meeting-form.php', ['client_id' => (string) $oc, 'title' => 'Other shoot', 'shoot_type' => 'our_team', 'shoot_at' => $busyDay . 'T10:00', 'shoot_place' => 'Studio']);
+    ok($r['status'] === 303, 'another client has a shoot that day');
+    $dash = $client->req('client-dashboard.php');
+    ok(str_contains($dash['body'], 'data-mm-cal') && str_contains($dash['body'], 'class="is-busy" data-date="' . $busyDay . '"') && str_contains($dash['body'], 'class="is-free" data-date="' . date('Y-m-d', strtotime('+9 days')) . '"') && !str_contains($dash['body'], 'Secret Other Co'), 'calendar: busy day red, free day green, other client not named');
+    ok(str_contains($client->req('client-monthly-meeting.php')['body'], 'class="is-busy" data-date="' . $busyDay . '"'), 'calendar on the Monthly meeting page too');
+    $before = (int) val("SELECT COUNT(*) FROM client_meeting_changes WHERE status='pending'");
+    $r = $client->post('client-monthly-meeting.php', ['action' => 'request_change', 'back' => 'client-dashboard.php', 'new_date' => $busyDay, 'new_time' => '15:00', 'scope' => 'once', 'reason' => 'Busy day try']);
+    $back = $client->req('client-dashboard.php');
+    ok(str_contains($r['headers']['location'] ?? '', '#mm-change-open') && str_contains($back['body'], 'is not available') && (int) val("SELECT COUNT(*) FROM client_meeting_changes WHERE status='pending'") === $before && !val("SELECT COUNT(*) FROM client_meeting_changes WHERE reason='Busy day try'"), 'request for a red day is refused');
+    $pdo->exec('DELETE FROM client_engagements WHERE client_id=' . $oc); $pdo->exec('DELETE FROM clients WHERE id=' . $oc);
     $pdo->exec("DELETE FROM client_meeting_changes WHERE reason='Card request'"); $pdo->exec("DELETE FROM notifications WHERE message LIKE '%Card request%'");
     $pd = $client->req('client-details.php');
     ok(str_contains($pd['body'], 'Every month on the'), 'project details show the monthly rule');

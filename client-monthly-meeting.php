@@ -23,6 +23,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($action !== 'request_change') throw new InvalidArgumentException('Invalid request.');
             if (empty($ownClient['meeting_day'])) throw new InvalidArgumentException('Your monthly meeting is not fixed yet. Our team will set it.');
             $in = mm_change_input();
+            // Only a day the Managing Director is free (no other client's meeting or shoot), within the calendar range.
+            $newDate = (string) ($_POST['new_date'] ?? '');
+            [$pickFrom, $pickTo] = mm_pick_range();
+            if ($newDate > $pickTo) throw new InvalidArgumentException('Pick a date up to ' . date('j M Y', strtotime($pickTo)) . ' (a green date in the calendar).');
+            if (isset(mm_busy_dates($newDate, $newDate, (int) $ownClient['id'])[$newDate])) throw new InvalidArgumentException(date('D, j M Y', strtotime($newDate)) . ' is not available — the Managing Director has another meeting that day. Please pick a green date in the calendar.');
             $reason = text_input('reason', 1000);
             db()->beginTransaction();
             // Only one open request at a time: a new one replaces the old.
@@ -91,13 +96,14 @@ $statusPill = static function (string $status): string {
 /** The change form (new date, time, how long). */
 $changeForm = static function (array $client, string $action, bool $forClient) use ($isClient): void {
     $next = mm_next($client);
-    $date = $_POST['new_date'] ?? ($next['date'] ?? date('Y-m-d'));
+    // A client picks a green (free) day in the calendar, so their box starts empty.
+    $date = $_POST['new_date'] ?? ($forClient ? '' : ($next['date'] ?? date('Y-m-d')));
     $time = $_POST['new_time'] ?? substr((string) ($next['time'] ?: ($client['meeting_time'] ?: '11:00:00')), 0, 5);
     $scope = $_POST['scope'] ?? 'once';
     ?>
     <form method="post" class="ot-form mm-form" data-mm-form><?= csrf_field() ?><input type="hidden" name="action" value="<?= h($action) ?>"><?php if (!$forClient): ?><input type="hidden" name="client_id" value="<?= (int) $client['id'] ?>"><?php endif; ?>
         <div class="mm-form-grid">
-            <label><span>New meeting date *</span><input type="date" name="new_date" min="<?= h(today()) ?>" value="<?= h($date) ?>" required></label>
+            <?php if ($forClient): ?><?= mm_date_picker_field((int) $client['id'], 'New meeting date *', (string) $date) ?><?php else: ?><label><span>New meeting date *</span><input type="date" name="new_date" min="<?= h(today()) ?>" value="<?= h($date) ?>" required></label><?php endif; ?>
             <label><span>New time *</span><input type="time" name="new_time" value="<?= h($time) ?>" required></label>
         </div>
         <fieldset class="mm-scope"><legend>How long should this change apply?</legend>

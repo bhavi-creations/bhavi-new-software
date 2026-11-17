@@ -132,6 +132,87 @@ function mm_pending_count(): int
 }
 
 /**
+ * Days the Managing Director is already busy with ANOTHER client (their monthly meeting or a shoot), from $from to $to.
+ * @return array<string,true> keyed by Y-m-d
+ */
+function mm_busy_dates(string $from, string $to, int $clientId): array
+{
+    require_once __DIR__ . '/meeting-agenda.php';
+    $busy = [];
+    foreach (agenda_items($from, $to) as $i) if ($i['client_id'] !== $clientId) $busy[$i['date']] = true;
+    return $busy;
+}
+
+/** How far ahead a client can pick a new meeting date: this month and the next 2. */
+function mm_pick_range(): array { return [date('Y-m-d'), date('Y-m-t', strtotime('first day of +2 months'))]; }
+
+/**
+ * Client's "New date" box. It looks like a normal field; clicking it opens a calendar where days the Managing
+ * Director is free are green (click to choose) and days booked with another client are red ("not available").
+ * Other clients are never named. The chosen day is sent as new_date (Y-m-d).
+ */
+function mm_date_picker_field(int $clientId, string $label, string $value = ''): string
+{
+    [$from, $to] = mm_pick_range();
+    $busy = mm_busy_dates($from, $to, $clientId);
+    ob_start(); ?>
+    <div class="mm-pick" data-mm-pick>
+        <label><span><?= h($label) ?></span><input type="text" readonly required placeholder="📅 Click to choose a date" data-mm-date-show value="<?= $value !== '' ? h(date('D, j M Y', strtotime($value))) : '' ?>"><input type="hidden" name="new_date" value="<?= h($value) ?>"></label>
+        <p class="mm-cal-msg" data-mm-cal-msg aria-live="polite"></p>
+        <div class="mm-cal" data-mm-cal data-busy="<?= h(json_encode(array_keys($busy))) ?>" data-min="<?= h($from) ?>" data-max="<?= h($to) ?>" hidden>
+            <div class="mm-cal-top"><p class="mm-cal-legend"><span class="is-free">Available</span><span class="is-busy">Not available</span></p><button type="button" class="mm-cal-close" data-mm-cal-close aria-label="Close calendar">×</button></div>
+            <div class="mm-cal-months">
+            <?php for ($m = new DateTimeImmutable(substr($from, 0, 7) . '-01'); $m->format('Y-m-d') <= $to; $m = $m->modify('+1 month')): ?>
+                <div class="mm-cal-month">
+                    <h4><?= h($m->format('F Y')) ?></h4>
+                    <div class="mm-cal-grid">
+                        <?php foreach (['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'] as $wd): ?><b><?= $wd ?></b><?php endforeach; ?>
+                        <?php for ($i = 1; $i < (int) $m->format('N'); $i++): ?><span></span><?php endfor; ?>
+                        <?php for ($d = 1; $d <= (int) $m->format('t'); $d++): $date = $m->format('Y-m-') . sprintf('%02d', $d); ?>
+                            <?php if ($date < $from || $date > $to): ?><span class="is-past"><?= $d ?></span>
+                            <?php elseif (isset($busy[$date])): ?><button type="button" class="is-busy" data-date="<?= $date ?>" aria-disabled="true" title="Not available"><?= $d ?></button>
+                            <?php else: ?><button type="button" class="is-free" data-date="<?= $date ?>" title="Available"><?= $d ?></button><?php endif; ?>
+                        <?php endfor; ?>
+                    </div>
+                </div>
+            <?php endfor; ?>
+            </div>
+        </div>
+    </div>
+    <script>
+    (function () {
+        if (window.bhaviMmPick) return; window.bhaviMmPick = true;
+        var label = function (d) { return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', {weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'}); };
+        var init = function () {
+            document.querySelectorAll('[data-mm-pick]').forEach(function (pick) {
+                var show = pick.querySelector('[data-mm-date-show]'), input = pick.querySelector('[name="new_date"]'), cal = pick.querySelector('[data-mm-cal]'), msg = pick.querySelector('[data-mm-cal-msg]');
+                var busy = JSON.parse(cal.dataset.busy || '[]');
+                var open = function () { cal.hidden = false; }, close = function () { cal.hidden = true; };
+                var say = function (text, kind) { msg.textContent = text; msg.className = 'mm-cal-msg' + (kind ? ' is-' + kind : ''); };
+                var mark = function (date) { cal.querySelectorAll('.is-picked').forEach(function (b) { b.classList.remove('is-picked'); }); var b = date && cal.querySelector('[data-date="' + date + '"]'); if (b) b.classList.add('is-picked'); };
+                show.setCustomValidity(input.value ? '' : 'Click and choose a green date.');
+                show.addEventListener('click', open);
+                show.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); open(); } });
+                pick.querySelector('[data-mm-cal-close]').addEventListener('click', close);
+                cal.addEventListener('click', function (e) {
+                    var b = e.target.closest('button[data-date]'); if (!b) return;
+                    if (b.classList.contains('is-busy')) { say('✕ ' + label(b.dataset.date) + ' is not available — the Managing Director has another meeting that day. Please pick a green date.', 'busy'); return; }
+                    input.value = b.dataset.date; show.value = label(b.dataset.date); show.setCustomValidity(''); mark(b.dataset.date);
+                    say('✓ ' + label(b.dataset.date) + ' is available. Send it to the Managing Director for approval.', 'free');
+                    close();
+                });
+                document.addEventListener('click', function (e) { if (!cal.hidden && !pick.contains(e.target)) close(); });
+                document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+                if (input.value) { mark(input.value); if (busy.indexOf(input.value) !== -1) { show.setCustomValidity('Pick a green date.'); say('✕ ' + label(input.value) + ' is not available. Please pick a green date.', 'busy'); } }
+            });
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+    })();
+    </script>
+    <?php return (string) ob_get_clean();
+}
+
+/**
  * Client: "Change meeting date" right on the countdown card. The request goes to the Managing Director
  * (notification + dashboard), who approves it or sets another date. Shows the open request while it waits.
  */
@@ -148,7 +229,7 @@ function mm_client_change_box(array $client, array $next): void
             <summary class="mm-btn"><?= $pending ? 'Change my request' : 'Change meeting date' ?></summary>
             <form method="post" action="client-monthly-meeting.php" class="mm-change-form" data-mm-inline><?= csrf_field() ?>
                 <input type="hidden" name="action" value="request_change"><input type="hidden" name="back" value="<?= h($back) ?>">
-                <label><span>New date *</span><input type="date" name="new_date" min="<?= h(date('Y-m-d')) ?>" value="<?= h($next['date']) ?>" required></label>
+                <?= mm_date_picker_field((int) $client['id'], 'New date *') ?>
                 <label><span>New time *</span><input type="time" name="new_time" value="<?= h(substr((string) ($next['time'] ?: '11:00:00'), 0, 5)) ?>" required></label>
                 <label><span>For how long?</span><select name="scope" data-mm-scope><option value="once">Only this month</option><option value="months">For some months</option><option value="permanent">Every month from now</option></select></label>
                 <label data-mm-n hidden><span>How many months?</span><input type="number" name="months" min="1" max="24" value="3"></label>
