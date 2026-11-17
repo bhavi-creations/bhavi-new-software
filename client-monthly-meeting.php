@@ -45,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notifyClient($change, (int) $user['id'], MM_NOTICE_PREFIX . ($approve ? ' change approved' : ' change not possible'), ($approve ? $changeText($change) : 'Your monthly meeting stays at the usual time.') . ($note !== '' ? "\nNote: " . $note : ''));
             db()->commit();
             flash($approve ? 'Approved. ' . $change['client_name'] . '’s meeting is moved.' : 'Request rejected. The client was told.');
+            if (($_POST['back'] ?? '') === 'dashboard') redirect(dashboard_path($user) . '#meetings'); // decided on the dashboard card
             redirect('client-monthly-meeting.php' . (!empty($_POST['back_client']) ? '?client=' . (int) $change['client_id'] : ''));
         }
         if ($action === 'change') {

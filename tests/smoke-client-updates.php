@@ -120,6 +120,30 @@ try {
     $cs = $client->req('client-meetings.php');
     ok(str_contains($cs['body'], 'Dec shoot') && str_contains($cs['body'], 'Shoots'), 'client sees shoots');
 
+    echo "Dashboard: client meetings & shoots
+";
+    $reqDate = date('Y-m-d', strtotime('+2 days'));
+    $r = $client->post('client-monthly-meeting.php', ['action' => 'request_change', 'new_date' => $reqDate, 'new_time' => '17:00', 'scope' => 'once', 'reason' => 'Out of town that week']);
+    ok($r['status'] === 303, 'client asks to move the monthly meeting');
+    $d = $admin->req('admin-dashboard.php');
+    ok(str_contains($d['body'], 'Client meetings &amp; shoots') && str_contains($d['body'], 'Change requests from clients') && str_contains($d['body'], 'Out of town that week'), 'MD dashboard shows the client change request');
+    $d = $admin->req('admin-dashboard.php?mtg_from=' . date('Y-m-01', strtotime($reqDate)) . '&mtg_to=' . date('Y-m-t', strtotime($reqDate)));
+    ok(preg_match('#<li class="mtg-item is-meeting is-asked">.*?Kiran Foods.*?class="mtg-change-btn" href="client-monthly-meeting.php\?client=' . $kc . '">✎ Change the date</a>.*?Out of town that week#s', $d['body']) === 1, 'that month\'s meeting shows Client asked to change + Change the date');
+    $rid = (int) val("SELECT id FROM client_meeting_changes WHERE reason='Out of town that week'");
+    $r = $admin->post('client-monthly-meeting.php', ['action' => 'decide', 'id' => (string) $rid, 'decision' => 'approve', 'decision_note' => '', 'back' => 'dashboard']);
+    ok($r['status'] === 303 && str_contains($r['headers']['location'] ?? '', 'admin-dashboard.php') && val('SELECT status FROM client_meeting_changes WHERE id=?', [$rid]) === 'approved', 'approve from the dashboard, back to the dashboard');
+    $d = $admin->req('admin-dashboard.php?mtg_from=' . $reqDate . '&mtg_to=' . $reqDate);
+    ok(str_contains($d['body'], 'Kiran Foods') && str_contains($d['body'], '5:00 PM') && str_contains($d['body'], 'Moved') && !str_contains($d['body'], 'Out of town that week'), 'date filter: that day shows the moved meeting');
+    $shootDay = date('Y-m-d', strtotime('+4 days'));
+    $d = $admin->req('admin-dashboard.php?mtg_from=' . date('Y-m-d') . '&mtg_to=' . date('Y-m-d', strtotime('+6 days')));
+    ok(str_contains($d['body'], 'Dec shoot') && str_contains($d['body'], date('l, j M Y', strtotime($shootDay))) && str_contains($d['body'], 'is-meeting') && str_contains($d['body'], 'is-shoot'), 'one week: meetings and shoots both listed');
+    $d = $admin->req('admin-dashboard.php?mtg_from=' . $shootDay . '&mtg_to=' . $shootDay);
+    ok(str_contains($d['body'], 'Dec shoot') && !str_contains($d['body'], '5:00 PM'), 'single day shows only that day');
+    $sid = (int) val("SELECT id FROM client_engagements WHERE title='Dec shoot'");
+    $client->post('client-meetings.php', ['action' => 'respond', 'id' => (string) $sid, 'response' => 'change_requested', 'client_note' => 'Please make it Sunday']);
+    $d = $admin->req('admin-dashboard.php?mtg_from=' . $shootDay . '&mtg_to=' . $shootDay);
+    ok(str_contains($d['body'], 'is-shoot is-asked') && str_contains($d['body'], 'href="client-meeting-form.php?id=' . $sid . '">✎ Change the date') && str_contains($d['body'], 'Please make it Sunday'), 'shoot the client wants changed shows Change the date');
+
     echo "Bank accounts, GST per service, quotations\n";
     $ba = $admin->req('bank-accounts.php');
     ok(str_contains($ba['body'], 'Add bank account'), 'bank accounts page');
