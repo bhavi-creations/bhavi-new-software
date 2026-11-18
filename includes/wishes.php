@@ -78,13 +78,38 @@ function wishes_to_show(int $userId): array
     return $show;
 }
 
+/**
+ * True when today is the employee's birthday (date of birth saved in Edit employee).
+ * A 29 Feb birthday is wished on 28 Feb in non-leap years.
+ */
+function employee_birthday_today(int $userId): bool
+{
+    try {
+        $dob = one('SELECT date_of_birth FROM employee_profiles WHERE user_id=?', [$userId])['date_of_birth'] ?? null;
+    } catch (Throwable $e) {
+        return false; // column not created yet
+    }
+    if (!$dob || !preg_match('/^\d{4}-(\d{2})-(\d{2})/', (string) $dob, $m)) return false;
+    $monthDay = $m[1] . '-' . $m[2];
+    if ($monthDay === '02-29' && !checkdate(2, 29, (int) date('Y'))) $monthDay = '02-28';
+    return $monthDay === date('m-d');
+}
+
 /** Bottom-corner popup markup for waiting wishes; empty string when nothing is waiting. */
 function wish_popup_html(array $user): string
 {
     if (!in_array($user['role'], ['employee', 'client'], true)) return '';
     $wishes = wishes_to_show((int) $user['id']);
+    // Automatic birthday wish on the employee's date of birth (✕ hides it for this login session).
+    $birthday = $user['role'] === 'employee' && ($_SESSION['birthday_closed'] ?? '') !== today() && employee_birthday_today((int) $user['id']);
+    if ($birthday) {
+        $firstName = preg_split('/\s+/', trim((string) $user['full_name']))[0] ?? '';
+        array_unshift($wishes, ['id' => 'birthday', 'tone' => 'wish', 'title' => 'Happy Birthday' . ($firstName !== '' ? ', ' . $firstName : '') . '! 🎂',
+            'message' => "Wishing you a very happy birthday and a wonderful year ahead.\nThank you for being a part of our team — have a great day!",
+            'poster_path' => null, 'sender_name' => 'Managing Director · Bhavi Creations', 'created_at' => null]);
+    }
     if (!$wishes) return '';
     ob_start();
-    ?><div class="wish-dock" data-wish-dock data-csrf="<?= h(csrf_token()) ?>" aria-live="polite"><canvas class="wish-sprinkles" data-wish-sprinkles aria-hidden="true"></canvas><?php foreach ($wishes as $i => $wish): $danger = $wish['tone'] === 'danger'; ?><article class="wish-card<?= $danger ? ' is-danger' : '' ?>" data-wish="<?= (int) $wish['id'] ?>" data-tone="<?= h($wish['tone']) ?>" role="dialog" aria-label="<?= h($wish['title'] ?: ($danger ? 'Important message' : 'Message for you')) ?>"<?= $i ? ' hidden' : '' ?>><button type="button" class="wish-close" data-wish-close aria-label="Close" title="Close">✕</button><p class="wish-from"><?= $danger ? '⚠ Important message' : '✨ A message for you' ?></p><?php if ($wish['title'] !== ''): ?><h2><?= h($wish['title']) ?></h2><?php endif; ?><?php if ($wish['poster_path']): ?><img class="wish-poster" src="wish-poster.php?id=<?= (int) $wish['id'] ?>" alt="<?= h($wish['title'] ?: 'Poster') ?>"><?php endif; ?><?php if (trim($wish['message']) !== ''): ?><p class="wish-text"><?= nl2br(h($wish['message'])) ?></p><?php endif; ?><p class="wish-meta">— <?= h($wish['sender_name'] ?: 'Managing Director') ?> · <?= h(date('d M, g:i A', strtotime($wish['created_at']))) ?><?= count($wishes) > 1 ? ' · ' . ($i + 1) . ' of ' . count($wishes) : '' ?></p></article><?php endforeach; ?></div><?php
+    ?><div class="wish-dock" data-wish-dock data-csrf="<?= h(csrf_token()) ?>" aria-live="polite"><canvas class="wish-sprinkles" data-wish-sprinkles aria-hidden="true"></canvas><?php foreach ($wishes as $i => $wish): $danger = $wish['tone'] === 'danger'; $isBirthday = $wish['id'] === 'birthday'; ?><article class="wish-card<?= $danger ? ' is-danger' : '' ?><?= $isBirthday ? ' is-birthday' : '' ?>" data-wish="<?= $isBirthday ? 'birthday' : (int) $wish['id'] ?>" data-tone="<?= h($wish['tone']) ?>" role="dialog" aria-label="<?= h($wish['title'] ?: ($danger ? 'Important message' : 'Message for you')) ?>"<?= $i ? ' hidden' : '' ?>><button type="button" class="wish-close" data-wish-close aria-label="Close" title="Close">✕</button><p class="wish-from"><?= $danger ? '⚠ Important message' : ($isBirthday ? '🎉 Today is your special day' : '✨ A message for you') ?></p><?php if ($wish['title'] !== ''): ?><h2><?= h($wish['title']) ?></h2><?php endif; ?><?php if ($wish['poster_path']): ?><img class="wish-poster" src="wish-poster.php?id=<?= (int) $wish['id'] ?>" alt="<?= h($wish['title'] ?: 'Poster') ?>"><?php endif; ?><?php if (trim($wish['message']) !== ''): ?><p class="wish-text"><?= nl2br(h($wish['message'])) ?></p><?php endif; ?><p class="wish-meta">— <?= h($wish['sender_name'] ?: 'Managing Director') ?><?= $wish['created_at'] ? ' · ' . h(date('d M, g:i A', strtotime($wish['created_at']))) : '' ?><?= count($wishes) > 1 ? ' · ' . ($i + 1) . ' of ' . count($wishes) : '' ?></p></article><?php endforeach; ?></div><?php
     return (string) ob_get_clean();
 }

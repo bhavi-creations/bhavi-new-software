@@ -117,8 +117,8 @@ error_message($error);
         <div class="is-add"><dt>+ Amount added by Managing Director <small>see the list below</small></dt><dd>+<?= h(paise_label($calc['manual_add'])) ?></dd></div>
         <div class="is-cut"><dt>− Amount cut by Managing Director <small>see the list below</small></dt><dd>−<?= h(paise_label($calc['manual_cut'])) ?></dd></div>
         <?php if ($calc['benefits']): ?><div class="is-add"><dt>+ Benefits <small><?= h($calc['salary']['other_benefits']) ?></small></dt><dd>+<?= h(paise_label($calc['benefits'])) ?></dd></div><?php endif; ?>
-        <div class="is-cut"><dt>− PF <small>12% of full salary <?= h(paise_label($calc['full_salary'])) ?></small></dt><dd>−<?= h(paise_label($calc['pf'])) ?></dd></div>
-        <div class="is-cut"><dt>− ESI <small>0.75% of full salary <?= h(paise_label($calc['full_salary'])) ?></small></dt><dd>−<?= h(paise_label($calc['esi'])) ?></dd></div>
+        <div class="is-cut"><dt>− PF <small>12% of full salary <?= h(paise_label($calc['full_salary'])) ?> · cut only from employee, company pays nothing</small></dt><dd>−<?= h(paise_label($calc['pf'])) ?></dd></div>
+        <div class="is-cut"><dt>− ESI <small>0.75% of full salary <?= h(paise_label($calc['full_salary'])) ?> · cut only from employee, company pays nothing</small></dt><dd>−<?= h(paise_label($calc['esi'])) ?></dd></div>
         <div class="is-total"><dt>Employee receives</dt><dd><?= h(paise_label($calc['net'])) ?></dd></div>
     </dl>
     <?php if ($calc['pending']): ?><p class="sal-note is-pending"><?= $calc['pending'] ?> day<?= $calc['pending'] === 1 ? ' is' : 's are' ?> waiting for Managing Director approval. The amount changes after the Managing Director decides.<?php if ($staff): ?> <a href="attendance-approvals.php">Open approvals →</a><?php endif; ?></p><?php endif; ?>
@@ -139,6 +139,12 @@ error_message($error);
     <?php endforeach; ?>
 </section>
 </div>
+
+<section class="emp-card inc-card" id="increments">
+    <h3>Monthly salary &amp; increment history</h3>
+    <p class="muted inc-help">Every salary change with the date it started. Newest first.</p>
+    <?php salary_increment_timeline(rows('SELECT * FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from', [$employee['id']])); ?>
+</section>
 
 <?php $adjustments = array_merge(...array_map(static fn($d) => $d['adjustments'], $calc['days'])); ?>
 <section class="emp-card sal-adjust" id="adjustments">

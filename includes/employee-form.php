@@ -203,7 +203,7 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
             <div class="benefit-options emp-checks"><?php foreach (['pf'=>'PF','esi'=>'ESI','other'=>'Other'] as $key=>$label): ?><label><input type="checkbox" name="benefit_<?= $key ?>" value="1" <?= ($isPost?isset($_POST['benefit_'.$key]):!empty($record['benefit_'.$key]))?'checked':'' ?>><?= $label ?></label><?php endforeach; ?></div>
             <div class="emp-grid"><?php foreach (['pf_number'=>'PF number','esi_number'=>'ESI number'] as $key=>$label): ?><label><?= $label ?><input name="<?= $key ?>" maxlength="100" value="<?= h($value($key)) ?>"></label><?php endforeach; ?></div>
             <div id="other-benefits-field"><div class="emp-grid"><label>Other benefits amount (₹)<input id="other_benefit_amount" name="other_benefit_amount" type="number" min="0" max="9999999999.99" step="0.01" value="<?= h($value('other_benefit_amount')) ?>" placeholder="e.g. 500"></label><label>Reason for benefits<input id="other_benefits" name="other_benefits" maxlength="255" value="<?= h($value('other_benefits')) ?>" placeholder="e.g. Travel allowance"></label></div></div>
-            <p class="help">PF and ESI are calculated on the full monthly salary. PF: employee 12%, company 12%. ESI: employee 0.75%, company 3.25%. Only the employee share is deducted.</p>
+            <p class="help">PF and ESI are calculated on the full monthly salary: PF 12%, ESI 0.75%. They are cut only from the employee salary — the company does not pay any PF / ESI.</p>
         </div>
         <div class="emp-salary">
             <p class="emp-label">Monthly salary (₹)</p>

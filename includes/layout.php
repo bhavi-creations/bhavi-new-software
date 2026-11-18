@@ -110,45 +110,56 @@ function page_start(string $title, string $active = ''): void
         $pendingLeaves = count_value("SELECT COUNT(*) FROM leave_requests WHERE status='pending'");
         $pendingReviews = pending_review_count();
         $deskDue = count_value("SELECT COUNT(*) FROM todo_tasks WHERE user_id=? AND status='open' AND expected_date<=CURDATE()", [$user['id']]);
+        // Managing Director sidebar, grouped by what the MD looks after (same pages as before, clearer order).
         $adminNav = [
-            'Overview' => [
+            '' => [
                 ['href' => $dashboard, 'label' => 'Dashboard', 'icon' => 'dashboard'],
                 ['href' => 'admin-desk.php', 'label' => 'My desk · To-do', 'icon' => 'check', 'badge' => $deskDue, 'match' => ['admin-desk.php', 'admin-todo.php']],
+            ],
+            'Team & HR' => [
+                ['href' => 'departments.php', 'label' => 'Departments', 'icon' => 'briefcase'],
                 ['href' => 'admin-employees.php', 'label' => 'Employees', 'icon' => 'people'],
                 ['href' => 'employee-attendance.php', 'label' => 'Attendance', 'icon' => 'clock'],
                 ['href' => 'attendance-approvals.php', 'label' => 'Attendance Approvals', 'icon' => 'check', 'badge' => $pendingReviews],
-                ['href' => 'employee-salary.php', 'label' => 'Salary', 'icon' => 'money'],
+                ['href' => 'manager-leave-requist.php', 'label' => 'Leave Requests', 'icon' => 'calendar', 'badge' => $pendingLeaves],
+                ['href' => 'admin-holidays.php', 'label' => 'Holidays', 'icon' => 'calendar'],
+                ['href' => 'office-timings.php', 'label' => 'Office Timings', 'icon' => 'clock'],
+                ['href' => 'page-access.php', 'label' => 'Employee access', 'icon' => 'lock'],
+            ],
+            'Salary' => [
+                ['href' => 'employee-salary.php', 'label' => 'Salary & Increments', 'icon' => 'money'],
+                ['href' => 'payslips.php', 'label' => 'Employee Payslips', 'icon' => 'money'],
+            ],
+            'Work & Tasks' => [
+                ['href' => 'manager-assign-work.php', 'label' => 'Assign Tasks', 'icon' => 'tasks'],
+                ['href' => 'manager-assigned-status.php', 'label' => 'Assigned Work Status', 'icon' => 'tasks'],
                 ['label' => 'Work Reports', 'icon' => 'document', 'badge' => $todayReports, 'children' => [
                     ['href' => 'manager-dailywork.php', 'label' => 'Daily Work Report'],
                     ['href' => 'admin-client-work-report.php', 'label' => 'Client Work Report'],
                 ]],
-                ['href' => 'manager-assign-work.php', 'label' => 'Tasks', 'icon' => 'tasks'],
+                ['href' => 'content-schedule.php', 'label' => 'Content schedule', 'icon' => 'calendar', 'badge' => count_value("SELECT COUNT(*) FROM content_schedule WHERE status='scheduled' AND deleted_at IS NULL AND scheduled_at<=?", [date('Y-m-d H:i:s', time() + SCHEDULE_REMIND_BEFORE_MIN * 60)])],
+                ['href' => 'manager-monthly-design-report.php', 'label' => 'Reports & Analytics', 'icon' => 'chart'],
+            ],
+            'Clients' => [
                 ['href' => 'add-client.php', 'label' => 'Projects & Clients', 'icon' => 'folder'],
+                ['href' => 'client-reuirement.php', 'label' => 'Client Requests', 'icon' => 'inbox'],
                 ['href' => 'client-monthly-meeting.php', 'label' => 'Monthly meetings', 'icon' => 'people', 'badge' => count_value("SELECT COUNT(*) FROM client_meeting_changes WHERE status='pending'")],
                 ['href' => 'client-meetings.php', 'label' => 'Shoots', 'icon' => 'camera', 'badge' => count_value("SELECT COUNT(*) FROM client_engagements WHERE deleted_at IS NULL AND status='scheduled' AND client_response='change_requested'"), 'match' => ['client-meetings.php', 'client-meeting-form.php', 'client-meeting-view.php']],
-                ['href' => 'vendors.php', 'label' => 'Vendors', 'icon' => 'store'],
-                ['href' => 'invoices.php', 'label' => 'Invoices & quotations', 'icon' => 'document', 'match' => ['invoices.php', 'bank-accounts.php', 'invoice-services.php']],
-                ['href' => 'content-schedule.php', 'label' => 'Content schedule', 'icon' => 'calendar', 'badge' => count_value("SELECT COUNT(*) FROM content_schedule WHERE status='scheduled' AND deleted_at IS NULL AND scheduled_at<=?", [date('Y-m-d H:i:s', time() + SCHEDULE_REMIND_BEFORE_MIN * 60)])],
             ],
-            'Manage' => [
-                ['href' => 'manager-leave-requist.php', 'label' => 'Leave Requests', 'icon' => 'calendar', 'badge' => $pendingLeaves],
-                ['href' => 'office-timings.php', 'label' => 'Office Timings', 'icon' => 'clock'],
+            'Accounts' => [
+                ['href' => 'invoices.php', 'label' => 'Invoices & quotations', 'icon' => 'document', 'match' => ['invoices.php', 'bank-accounts.php', 'invoice-services.php']],
+                ['href' => 'vendors.php', 'label' => 'Vendors', 'icon' => 'store'],
+            ],
+            'Communication' => [
                 ['href' => 'manager-notification.php', 'label' => 'Announcements', 'icon' => 'megaphone', 'badge' => $unread],
+                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat', 'badge' => $chatUnread],
                 ['href' => 'zoom-meetings.php', 'label' => 'Zoom meetings', 'icon' => 'video'],
                 ['href' => 'wishes.php', 'label' => 'Wishes', 'icon' => 'gift'],
-                ['href' => 'references.php', 'label' => 'References', 'icon' => 'people'],
-                ['href' => 'page-access.php', 'label' => 'Employee access', 'icon' => 'lock'],
-                ['href' => 'tools.php', 'label' => 'Tools / Apps', 'icon' => 'key'],
-                ['href' => 'manager-monthly-design-report.php', 'label' => 'Reports & Analytics', 'icon' => 'chart'],
-                ['href' => 'change-password.php', 'label' => 'Settings', 'icon' => 'settings'],
             ],
-            'More' => [
-                ['href' => 'departments.php', 'label' => 'Departments', 'icon' => 'briefcase'],
-                ['href' => 'manager-assigned-status.php', 'label' => 'Assigned Work Status', 'icon' => 'tasks'],
-                ['href' => 'client-reuirement.php', 'label' => 'Client Requests', 'icon' => 'inbox'],
-                ['href' => 'payslips.php', 'label' => 'Employee Payslips', 'icon' => 'money'],
-                ['href' => 'admin-holidays.php', 'label' => 'Holidays', 'icon' => 'calendar'],
-                ['href' => 'chat.php', 'label' => 'Chat', 'icon' => 'chat', 'badge' => $chatUnread],
+            'Settings & Tools' => [
+                ['href' => 'tools.php', 'label' => 'Tools / Apps', 'icon' => 'key'],
+                ['href' => 'references.php', 'label' => 'References', 'icon' => 'people'],
+                ['href' => 'change-password.php', 'label' => 'Settings', 'icon' => 'settings'],
             ],
         ];
     }

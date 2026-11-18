@@ -49,7 +49,6 @@
         const gross = cents(el.value), base = gross; // PF / ESI on the full salary
         const employeePf = pf ? Math.round(base * 12 / 100) : 0;
         const employeeEsi = esi ? Math.round(base * 75 / 10000) : 0;
-        const companyEsi = esi ? Math.round(base * 325 / 10000) : 0;
         const section = document.createElement('section'); section.className = 'salary-estimate';
         const heading = document.createElement('h3'); heading.textContent = 'Salary ' + (i + 1) + ' · Preview'; section.append(heading);
         const cards = document.createElement('div'); cards.className = 'money-summary';
@@ -82,7 +81,7 @@
         section.append(table);
         if (pf || esi) {
           const company = document.createElement('p'); company.className = 'salary-company-note';
-          company.textContent = 'Company also pays' + (pf ? ' PF ' + format(employeePf) : '') + (pf && esi ? ' +' : '') + (esi ? ' ESI ' + format(companyEsi) : '') + ' from its side — this is not cut from the employee salary.';
+          company.textContent = 'PF / ESI is cut only from the employee salary (' + format(employeePf + employeeEsi) + '). The company does not pay any PF / ESI amount.';
           section.append(company);
         } else {
           const none = document.createElement('p'); none.className = 'salary-company-note'; none.textContent = 'No PF / ESI ticked — nothing is cut from the salary.'; section.append(none);

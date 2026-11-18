@@ -347,7 +347,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !in_array($_POST['action']??'',['conf
 }
 
 $assignments=[];
-if (!$isClient) {
+if (!$isClient && !is_staff()) { // assigned work list is shown only to employees on this page
     $assignmentSql='SELECT a.*,c.client_name,u.full_name AS employee_name FROM work_assignments a JOIN clients c ON c.id=a.client_id JOIN users u ON u.id=a.employee_id WHERE a.deleted_at IS NULL'; $assignmentParams=[];
     if (!is_staff()) { $assignmentSql.=' AND a.employee_id=?'; $assignmentParams[]=$user['id']; }
     if ($clientFilter>0) { $assignmentSql.=' AND a.client_id=?'; $assignmentParams[]=$clientFilter; }
@@ -361,7 +361,7 @@ $requirements=rows($requirementSql.' ORDER BY r.created_at DESC,r.id DESC',$requ
 // Payment proofs are not work: the Managing Director / team list shows only client work requests.
 if (!$isClient) $requirements=array_values(array_filter($requirements,static fn($r)=>!is_payment_proof($r)));
 $departments=departments();
-page_start($isClient?'Request work':'Client requirements','client-reuirement.php'); error_message($error);
+page_start($isClient?'Request work':'Client requests','client-reuirement.php'); error_message($error);
 if (is_staff()): ?><form method="get" class="filters"><div class="field"><label for="client">Client</label><select id="client" name="client"><option value="">All clients</option><?= options(clients(),'client_name',$clientFilter?:null) ?></select></div><button class="primary" type="submit">Filter</button></form><?php endif; ?>
 <?php if ($isClient): ?>
 <?php
@@ -621,7 +621,6 @@ $crTaskBlock=static function (string $i, int $number, array $task) use ($crTypes
 })();
 </script>
 <?php else: ?><p class="muted"><?= is_staff()?'Client requests are visible to management and the selected department.':'Client requests for your department appear here alongside your assigned briefs.' ?></p><?php endif; ?>
-<?php if (!$isClient && $assignments): ?><section class="panel"><h2>Assigned work</h2><?php foreach ($assignments as $assignment): ?><article class="requirement-card"><div class="panel-heading"><h3><?= h($assignment['title']) ?></h3><?= status_badge($assignment['status']) ?></div><p class="muted"><?= h($assignment['client_name']) ?> · <?= h($assignment['employee_name']) ?> · <?= h(date('d-m-Y',strtotime($assignment['work_date']))) ?></p><p><?= nl2br(h($assignment['description'])) ?></p></article><?php endforeach; ?></section><?php endif; ?>
 <?php
 // Admin / manager: "Send to employee" box on each client request (see the assign_requirement action above).
 $crAssignBox=static function (array $requirement, array $files): void {};
@@ -675,5 +674,36 @@ if (is_staff()) {
     };
 }
 ?>
-<?php if (!$isClient): ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; foreach ($requirements as $requirement): $files=rows('SELECT id,requirement_id,original_file_name,file_size_bytes,file_path,mime_type,description FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?><article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>" id="request-<?= (int)$requirement['id'] ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?= requirement_files_html($files,true,is_staff()) ?><?php if (!$isProof && is_staff()) $crAssignBox($requirement,$files); ?></article><?php endforeach; ?></section><?php endif; ?>
+<?php if (!$isClient):
+    // Requests grouped by the date they were sent (newest date first). Click a date → the clients who
+    // sent a request that day; click a client → the full request (brief, files, assign work).
+    $crByDay=[]; foreach ($requirements as $requirement) $crByDay[date('Y-m-d',strtotime($requirement['created_at']))][]=$requirement;
+    ?><section class="panel" id="department-requests"><h2><?= $isClient?'Your requests':(is_staff()?'Client requests':'Requests for your department') ?></h2><?php if (!$requirements): ?><p class="muted"><?= $isClient?'Your submitted requests will appear here.':'No client requests are available for this department.' ?></p><?php endif; ?>
+<div class="crd-days">
+<?php foreach ($crByDay as $crDay=>$crDayRequests): $crCount=count($crDayRequests); ?>
+<details class="crd-day">
+    <summary><span class="crd-day-date"><?= h(date('d-m-Y',strtotime($crDay))) ?><?php if ($crDay===today()): ?> <em class="crd-tag">Today</em><?php elseif ($crDay===date('Y-m-d',strtotime('-1 day'))): ?> <em class="crd-tag">Yesterday</em><?php endif; ?></span><span class="crd-day-count"><?= $crCount ?> request<?= $crCount===1?'':'s' ?></span></summary>
+    <div class="crd-list">
+    <?php foreach ($crDayRequests as $requirement): $files=rows('SELECT id,requirement_id,original_file_name,file_size_bytes,file_path,mime_type,description FROM requirement_files WHERE requirement_id=? ORDER BY id',[$requirement['id']]); $isProof=is_payment_proof($requirement); ?>
+    <details class="crd-req" id="request-<?= (int)$requirement['id'] ?>">
+        <summary><span class="crd-req-name"><strong><?= h($requirement['client_name']) ?></strong><small><?= h(date('g:i A',strtotime($requirement['created_at']))) ?> · <?= h($requirement['department_name']??'Department not selected') ?></small></span><?= status_badge($requirement['status']) ?></summary>
+        <article class="requirement-card<?= $isProof?' is-payment-proof':'' ?>"><div class="panel-heading"><div><h3><?= h($requirement['client_name']) ?> <?= $isProof?'· Payment proof':'request' ?></h3><p class="muted"><?= h($requirement['department_name']??'Department not selected') ?> · Due <?= $requirement['due_date']?h(date('d-m-Y',strtotime($requirement['due_date']))):'No deadline' ?></p></div><?= status_badge($requirement['status']) ?></div><p class="requirement-remark"><?= nl2br(h($requirement['brief'])) ?></p><?php if ($requirement['approved_text']): ?><p class="requirement-remark"><strong>Team update:</strong><br><?= nl2br(h($requirement['approved_text'])) ?></p><?php endif; ?><?= requirement_files_html($files,true,is_staff()) ?><?php if (!$isProof && is_staff()) $crAssignBox($requirement,$files); ?></article>
+    </details>
+    <?php endforeach; ?>
+    </div>
+</details>
+<?php endforeach; ?>
+</div>
+<script>(() => {
+  // A link to #request-N (notification, after assigning work…) opens its date and the request itself.
+  const openFromHash = () => {
+    const m = location.hash.match(/^#request-\d+$/); if (!m) return;
+    const req = document.getElementById(location.hash.slice(1)); if (!req) return;
+    for (let el = req; el; el = el.parentElement?.closest('details')) el.open = true;
+    req.scrollIntoView({block: 'start'});
+  };
+  openFromHash(); window.addEventListener('hashchange', openFromHash);
+})();</script>
+</section><?php endif; ?>
+<?php if (!$isClient && !is_staff() && $assignments): ?><section class="panel"><h2>Assigned work</h2><?php foreach ($assignments as $assignment): ?><article class="requirement-card"><div class="panel-heading"><h3><?= h($assignment['title']) ?></h3><?= status_badge($assignment['status']) ?></div><p class="muted"><?= h($assignment['client_name']) ?> · <?= h($assignment['employee_name']) ?> · <?= h(date('d-m-Y',strtotime($assignment['work_date']))) ?></p><p><?= nl2br(h($assignment['description'])) ?></p></article><?php endforeach; ?></section><?php endif; ?>
 <?php page_end(); ?>

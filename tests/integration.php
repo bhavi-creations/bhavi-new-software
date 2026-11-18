@@ -936,7 +936,7 @@ try {
     foreach (['pf_base' => '14000.00', 'esi_base' => '14000.00', 'employee_pf' => '1680.00', 'company_pf' => '1680.00', 'employee_esi' => '105.00', 'company_esi' => '455.00', 'net_salary' => '12215.00'] as $column => $expected) expect(scalar('SELECT ' . $column . ' FROM employee_salary_history WHERE id=?', [$salaryId]) === $expected, 'Salary calculation ' . $column);
     expect(scalar('SELECT effective_to FROM employee_salary_history WHERE id=?', [$salaryId]) === date('Y-m-d', strtotime(date('Y-m-d', strtotime('+1 month')) . ' -1 day')), 'Increment closes preceding salary period');
     expect(str_contains($website->request('employee-profile.php')['body'], '12,215.00'), 'Employee sees own take-home salary');
-    expect(str_contains($admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'], '455.00'), 'Admin sees company ESI');
+    expect(str_contains($admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'], 'company does not pay any PF / ESI'), 'Admin sees PF / ESI is cut only from the employee');
     $ownProfile = $website->request('employee-profile.php')['body'];
     $staffProfile = $admin->request('employee-profile.php?id=' . $employeeIds['website'])['body'];
     preg_match('/<dl class="details-list">(.*?)<\/dl>/s', $ownProfile, $ownDetails);
