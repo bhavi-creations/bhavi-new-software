@@ -5367,7 +5367,15 @@ fieldset.aw-priority{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;wi
 .crd-req-name strong{display:block;color:#172b49;overflow-wrap:anywhere}
 .crd-req-name small{display:block;color:#64748b;font-size:12px}
 .crd-req[open]>summary{border-bottom:1px dashed #e2e7f2}
-.crd-req>.requirement-card{margin:0;border:0;box-shadow:none}
+.crd-req>.requirement-card{margin:0;padding:16px 18px 18px;border:0;box-shadow:none}
+.crd-label{margin:14px 0 6px;font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b}
+.crd-req>.requirement-card>.crd-label:first-child{margin-top:0}
+.crd-req .requirement-remark{margin:0;padding:12px 14px;border-radius:10px;background:#f8faff;line-height:1.6}
+.crd-req .requirement-card>h4:not(.crd-label){margin:14px 0 6px;font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b}
+.crd-req .requirement-file-list{padding-left:0;margin:0;list-style:none}
+.crd-req .requirement-file-list li{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.crd-req>summary .status-badge,.crd-req>summary .badge{margin-left:auto;flex:none}
+@media(max-width:700px){.crd-req>.requirement-card{padding:14px}.crd-day>summary,.crd-req>summary{padding:12px}.crd-list{padding:8px}}
 .crd-req:target{background:#fffdf6;box-shadow:0 0 0 2px #ecd9a0}
 /* Automatic birthday wish */
 .wish-card.is-birthday{background:linear-gradient(160deg,#fffaf0 0%,#fff 55%,#f3f7ff 100%);border-top-color:#e2bf62}
