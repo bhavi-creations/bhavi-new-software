@@ -60,9 +60,20 @@ function salary_rows_input(?string $initialStart = null): array {
 function save_salary_rows(int $id,array $entries,array $benefits,string $joining,?string $relieving,int $actor): void {
     foreach ($entries as $entry) {
         if ($entry['effective_from']<$joining || ($relieving && ($entry['effective_from']>$relieving || ($entry['effective_to'] && $entry['effective_to']>$relieving)))) throw new InvalidArgumentException('Salary dates must fall within employment dates.');
-        $last=one('SELECT * FROM employee_salary_history WHERE employee_id=? ORDER BY effective_from DESC LIMIT 1 FOR UPDATE',[$id]);
-        if ($last && ($entry['effective_from']<=$last['effective_from'] || ($last['effective_to'] && $entry['effective_from']<=$last['effective_to']))) throw new InvalidArgumentException('New salary periods must start after the saved history, without overlaps.');
-        if ($last && !$last['effective_to']) query('UPDATE employee_salary_history SET effective_to=? WHERE id=?',[(new DateTimeImmutable($entry['effective_from']))->modify('-1 day')->format('Y-m-d'),$last['id']]);
+        // A salary / increment may also be added with an older date (between saved periods, e.g. past increments).
+        $from=$entry['effective_from'];
+        $dayBefore=static fn(string $d): string => (new DateTimeImmutable($d))->modify('-1 day')->format('Y-m-d');
+        if (one('SELECT id FROM employee_salary_history WHERE employee_id=? AND effective_from=? FOR UPDATE',[$id,$from])) throw new InvalidArgumentException('A salary already starts on '.date('d-m-Y',strtotime($from)).'. Choose a different start date.');
+        $before=one('SELECT * FROM employee_salary_history WHERE employee_id=? AND effective_from<? ORDER BY effective_from DESC LIMIT 1 FOR UPDATE',[$id,$from]);
+        $after=one('SELECT * FROM employee_salary_history WHERE employee_id=? AND effective_from>? ORDER BY effective_from LIMIT 1 FOR UPDATE',[$id,$from]);
+        // The period before the new one now ends the day before it starts.
+        if ($before && (!$before['effective_to'] || $before['effective_to']>=$from)) query('UPDATE employee_salary_history SET effective_to=? WHERE id=?',[$dayBefore($from),$before['id']]);
+        // A new period placed before a saved one runs until that saved period starts.
+        if ($after) {
+            $limit=$dayBefore($after['effective_from']);
+            if ($entry['effective_to'] && $entry['effective_to']>$limit) throw new InvalidArgumentException('Salary from '.date('d-m-Y',strtotime($from)).' must end before the next saved salary starts on '.date('d-m-Y',strtotime($after['effective_from'])).'.');
+            if (!$entry['effective_to']) $entry['effective_to']=$limit;
+        }
         $calculation=salary_breakdown(money_cents($entry['amount']),(bool)$benefits['benefit_pf'],(bool)$benefits['benefit_esi'],$benefits['esi_basis'],money_cents($benefits['other_benefit_amount']));
         $data=array_merge(['employee_id'=>$id],$entry,$benefits,$calculation,['created_by'=>$actor]);
         query('INSERT INTO employee_salary_history ('.implode(',',array_keys($data)).') VALUES ('.implode(',',array_fill(0,count($data),'?')).')',array_values($data));

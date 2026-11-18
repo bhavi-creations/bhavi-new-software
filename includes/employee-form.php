@@ -207,7 +207,7 @@ page_start($record ? 'Edit employee' : 'Add employee','admin-add-employee.php');
         </div>
         <div class="emp-salary">
             <p class="emp-label">Monthly salary (₹)</p>
-            <p class="help"><?= $record?'To change salary, add the new amount and its start date. Leave empty to keep the saved history.':'Enter the monthly salary. If the start date is empty, the joining date is used.' ?></p>
+            <p class="help"><?= $record?'To change salary, add the new amount and its start date. Old (past) increments can also be added with their own date — they fit into the history automatically. Leave empty to keep the saved history.':'Enter the monthly salary. If the start date is empty, the joining date is used.' ?></p>
             <div id="salary-rows" data-initial-salary="<?= $record?'0':'1' ?>"><?php $draft=$_POST['salary']??[['amount'=>'','from'=>'','to'=>'']]; if (!is_array($draft)) $draft=[]; foreach ($draft as $index=>$entry): if (!is_array($entry)) continue; ?><div class="emp-grid emp-grid-3 repeat-row"><label>Amount (₹)<input type="number" name="salary[<?= (int)$index ?>][amount]" min="0.01" max="9999999999.99" step="0.01" placeholder="₹ 0" value="<?= h($entry['amount']??'') ?>"></label><label>Starts on<input type="date" name="salary[<?= (int)$index ?>][from]" value="<?= h($entry['from']??'') ?>"></label><label>Ends on (optional)<input type="date" name="salary[<?= (int)$index ?>][to]" value="<?= h($entry['to']??'') ?>"></label><button type="button" class="emp-link-btn" data-remove-row>Remove</button></div><?php endforeach; ?></div>
             <button type="button" class="emp-link-btn" data-add-row="salary">＋ Add another salary / increment</button><div id="salary-preview" aria-live="polite"></div>
         </div>
